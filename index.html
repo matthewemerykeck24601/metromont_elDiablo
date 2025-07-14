@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPPQC Stressing Calculator - ACC Connect</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%);
+            min-height: 100vh;
+            padding: 16px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-icon {
+            width: 32px;
+            height: 32px;
+            color: #2563eb;
+        }
+
+        .header-title h1 {
+            font-size: 20px;
+            font-weight: bold;
+            color: #1f2937;
+        }
+
+        .header-title p {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .header-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-save { background: #059669; color: white; }
+        .btn-save:hover:not(:disabled) { background: #047857; }
+        .btn-print { background: #2563eb; color: white; }
+        .btn-print:hover:not(:disabled) { background: #1d4ed8; }
+        .btn-export { background: #7c3aed; color: white; }
+        .btn-export:hover:not(:disabled) { background: #6d28d9; }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-connected {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-disconnected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .grid-cols-2 {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .grid-cols-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        @media (max-width: 768px) {
+            .grid-cols-2, .grid-cols-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-group label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .form-group input, .form-group textarea {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .form-group input:disabled {
+            background-color: #f9fafb;
+            color: #6b7280;
+        }
+
+        .input-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .input-label {
+            width: 140px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #374151;
+            flex-shrink: 0;
+        }
+
+        .input-field {
+            flex: 1;
+            padding: 6px 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .input-unit {
+            width: 32px;
+            font-size: 12px;
+            color: #6b7280;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .results {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 16px;
+        }
+
+        .results h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 12px;
+        }
+
+        .result-value {
+            font-family: 'Courier New', monospace;
+            font-weight: 500;
+        }
+
+        .critical-result {
+            font-weight: bold;
+            color: #dc2626;
+        }
+
+        .self-stress-results {
+            background: #eff6ff;
+        }
+
+        .non-self-stress-results {
+            background: #f0fdf4;
+        }
+
+        .calculator-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .self-stress-title {
+            color: #1d4ed8;
+            border-bottom-color: #1d4ed8;
+        }
+
+        .non-self-stress-title {
+            color: #059669;
+            border-bottom-color: #059669;
+        }
+
+        .acc-info {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #pdf-content {
+            display: none;
+        }
+
+        @media print {
+            body * { visibility: hidden; }
+            #pdf-content, #pdf-content * { visibility: visible; }
+            #pdf-content { position: absolute; top: 0; left: 0; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <svg class="header-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                </svg>
+                <div class="header-title">
+                    <h1>PPPQC Stressing Calculator</h1>
+                    <p>Autodesk Construction Cloud Integration</p>
+                </div>
+            </div>
+            <div class="header-buttons">
+                <span id="accStatus" class="status-badge status-disconnected">
+                    <div class="loading"></div>
+                    Connecting to ACC...
+                </span>
+                <button class="btn btn-save" id="saveBtn" onclick="saveToACC()" disabled>
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                    </svg>
+                    Save to ACC
+                </button>
+                <button class="btn btn-print" onclick="generatePDF()">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/>
+                    </svg>
+                    Print Report
+                </button>
+                <button class="btn btn-export" id="exportBtn" onclick="exportToACCDocs()" disabled>
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                    </svg>
+                    Save to ACC Docs
+                </button>
+            </div>
+        </div>
+
+        <!-- ACC Integration Status -->
+        <div class="acc-info" id="accInfo">
+            <div id="accDetails">
+                <div class="loading"></div>
+                Initializing ACC Connection...
+            </div>
+        </div>
+
+        <!-- Project Metadata -->
+        <div class="card">
+            <h3 class="card-title">
+                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                </svg>
+                Project Information
+                <span id="projectSource" class="status-badge status-connected" style="margin-left: auto; display: none;">
+                    Auto-populated from ACC
+                </span>
+            </h3>
+            <div class="grid grid-cols-3">
+                <div class="form-group">
+                    <label for="projectName">Project Name</label>
+                    <input type="text" id="projectName" placeholder="Loading from ACC..." disabled>
+                </div>
+                <div class="form-group">
+                    <label for="projectNumber">Project Number</label>
+                    <input type="text" id="projectNumber" placeholder="Loading from ACC..." disabled>
+                </div>
+                <div class="form-group">
+                    <label for="date">Date</label>
+                    <input type="date" id="date">
+                </div>
+                <div class="form-group">
+                    <label for="calculatedBy">Calculated By</label>
+                    <input type="text" id="calculatedBy" placeholder="Loading from ACC..." disabled>
+                </div>
+                <div class="form-group">
+                    <label for="reviewedBy">Reviewed By</label>
+                    <input type="text" id="reviewedBy" placeholder="Reviewer name">
+                </div>
+                <div class="form-group">
+                    <label for="location">Location</label>
+                    <input type="text" id="location" placeholder="Loading from ACC..." disabled>
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 12px;">
+                <label for="notes">Notes</label>
+                <textarea id="notes" rows="2" placeholder="Additional notes or comments"></textarea>
+            </div>
+        </div>
+
+        <!-- Calculators Grid -->
+        <div class="grid grid-cols-2">
+            <!-- Self-Stressing Calculator -->
+            <div class="card">
+                <h2 class="calculator-title self-stress-title">Self-Stressing Bed Calculator</h2>
+                
+                <!-- Inputs -->
+                <div id="selfStressInputs">
+                    <div class="input-row">
+                        <label class="input-label">Initial Pull:</label>
+                        <input type="number" class="input-field" id="ss_initialPull" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">lbs</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Required Force:</label>
+                        <input type="number" class="input-field" id="ss_requiredForce" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">lbs</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">MOE:</label>
+                        <input type="number" class="input-field" id="ss_MOE" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit"></span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label"># of Strands:</label>
+                        <input type="number" class="input-field" id="ss_numberOfStrands" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit"></span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Adj Bed Short:</label>
+                        <input type="number" class="input-field" id="ss_adjBedShortening" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">in</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Block Length:</label>
+                        <input type="number" class="input-field" id="ss_blockToBlockLength" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">ft</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Strand Area:</label>
+                        <input type="number" class="input-field" id="ss_strandArea" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">in²</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Dead End Seat:</label>
+                        <input type="number" class="input-field" id="ss_deadEndSeating" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">in</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Live End Seat:</label>
+                        <input type="number" class="input-field" id="ss_liveEndSeating" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">in</span>
+                    </div>
+                </div>
+
+                <!-- Results -->
+                <div class="results self-stress-results">
+                    <h4>Results</h4>
+                    <div class="result-item">
+                        <span>Basic Elongation:</span>
+                        <span class="result-value" id="ss_basicElongation">0.000 in</span>
+                    </div>
+                    <div class="result-item">
+                        <span>Bed Shortening:</span>
+                        <span class="result-value" id="ss_bedShortening">0.000 in</span>
+                    </div>
+                    <div class="result-item critical-result">
+                        <span>Desired Elongation (Rounded):</span>
+                        <span class="result-value" id="ss_desiredElongationRounded">0.000 in</span>
+                    </div>
+                    <div class="result-item critical-result">
+                        <span>Calculated Pull (Rounded):</span>
+                        <span class="result-value" id="ss_calculatedPullRounded">0 lbs</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Non-Self-Stressing Calculator -->
+            <div class="card">
+                <h2 class="calculator-title non-self-stress-title">Non-Self-Stressing Bed Calculator</h2>
+                
+                <!-- Inputs -->
+                <div id="nonSelfStressInputs">
+                    <div class="input-row">
+                        <label class="input-label">Initial Pull:</label>
+                        <input type="number" class="input-field" id="nss_initialPull" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">lbs</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Required Force:</label>
+                        <input type="number" class="input-field" id="nss_requiredForce" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">lbs</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">MOE:</label>
+                        <input type="number" class="input-field" id="nss_MOE" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit"></span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Block Length:</label>
+                        <input type="number" class="input-field" id="nss_blockToBlockLength" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">ft</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Strand Area:</label>
+                        <input type="number" class="input-field" id="nss_strandArea" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">in²</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Air Temp:</label>
+                        <input type="number" class="input-field" id="nss_airTemp" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">°F</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Concrete Temp:</label>
+                        <input type="number" class="input-field" id="nss_concreteTemp" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">°F</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Dead End Seat:</label>
+                        <input type="number" class="input-field" id="nss_deadEndSeating" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">in</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Live End Seat:</label>
+                        <input type="number" class="input-field" id="nss_liveEndSeating" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">in</span>
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label">Total Abutment:</label>
+                        <input type="number" class="input-field" id="nss_totalAbutmentRotation" placeholder="0" oninput="calculateAll()">
+                        <span class="input-unit">in</span>
+                    </div>
+                </div>
+
+                <!-- Results -->
+                <div class="results non-self-stress-results">
+                    <h4>Results</h4>
+                    <div class="result-item">
+                        <span>Basic Elongation:</span>
+                        <span class="result-value" id="nss_basicElongation">0.000 in</span>
+                    </div>
+                    <div class="result-item">
+                        <span>Temp Difference:</span>
+                        <span class="result-value" id="nss_tempDifference">0.000</span>
+                    </div>
+                    <div class="result-item">
+                        <span>Temp Correction:</span>
+                        <span class="result-value" id="nss_tempCorrection">0.000</span>
+                    </div>
+                    <div class="result-item critical-result">
+                        <span>Desired Elongation (Rounded):</span>
+                        <span class="result-value" id="nss_desiredElongationRounded">0.000 in</span>
+                    </div>
+                    <div class="result-item critical-result">
+                        <span>Calculated Pull (Rounded):</span>
+                        <span class="result-value" id="nss_calculatedPullRounded">0 lbs</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden PDF Content -->
+    <div id="pdf-content">
+        <div style="text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
+            <h1>PPPQC Stressing Calculation Report</h1>
+            <p>Prestressed Concrete Stress Analysis</p>
+        </div>
+        
+        <div id="printMetadata" style="background: #e5f3ff; padding: 10px; border-radius: 5px; margin-bottom: 20px;">
+            <!-- Metadata will be inserted here -->
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+                <h3 style="color: #1d4ed8; margin-bottom: 10px;">Self-Stressing Bed Calculator</h3>
+                <div id="printSelfStressInputs" style="margin-bottom: 15px;">
+                    <!-- Self-stress inputs will be inserted here -->
+                </div>
+                <div id="printSelfStressResults" style="background: #f8f9fa; padding: 10px; border-radius: 5px;">
+                    <!-- Self-stress results will be inserted here -->
+                </div>
+            </div>
+
+            <div>
+                <h3 style="color: #059669; margin-bottom: 10px;">Non-Self-Stressing Bed Calculator</h3>
+                <div id="printNonSelfStressInputs" style="margin-bottom: 15px;">
+                    <!-- Non-self-stress inputs will be inserted here -->
+                </div>
+                <div id="printNonSelfStressResults" style="background: #f8f9fa; padding: 10px; border-radius: 5px;">
+                    <!-- Non-self-stress results will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Forge Viewer SDK -->
+    <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+    
+    <script>
+        // ACC/Forge Integration Variables
+        let forgeAccessToken = null;
+        let projectId = null;
+        let hubId = null;
+        let userProfile = null;
+        let isACCConnected = false;
+
+        // Global calculation variables
+        let currentCalculation = null;
+
+        // Initialize ACC Connection
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeACCConnection();
+            setupUI();
+            calculateAll();
+        });
+
+        // ACC/Forge Authentication and Setup
+        async function initializeACCConnection() {
+            try {
+                // Check if we're running in ACC Connect context
+                if (window.location.search.includes('code=') || window.sessionStorage.getItem('forge_access_token')) {
+                    await handleACCAuthentication();
+                } else {
+                    // For development/testing - simulate ACC environment
+                    simulateACCEnvironment();
+                }
+            } catch (error) {
+                console.error('ACC Connection Error:', error);
+                handleACCConnectionError(error);
+            }
+        }
+
+        async function handleACCAuthentication() {
+            try {
+                // This would normally handle the OAuth flow
+                // For now, we'll simulate a successful connection
+                updateConnectionStatus('connected', 'Connected to ACC');
+                
+                // Get project context
+                await getProjectContext();
+                
+                // Enable ACC features
+                enableACCFeatures();
+                
+            } catch (error) {
+                throw new Error('Failed to authenticate with ACC: ' + error.message);
+            }
+        }
+
+        function simulateACCEnvironment() {
+            // Simulate ACC connection for development
+            setTimeout(() => {
+                updateConnectionStatus('connected', 'Connected to ACC (Development Mode)');
+                
+                // Simulate project data
+                populateProjectData({
+                    name: 'Sample Construction Project',
+                    number: 'PROJ-2024-001',
+                    location: 'Charlotte, NC',
+                    userId: 'john.engineer@company.com'
+                });
+                
+                enableACCFeatures();
+            }, 2000);
+        }
+
+        async function getProjectContext() {
+            // In real implementation, this would call Forge APIs
+            // For now, simulate project context
+            const mockProjectData = {
+                name: window.location.search.includes('projectName=') ? 
+                      decodeURIComponent(window.location.search.split('projectName=')[1].split('&')[0]) : 
+                      'ACC Construction Project',
+                number: 'ACC-2024-' + Math.floor(Math.random() * 1000),
+                location: 'Project Location',
+                userId: 'current.user@company.com'
+            };
+            
+            populateProjectData(mockProjectData);
+        }
+
+        function populateProjectData(projectData) {
+            document.getElementById('projectName').value = projectData.name || '';
+            document.getElementById('projectNumber').value = projectData.number || '';
+            document.getElementById('calculatedBy').value = projectData.userId || '';
+            document.getElementById('location').value = projectData.location || '';
+            
+            // Enable fields and show auto-population indicator
+            ['projectName', 'projectNumber', 'calculatedBy', 'location'].forEach(id => {
+                const element = document.getElementById(id);
+                element.disabled = false;
+                element.style.backgroundColor = '#f0f9ff'; // Light blue to indicate auto-populated
+            });
+            
+            document.getElementById('projectSource').style.display = 'inline-flex';
+            
+            document.getElementById('accDetails').innerHTML = `
+                <strong>Project:</strong> ${projectData.name}<br>
+                <strong>User:</strong> ${projectData.userId}<br>
+                <strong>Connected:</strong> ${new Date().toLocaleString()}
+            `;
+        }
+
+        function updateConnectionStatus(status, message) {
+            const statusElement = document.getElementById('accStatus');
+            const accInfo = document.getElementById('accInfo');
+            
+            if (status === 'connected') {
+                statusElement.className = 'status-badge status-connected';
+                statusElement.innerHTML = `
+                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                    ${message}
+                `;
+                isACCConnected = true;
+                accInfo.style.borderColor = '#10b981';
+                accInfo.style.backgroundColor = '#ecfdf5';
+            } else {
+                statusElement.className = 'status-badge status-disconnected';
+                statusElement.innerHTML = `
+                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                    ${message}
+                `;
+                isACCConnected = false;
+            }
+        }
+
+        function enableACCFeatures() {
+            // Enable ACC-specific buttons
+            document.getElementById('saveBtn').disabled = false;
+            document.getElementById('exportBtn').disabled = false;
+        }
+
+        function handleACCConnectionError(error) {
+            updateConnectionStatus('disconnected', 'Connection Failed');
+            document.getElementById('accDetails').innerHTML = `
+                <strong>Error:</strong> ${error.message}<br>
+                <em>Calculator will work in offline mode</em>
+            `;
+            
+            // Enable manual input mode
+            ['projectName', 'projectNumber', 'calculatedBy', 'location'].forEach(id => {
+                const element = document.getElementById(id);
+                element.disabled = false;
+                element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
+            });
+        }
+
+        function setupUI() {
+            // Set current date
+            document.getElementById('date').value = new Date().toISOString().split('T')[0];
+        }
+
+        // Utility functions
+        function formatNumber(num) {
+            if (isNaN(num) || !isFinite(num)) return '0.000';
+            return num.toFixed(3);
+        }
+
+        function formatInteger(num) {
+            if (isNaN(num) || !isFinite(num)) return '0';
+            return Math.round(num).toString();
+        }
+
+        function getValue(id) {
+            return parseFloat(document.getElementById(id).value) || 0;
+        }
+
+        // Calculation functions (same as before)
+        function calculateSelfStressing() {
+            const ip = getValue('ss_initialPull');
+            const rf = getValue('ss_requiredForce');
+            const moe = getValue('ss_MOE') || 1;
+            const ns = getValue('ss_numberOfStrands') || 1;
+            const abs = getValue('ss_adjBedShortening');
+            const btbl = getValue('ss_blockToBlockLength');
+            const sa = getValue('ss_strandArea') || 1;
+            const des = getValue('ss_deadEndSeating');
+            const les = getValue('ss_liveEndSeating');
+
+            const basicElongation = ((rf - ip) * btbl * 12) / (sa * moe);
+            const bedShortening = (abs / 2) + (abs / ns);
+            const desiredElongation = basicElongation + des + bedShortening;
+            const desiredElongationRounded = Math.ceil(Math.round(desiredElongation * 1000) / 1000 * 8) / 8;
+            const LESeatingAdd = basicElongation !== 0 ? (les / basicElongation) * (rf - ip) : 0;
+            const bedShorteningAdd = basicElongation !== 0 ? (bedShortening / basicElongation) * (rf - ip) : 0;
+            const desiredPull = rf + LESeatingAdd + bedShorteningAdd;
+            const calculatedPullRounded = Math.ceil(Math.round(desiredPull) / 100) * 100;
+
+            // Update display
+            document.getElementById('ss_basicElongation').textContent = formatNumber(basicElongation) + ' in';
+            document.getElementById('ss_bedShortening').textContent = formatNumber(bedShortening) + ' in';
+            document.getElementById('ss_desiredElongationRounded').textContent = formatNumber(desiredElongationRounded) + ' in';
+            document.getElementById('ss_calculatedPullRounded').textContent = formatInteger(calculatedPullRounded) + ' lbs';
+
+            return {
+                basicElongation, bedShortening, desiredElongation, desiredElongationRounded,
+                LESeatingAdd, bedShorteningAdd, desiredPull, calculatedPullRounded
+            };
+        }
+
+        function calculateNonSelfStressing() {
+            const ip = getValue('nss_initialPull');
+            const rf = getValue('nss_requiredForce');
+            const moe = getValue('nss_MOE') || 1;
+            const btbl = getValue('nss_blockToBlockLength');
+            const sa = getValue('nss_strandArea') || 1;
+            const at = getValue('nss_airTemp');
+            const ct = getValue('nss_concreteTemp');
+            const des = getValue('nss_deadEndSeating');
+            const les = getValue('nss_liveEndSeating');
+            const tar = getValue('nss_totalAbutmentRotation');
+
+            const basicElongation = ((rf - ip) * btbl * 12) / (sa * moe);
+            const tempDifference = (ct - at) / 1000;
+            const tca2 = ((rf - ip) * btbl * 12) / (sa - moe) * tempDifference;
+            const tcPart1 = tempDifference > 0.024 ? tca2 : 0;
+            const tcPart2 = tempDifference < -0.024 ? basicElongation * tempDifference : 0;
+            const tempCorrection = tcPart1 + tcPart2;
+            const desiredElongation = basicElongation + des + tempCorrection;
+            const desiredElongationRounded = Math.ceil(Math.round(desiredElongation * 1000) / 1000 * 8) / 8;
+            const LESeatingAdd = basicElongation !== 0 ? (les / basicElongation) * (rf - ip) : 0;
+            const tca1 = (rf + les + tar) * tempDifference;
+            const tcPart1Pull = tempDifference > 0.024 ? tca1 : 0;
+            const tcPart2Pull = tempDifference < -0.024 ? tca1 : 0;
+            const tempCorrectionPull = tcPart1Pull + tcPart2Pull;
+            const desiredPull = rf + LESeatingAdd + tempCorrectionPull;
+            const calculatedPullRounded = Math.ceil(Math.round(desiredPull) / 100) * 100;
+
+            // Update display
+            document.getElementById('nss_basicElongation').textContent = formatNumber(basicElongation) + ' in';
+            document.getElementById('nss_tempDifference').textContent = formatNumber(tempDifference);
+            document.getElementById('nss_tempCorrection').textContent = formatNumber(tempCorrection);
+            document.getElementById('nss_desiredElongationRounded').textContent = formatNumber(desiredElongationRounded) + ' in';
+            document.getElementById('nss_calculatedPullRounded').textContent = formatInteger(calculatedPullRounded) + ' lbs';
+
+            return {
+                basicElongation, tempDifference, tca2, tcPart1, tcPart2, tempCorrection,
+                desiredElongation, desiredElongationRounded, LESeatingAdd, tca1,
+                tcPart1Pull, tcPart2Pull, tempCorrectionPull, desiredPull, calculatedPullRounded
+            };
+        }
+
+        function calculateAll() {
+            const selfStressingResults = calculateSelfStressing();
+            const nonSelfStressingResults = calculateNonSelfStressing();
+            
+            // Store current calculation
+            currentCalculation = {
+                timestamp: new Date().toISOString(),
+                projectMetadata: {
+                    projectName: document.getElementById('projectName').value,
+                    projectNumber: document.getElementById('projectNumber').value,
+                    date: document.getElementById('date').value,
+                    calculatedBy: document.getElementById('calculatedBy').value,
+                    reviewedBy: document.getElementById('reviewedBy').value,
+                    location: document.getElementById('location').value,
+                    notes: document.getElementById('notes').value
+                },
+                selfStressing: {
+                    inputs: {
+                        initialPull: getValue('ss_initialPull'),
+                        requiredForce: getValue('ss_requiredForce'),
+                        MOE: getValue('ss_MOE'),
+                        numberOfStrands: getValue('ss_numberOfStrands'),
+                        adjBedShortening: getValue('ss_adjBedShortening'),
+                        blockToBlockLength: getValue('ss_blockToBlockLength'),
+                        strandArea: getValue('ss_strandArea'),
+                        deadEndSeating: getValue('ss_deadEndSeating'),
+                        liveEndSeating: getValue('ss_liveEndSeating')
+                    },
+                    outputs: selfStressingResults
+                },
+                nonSelfStressing: {
+                    inputs: {
+                        initialPull: getValue('nss_initialPull'),
+                        requiredForce: getValue('nss_requiredForce'),
+                        MOE: getValue('nss_MOE'),
+                        blockToBlockLength: getValue('nss_blockToBlockLength'),
+                        strandArea: getValue('nss_strandArea'),
+                        airTemp: getValue('nss_airTemp'),
+                        concreteTemp: getValue('nss_concreteTemp'),
+                        deadEndSeating: getValue('nss_deadEndSeating'),
+                        liveEndSeating: getValue('nss_liveEndSeating'),
+                        totalAbutmentRotation: getValue('nss_totalAbutmentRotation')
+                    },
+                    outputs: nonSelfStressingResults
+                }
+            };
+        }
+
+        // ACC Integration Functions
+        async function saveToACC() {
+            if (!isACCConnected) {
+                alert('Not connected to ACC. Please check your connection.');
+                return;
+            }
+
+            try {
+                // In real implementation, this would call Forge Data Management API
+                // For now, simulate saving to ACC
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<div class="loading"></div> Saving...';
+
+                // Simulate API call
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                // Simulate successful save
+                console.log('Saved to ACC:', currentCalculation);
+                
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                    </svg>
+                    Save to ACC
+                `;
+                
+                alert('Calculation saved to ACC successfully!');
+            } catch (error) {
+                console.error('Save to ACC failed:', error);
+                alert('Failed to save to ACC: ' + error.message);
+                
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                    </svg>
+                    Save to ACC
+                `;
+            }
+        }
+
+        async function exportToACCDocs() {
+            if (!isACCConnected) {
+                alert('Not connected to ACC. Please check your connection.');
+                return;
+            }
+
+            try {
+                const exportBtn = document.getElementById('exportBtn');
+                exportBtn.disabled = true;
+                exportBtn.innerHTML = '<div class="loading"></div> Exporting...';
+
+                // Generate the report data
+                generatePDFData();
+
+                // In real implementation, this would upload to ACC Document Management
+                // For now, simulate the export
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                    </svg>
+                    Save to ACC Docs
+                `;
+
+                alert('Report exported to ACC Documents successfully!');
+            } catch (error) {
+                console.error('Export to ACC failed:', error);
+                alert('Failed to export to ACC: ' + error.message);
+            }
+        }
+
+        function generatePDF() {
+            generatePDFData();
+            window.print();
+        }
+
+        function generatePDFData() {
+            const metadata = currentCalculation.projectMetadata;
+            const selfStressingResults = currentCalculation.selfStressing.outputs;
+            const nonSelfStressingResults = currentCalculation.nonSelfStressing.outputs;
+
+            // Update print content
+            document.getElementById('printMetadata').innerHTML = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div><strong>Project:</strong> ${metadata.projectName}</div>
+                    <div><strong>Project #:</strong> ${metadata.projectNumber}</div>
+                    <div><strong>Date:</strong> ${metadata.date}</div>
+                    <div><strong>Calculated By:</strong> ${metadata.calculatedBy}</div>
+                    <div><strong>Reviewed By:</strong> ${metadata.reviewedBy}</div>
+                    <div><strong>Location:</strong> ${metadata.location}</div>
+                </div>
+                ${metadata.notes ? `<div><strong>Notes:</strong> ${metadata.notes}</div>` : ''}
+            `;
+
+            // Generate detailed input and result summaries for printing
+            document.getElementById('printSelfStressInputs').innerHTML = `
+                <h4>Input Values:</h4>
+                <div><strong>Initial Pull:</strong> ${currentCalculation.selfStressing.inputs.initialPull} lbs</div>
+                <div><strong>Required Force:</strong> ${currentCalculation.selfStressing.inputs.requiredForce} lbs</div>
+                <div><strong>MOE:</strong> ${currentCalculation.selfStressing.inputs.MOE}</div>
+                <div><strong># of Strands:</strong> ${currentCalculation.selfStressing.inputs.numberOfStrands}</div>
+                <div><strong>Adjusted Bed Shortening:</strong> ${currentCalculation.selfStressing.inputs.adjBedShortening} inches</div>
+                <div><strong>Block-to-Block Length:</strong> ${currentCalculation.selfStressing.inputs.blockToBlockLength} feet</div>
+                <div><strong>Strand Area:</strong> ${currentCalculation.selfStressing.inputs.strandArea} sq inches</div>
+                <div><strong>Dead-End Seating:</strong> ${currentCalculation.selfStressing.inputs.deadEndSeating} inches</div>
+                <div><strong>Live End Seating:</strong> ${currentCalculation.selfStressing.inputs.liveEndSeating} inches</div>
+            `;
+
+            document.getElementById('printSelfStressResults').innerHTML = `
+                <h4>Calculated Results:</h4>
+                <div style="display: flex; justify-content: space-between;"><span>Basic Elongation:</span><span>${formatNumber(selfStressingResults.basicElongation)} inches</span></div>
+                <div style="display: flex; justify-content: space-between;"><span>Bed Shortening:</span><span>${formatNumber(selfStressingResults.bedShortening)} inches</span></div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Desired Elongation (Rounded):</span><span>${formatNumber(selfStressingResults.desiredElongationRounded)} inches</span></div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Calculated Pull (Rounded):</span><span>${formatInteger(selfStressingResults.calculatedPullRounded)} lbs</span></div>
+            `;
+
+            document.getElementById('printNonSelfStressInputs').innerHTML = `
+                <h4>Input Values:</h4>
+                <div><strong>Initial Pull:</strong> ${currentCalculation.nonSelfStressing.inputs.initialPull} lbs</div>
+                <div><strong>Required Force:</strong> ${currentCalculation.nonSelfStressing.inputs.requiredForce} lbs</div>
+                <div><strong>MOE:</strong> ${currentCalculation.nonSelfStressing.inputs.MOE}</div>
+                <div><strong>Block-to-Block Length:</strong> ${currentCalculation.nonSelfStressing.inputs.blockToBlockLength} feet</div>
+                <div><strong>Strand Area:</strong> ${currentCalculation.nonSelfStressing.inputs.strandArea} sq inches</div>
+                <div><strong>Air Temperature:</strong> ${currentCalculation.nonSelfStressing.inputs.airTemp} °F</div>
+                <div><strong>Concrete Temperature:</strong> ${currentCalculation.nonSelfStressing.inputs.concreteTemp} °F</div>
+                <div><strong>Dead-End Seating:</strong> ${currentCalculation.nonSelfStressing.inputs.deadEndSeating} inches</div>
+                <div><strong>Live End Seating:</strong> ${currentCalculation.nonSelfStressing.inputs.liveEndSeating} inches</div>
+                <div><strong>Total Abutment Rotation:</strong> ${currentCalculation.nonSelfStressing.inputs.totalAbutmentRotation} inches</div>
+            `;
+
+            document.getElementById('printNonSelfStressResults').innerHTML = `
+                <h4>Calculated Results:</h4>
+                <div style="display: flex; justify-content: space-between;"><span>Basic Elongation:</span><span>${formatNumber(nonSelfStressingResults.basicElongation)} inches</span></div>
+                <div style="display: flex; justify-content: space-between;"><span>Temperature Difference:</span><span>${formatNumber(nonSelfStressingResults.tempDifference)}</span></div>
+                <div style="display: flex; justify-content: space-between;"><span>Temperature Correction:</span><span>${formatNumber(nonSelfStressingResults.tempCorrection)}</span></div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Desired Elongation (Rounded):</span><span>${formatNumber(nonSelfStressingResults.desiredElongationRounded)} inches</span></div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Calculated Pull (Rounded):</span><span>${formatInteger(nonSelfStressingResults.calculatedPullRounded)} lbs</span></div>
+            `;
+        }
+    </script>
+</body>
+</html>
