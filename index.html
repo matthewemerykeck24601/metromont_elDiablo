@@ -592,6 +592,14 @@
     <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
     
     <script>
+        // ========================================
+        // ACC CONNECT CONFIGURATION
+        // Replace these with your actual ACC Connect credentials
+        // ========================================
+        const ACC_CLIENT_ID = 'your_client_id_here';
+        const ACC_CALLBACK_URL = 'https://yourusername.github.io/pppqc-acc-calculator';
+        const ACC_ENVIRONMENT = 'production'; // or 'staging' for testing
+        
         // ACC/Forge Integration Variables
         let forgeAccessToken = null;
         let projectId = null;
@@ -627,6 +635,11 @@
 
         async function handleACCAuthentication() {
             try {
+                // Check if we have the required configuration
+                if (ACC_CLIENT_ID === 'your_client_id_here') {
+                    throw new Error('Please configure your ACC Connect credentials in the HTML file');
+                }
+                
                 // This would normally handle the OAuth flow
                 // For now, we'll simulate a successful connection
                 updateConnectionStatus('connected', 'Connected to ACC');
