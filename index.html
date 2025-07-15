@@ -645,7 +645,7 @@ function showAuthButton() {
 
 function authenticateWithACC() {
     const authUrl = `https://developer.api.autodesk.com/authentication/v2/authorize?` +
-        `response_type=token&` +
+        `response_type=code&` +
         `client_id=${ACC_CLIENT_ID}&` +
         `redirect_uri=${encodeURIComponent(ACC_CALLBACK_URL)}&` +
         `scope=data:read account:read`;
@@ -880,18 +880,11 @@ function onProjectSelected() {
     try {
         // Check if we have an authorization code from ACC
         const urlParams = new URLSearchParams(window.location.search);
-        // Check for access token in URL hash (implicit flow)
-const urlHash = window.location.hash.substring(1);
-const hashParams = new URLSearchParams(urlHash);
-const accessToken = hashParams.get('access_token');
-
-if (accessToken) {
-    forgeAccessToken = accessToken;
-    await loadRealProjectData();
-    // Clean URL
-    window.location.hash = '';
-} 
-    else {
+        const authCode = urlParams.get('code');
+        
+        if (authCode) {
+            await handleAuthCode(authCode);
+        } else {
             // Check if we have a stored token
             const storedToken = getStoredToken();
             if (storedToken && !isTokenExpired(storedToken)) {
