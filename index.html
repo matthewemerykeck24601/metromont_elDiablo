@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="frame-ancestors 'self' https://*.autodesk.com https://*.autodeskbim360.com https://*.acc.autodesk.com;">
     <title>PPPQC Stressing Calculator - ACC Connect</title>
     <style>
         * {
@@ -289,7 +290,33 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+/* Embedded mode styles for ACC Custom Cards */
+.embedded-mode {
+    background: white;
+}
 
+.embedded-mode .container {
+    padding: 8px !important;
+}
+
+.embedded-mode .header {
+    margin-bottom: 8px;
+    padding: 12px;
+}
+
+.embedded-mode .card {
+    margin-bottom: 8px;
+    padding: 12px;
+}
+
+.embedded-mode .grid-cols-3 {
+    grid-template-columns: 1fr 1fr;
+}
+
+.embedded-mode .acc-info {
+    margin-bottom: 8px;
+    padding: 8px;
+}
         #pdf-content {
             display: none;
         }
@@ -612,10 +639,18 @@
 
         // Initialize ACC Connection
         document.addEventListener('DOMContentLoaded', function() {
-            initializeACCConnection();
-            setupUI();
-            calculateAll();
-        });
+    // Detect if we're running in an iframe (ACC Custom Card)
+    if (window.self !== window.top) {
+        document.body.classList.add('embedded-mode');
+        // Adjust layout for embedded context
+        document.querySelector('.container').style.maxWidth = '100%';
+        document.querySelector('.container').style.padding = '8px';
+    }
+    
+    initializeACCConnection();
+    setupUI();
+    calculateAll();
+});
 
         // ACC/Forge Authentication and Setup
         async function initializeACCConnection() {
