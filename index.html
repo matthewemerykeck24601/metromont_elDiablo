@@ -776,10 +776,12 @@ function onProjectSelected() {
     
     // Enable all fields for manual entry
     ['projectName', 'projectNumber', 'calculatedBy', 'location'].forEach(id => {
-        const element = document.getElementById(id);
-        element.disabled = false;
+    const element = document.getElementById(id);
+    element.disabled = false;
+    if (element.placeholder) {
         element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter or select');
-    });
+    }
+});
     
     // Show that it's simulation mode
     document.getElementById('accDetails').innerHTML = `
