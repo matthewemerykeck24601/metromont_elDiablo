@@ -927,13 +927,15 @@ function onProjectSelected() {
     updateConnectionStatus('connected', 'Simulation Mode - Ready to Use');
     
     // Enable all fields for manual entry
-    ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
-        const element = document.getElementById(id);
+   ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) {
         element.disabled = false;
-        if (element.placeholder) {
+        if (element.placeholder && element.placeholder.includes('Loading from ACC...')) {
             element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter or select');
         }
-    });
+    }
+});
     
     // Handle dropdown separately
     const projectSelect = document.getElementById('projectName');
