@@ -928,13 +928,17 @@ function onProjectSelected() {
     updateConnectionStatus('connected', 'Simulation Mode - Ready to Use');
     
     // Enable all fields for manual entry
-    ['projectName', 'projectNumber', 'calculatedBy', 'location'].forEach(id => {
-    const element = document.getElementById(id);
-    element.disabled = false;
-    if (element.placeholder) {
-        element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter or select');
-    }
-});
+    ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
+        const element = document.getElementById(id);
+        element.disabled = false;
+        if (element.placeholder) {
+            element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter or select');
+        }
+    });
+    
+    // Handle dropdown separately
+    const projectSelect = document.getElementById('projectName');
+    projectSelect.disabled = false;
     
     // Show that it's simulation mode
     document.getElementById('accDetails').innerHTML = `
