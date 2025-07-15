@@ -657,6 +657,8 @@ async function handleAuthCode(code) {
     try {
         updateConnectionStatus('connected', 'Authenticating...');
         
+        console.log('Authorization code:', code);
+        
         const tokenResponse = await fetch('/.netlify/functions/auth', {
             method: 'POST',
             headers: {
@@ -668,11 +670,16 @@ async function handleAuthCode(code) {
             })
         });
         
+        console.log('Token response status:', tokenResponse.status);
+        
+        const responseText = await tokenResponse.text();
+        console.log('Token response:', responseText);
+        
         if (!tokenResponse.ok) {
-            throw new Error('Failed to get access token');
+            throw new Error(`Failed to get access token: ${responseText}`);
         }
         
-        const tokenData = await tokenResponse.json();
+        const tokenData = JSON.parse(responseText);
         forgeAccessToken = tokenData.access_token;
         
         storeToken(tokenData);
@@ -685,7 +692,6 @@ async function handleAuthCode(code) {
         handleACCConnectionError(error);
     }
 }
-
 function storeToken(tokenData) {
     const expirationTime = Date.now() + (tokenData.expires_in * 1000);
     const tokenInfo = {
