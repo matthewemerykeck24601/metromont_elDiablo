@@ -633,6 +633,148 @@
         let userProfile = null;
         let isACCConnected = false;
 
+// OAuth and Token Management
+function showAuthButton() {
+    updateConnectionStatus('disconnected', 'Click to Connect to ACC');
+    document.getElementById('accStatus').innerHTML = `
+        <button onclick="authenticateWithACC()" class="btn" style="background: #059669; color: white; border: none; padding: 4px 8px; border-radius: 4px;">
+            Connect to ACC
+        </button>
+    `;
+}
+
+function authenticateWithACC() {
+    const authUrl = `https://developer.api.autodesk.com/authentication/v2/authorize?` +
+        `response_type=code&` +
+        `client_id=${ACC_CLIENT_ID}&` +
+        `redirect_uri=${encodeURIComponent(ACC_CALLBACK_URL)}&` +
+        `scope=data:read data:write account:read`;
+    
+    window.location.href = authUrl;
+}
+
+async function handleAuthCode(code) {
+    try {
+        updateConnectionStatus('connected', 'Authenticating...');
+        
+        // Exchange code for token
+        const tokenResponse = await fetch('https://developer.api.autodesk.com/authentication/v2/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                grant_type: 'authorization_code',
+                code: code,
+                redirect_uri: ACC_CALLBACK_URL,
+                client_id: ACC_CLIENT_ID
+            })
+        });
+        
+        if (!tokenResponse.ok) {
+            throw new Error('Failed to get access token');
+        }
+        
+        const tokenData = await tokenResponse.json();
+        forgeAccessToken = tokenData.access_token;
+        
+        // Store token with expiration
+        storeToken(tokenData);
+        
+        // Load real project data
+        await loadRealProjectData();
+        
+        // Remove code from URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+    } catch (error) {
+        console.error('Authentication failed:', error);
+        handleACCConnectionError(error);
+    }
+}
+
+function storeToken(tokenData) {
+    const expirationTime = Date.now() + (tokenData.expires_in * 1000);
+    const tokenInfo = {
+        access_token: tokenData.access_token,
+        expires_at: expirationTime
+    };
+    sessionStorage.setItem('forge_token', JSON.stringify(tokenInfo));
+}
+
+function getStoredToken() {
+    const stored = sessionStorage.getItem('forge_token');
+    return stored ? JSON.parse(stored) : null;
+}
+
+function isTokenExpired(tokenInfo) {
+    return Date.now() >= tokenInfo.expires_at;
+}
+
+async function loadRealProjectData() {
+    try {
+        updateConnectionStatus('connected', 'Loading Projects...');
+        
+        // Get user's hubs
+        const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+        
+        if (!hubsResponse.ok) {
+            throw new Error('Failed to load hubs');
+        }
+        
+        const hubsData = await hubsResponse.json();
+        
+        // Get projects from first hub
+        if (hubsData.data && hubsData.data.length > 0) {
+            const hubId = hubsData.data[0].id;
+            await loadProjectsFromHub(hubId);
+        }
+        
+        updateConnectionStatus('connected', 'Connected to ACC');
+        isACCConnected = true;
+        enableACCFeatures();
+        
+    } catch (error) {
+        console.error('Failed to load project data:', error);
+        handleACCConnectionError(error);
+    }
+}
+
+async function loadProjectsFromHub(hubId) {
+    const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
+        headers: {
+            'Authorization': `Bearer ${forgeAccessToken}`
+        }
+    });
+    
+    if (!projectsResponse.ok) {
+        throw new Error('Failed to load projects');
+    }
+    
+    const projectsData = await projectsResponse.json();
+    
+    // Convert to our format
+    const projects = projectsData.data.map(project => ({
+        id: project.id,
+        name: project.attributes.name,
+        number: project.attributes.extension?.data?.projectNumber || '',
+        location: project.attributes.extension?.data?.location || ''
+    }));
+    
+    populateProjectDropdown(projects);
+    
+    // Auto-select first project if available
+    if (projects.length > 0) {
+        const projectSelect = document.getElementById('projectName');
+        projectSelect.value = projects[0].id;
+        onProjectSelected();
+    }
+}
+
         // Project Management Functions
 let userProjects = [];
 
@@ -736,9 +878,23 @@ function onProjectSelected() {
         // ACC/Forge Authentication and Setup
         async function initializeACCConnection() {
     try {
-        // For now, always use simulation mode
-        // TODO: Add OAuth authentication later
-        simulateACCEnvironment();
+        // Check if we have an authorization code from ACC
+        const urlParams = new URLSearchParams(window.location.search);
+        const authCode = urlParams.get('code');
+        
+        if (authCode) {
+            await handleAuthCode(authCode);
+        } else {
+            // Check if we have a stored token
+            const storedToken = getStoredToken();
+            if (storedToken && !isTokenExpired(storedToken)) {
+                forgeAccessToken = storedToken.access_token;
+                await loadRealProjectData();
+            } else {
+                // Need to authenticate
+                showAuthButton();
+            }
+        }
     } catch (error) {
         console.error('Connection Error:', error);
         handleACCConnectionError(error);
@@ -806,27 +962,33 @@ function onProjectSelected() {
         }
 
         function populateProjectData(projectData) {
-            document.getElementById('projectName').value = projectData.name || '';
-            document.getElementById('projectNumber').value = projectData.number || '';
-            document.getElementById('calculatedBy').value = projectData.userId || '';
-            document.getElementById('location').value = projectData.location || '';
-            
-            // Enable fields and show auto-population indicator
-            ['projectName', 'projectNumber', 'calculatedBy', 'location'].forEach(id => {
-                const element = document.getElementById(id);
-                element.disabled = false;
-                element.style.backgroundColor = '#f0f9ff'; // Light blue to indicate auto-populated
-            });
-            
-            document.getElementById('projectSource').style.display = 'inline-flex';
-            
-            document.getElementById('accDetails').innerHTML = `
-                <strong>Project:</strong> ${projectData.name}<br>
-                <strong>User:</strong> ${projectData.userId}<br>
-                <strong>Connected:</strong> ${new Date().toLocaleString()}
-            `;
-        }
-
+    // Don't auto-populate if user has made selections
+    if (!document.getElementById('projectName').value) {
+        document.getElementById('projectName').value = projectData.name || '';
+    }
+    
+    if (!document.getElementById('projectNumber').value) {
+        document.getElementById('projectNumber').value = projectData.number || '';
+    }
+    
+    if (!document.getElementById('calculatedBy').value) {
+        document.getElementById('calculatedBy').value = projectData.userId || '';
+    }
+    
+    if (!document.getElementById('location').value) {
+        document.getElementById('location').value = projectData.location || '';
+    }
+    
+    // Enable fields
+    ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
+        const element = document.getElementById(id);
+        element.disabled = false;
+        element.style.backgroundColor = '#f0f9ff';
+    });
+    
+    document.getElementById('projectSource').style.display = 'inline-flex';
+    document.getElementById('projectSource').textContent = 'Connected to ACC';
+}
         function updateConnectionStatus(status, message) {
             const statusElement = document.getElementById('accStatus');
             const accInfo = document.getElementById('accInfo');
