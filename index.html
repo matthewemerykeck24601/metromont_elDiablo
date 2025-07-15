@@ -1037,7 +1037,9 @@ if (accessToken) {
 }
 
         function handleACCConnectionError(error) {
-            updateConnectionStatus('disconnected', 'Connection Failed');
+    updateConnectionStatus('disconnected', 'Connection Failed');
+    console.error('Full error details:', error);
+    alert('Connection Error: ' + error.message);
             document.getElementById('accDetails').innerHTML = `
                 <strong>Error:</strong> ${error.message}<br>
                 <em>Calculator will work in offline mode</em>
