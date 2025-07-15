@@ -1,4 +1,0 @@
-[[headers]]
-  for = "/*"
-  [headers.values]
-    Content-Security-Policy = "frame-ancestors 'self' https://*.autodesk.com https://*.autodeskbim360.com https://*.acc.autodesk.com https://acc.autodesk.com"
