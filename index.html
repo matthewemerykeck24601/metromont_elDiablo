@@ -738,19 +738,15 @@ function onProjectSelected() {
 
         // ACC/Forge Authentication and Setup
         async function initializeACCConnection() {
-            try {
-                // Check if we're running in ACC Connect context
-                if (window.location.search.includes('code=') || window.sessionStorage.getItem('forge_access_token')) {
-                    await handleACCAuthentication();
-                } else {
-                    // For development/testing - simulate ACC environment
-                    simulateACCEnvironment();
-                }
-            } catch (error) {
-                console.error('ACC Connection Error:', error);
-                handleACCConnectionError(error);
-            }
-        }
+    try {
+        // For now, always use simulation mode
+        // TODO: Add OAuth authentication later
+        simulateACCEnvironment();
+    } catch (error) {
+        console.error('Connection Error:', error);
+        handleACCConnectionError(error);
+    }
+}
 
         async function handleACCAuthentication() {
             try {
@@ -775,18 +771,25 @@ function onProjectSelected() {
         }
 
         function simulateACCEnvironment() {
-            // Simulate ACC connection for development
-            setTimeout(() => {
-    updateConnectionStatus('connected', 'Connected to ACC (Development Mode)');
+    // Immediate connection in simulation mode
+    updateConnectionStatus('connected', 'Simulation Mode - Ready to Use');
     
-    // Set user info but let them select project from dropdown
-    document.getElementById('calculatedBy').value = 'john.engineer@company.com';
-    document.getElementById('calculatedBy').disabled = false;
-    document.getElementById('calculatedBy').style.backgroundColor = '#f0f9ff';
+    // Enable all fields for manual entry
+    ['projectName', 'projectNumber', 'calculatedBy', 'location'].forEach(id => {
+        const element = document.getElementById(id);
+        element.disabled = false;
+        element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter or select');
+    });
+    
+    // Show that it's simulation mode
+    document.getElementById('accDetails').innerHTML = `
+        <strong>Mode:</strong> Simulation Mode<br>
+        <strong>Features:</strong> All calculations working, manual project entry<br>
+        <strong>Status:</strong> Ready for use
+    `;
     
     enableACCFeatures();
-}, 2000);
-        }
+}
 
         async function getProjectContext() {
             // In real implementation, this would call Forge APIs
