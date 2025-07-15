@@ -387,9 +387,11 @@
                 </span>
             </h3>
             <div class="grid grid-cols-3">
-                <div class="form-group">
+                html<div class="form-group">
                     <label for="projectName">Project Name</label>
-                    <input type="text" id="projectName" placeholder="Loading from ACC..." disabled>
+                    <select id="projectName" onchange="onProjectSelected()" disabled>
+                    <option value="">Loading projects from ACC...</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label for="projectNumber">Project Number</label>
@@ -634,6 +636,88 @@
         let userProfile = null;
         let isACCConnected = false;
 
+        // Project Management Functions
+let userProjects = [];
+
+async function loadUserProjects() {
+    try {
+        if (!isACCConnected) {
+            // Simulate projects for development mode
+            const mockProjects = [
+                { id: 'proj1', name: 'Sample Bridge Construction', number: 'BR-2024-001', location: 'Charlotte, NC' },
+                { id: 'proj2', name: 'Highway Overpass Project', number: 'HW-2024-003', location: 'Raleigh, NC' },
+                { id: 'proj3', name: 'Commercial Building Complex', number: 'CB-2024-007', location: 'Durham, NC' }
+            ];
+            populateProjectDropdown(mockProjects);
+            return;
+        }
+
+        // In real implementation, this would call Forge APIs:
+        // 1. GET /project/v1/hubs (get user's hubs/accounts)
+        // 2. GET /project/v1/hubs/{hub_id}/projects (get projects in each hub)
+        
+        const projects = await fetchUserProjectsFromForge();
+        populateProjectDropdown(projects);
+        
+    } catch (error) {
+        console.error('Failed to load projects:', error);
+        document.getElementById('projectName').innerHTML = '<option value="">Failed to load projects</option>';
+    }
+}
+
+async function fetchUserProjectsFromForge() {
+    // This would make actual Forge API calls
+    // For now, simulating the API response structure
+    return [
+        { 
+            id: 'b.abc123-def456-ghi789', 
+            name: 'Current ACC Project', 
+            number: 'ACC-2024-' + Math.floor(Math.random() * 1000),
+            location: 'Auto-detected Location'
+        }
+    ];
+}
+
+function populateProjectDropdown(projects) {
+    userProjects = projects;
+    const projectSelect = document.getElementById('projectName');
+    
+    // Clear existing options
+    projectSelect.innerHTML = '<option value="">Select a project...</option>';
+    
+    // Add projects to dropdown
+    projects.forEach(project => {
+        const option = document.createElement('option');
+        option.value = project.id;
+        option.textContent = `${project.name} (${project.number || 'No Number'})`;
+        option.dataset.projectNumber = project.number || '';
+        option.dataset.location = project.location || '';
+        projectSelect.appendChild(option);
+    });
+    
+    // Enable the dropdown
+    projectSelect.disabled = false;
+    projectSelect.style.backgroundColor = '';
+}
+
+function onProjectSelected() {
+    const projectSelect = document.getElementById('projectName');
+    const selectedOption = projectSelect.selectedOptions[0];
+    
+    if (selectedOption && selectedOption.value) {
+        // Auto-populate related fields
+        document.getElementById('projectNumber').value = selectedOption.dataset.projectNumber || '';
+        document.getElementById('location').value = selectedOption.dataset.location || '';
+        
+        // Enable other fields
+        document.getElementById('projectNumber').disabled = false;
+        document.getElementById('location').disabled = false;
+        
+        // Update project source indicator
+        document.getElementById('projectSource').style.display = 'inline-flex';
+        document.getElementById('projectSource').textContent = 'Selected from ACC';
+    }
+}
         // Global calculation variables
         let currentCalculation = null;
 
@@ -693,18 +777,15 @@
         function simulateACCEnvironment() {
             // Simulate ACC connection for development
             setTimeout(() => {
-                updateConnectionStatus('connected', 'Connected to ACC (Development Mode)');
-                
-                // Simulate project data
-                populateProjectData({
-                    name: 'Sample Construction Project',
-                    number: 'PROJ-2024-001',
-                    location: 'Charlotte, NC',
-                    userId: 'john.engineer@company.com'
-                });
-                
-                enableACCFeatures();
-            }, 2000);
+    updateConnectionStatus('connected', 'Connected to ACC (Development Mode)');
+    
+    // Set user info but let them select project from dropdown
+    document.getElementById('calculatedBy').value = 'john.engineer@company.com';
+    document.getElementById('calculatedBy').disabled = false;
+    document.getElementById('calculatedBy').style.backgroundColor = '#f0f9ff';
+    
+    enableACCFeatures();
+}, 2000);
         }
 
         async function getProjectContext() {
@@ -772,10 +853,13 @@
         }
 
         function enableACCFeatures() {
-            // Enable ACC-specific buttons
-            document.getElementById('saveBtn').disabled = false;
-            document.getElementById('exportBtn').disabled = false;
-        }
+    // Enable ACC-specific buttons
+    document.getElementById('saveBtn').disabled = false;
+    document.getElementById('exportBtn').disabled = false;
+    
+    // Load user's projects
+    loadUserProjects();
+}
 
         function handleACCConnectionError(error) {
             updateConnectionStatus('disconnected', 'Connection Failed');
