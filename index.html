@@ -657,17 +657,14 @@ async function handleAuthCode(code) {
     try {
         updateConnectionStatus('connected', 'Authenticating...');
         
-        // Exchange code for token
-        const tokenResponse = await fetch('https://developer.api.autodesk.com/authentication/v2/token', {
+        const tokenResponse = await fetch('/.netlify/functions/auth', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Type': 'application/json',
             },
-            body: new URLSearchParams({
-                grant_type: 'authorization_code',
+            body: JSON.stringify({
                 code: code,
-                redirect_uri: ACC_CALLBACK_URL,
-                client_id: ACC_CLIENT_ID
+                redirect_uri: ACC_CALLBACK_URL
             })
         });
         
@@ -678,13 +675,9 @@ async function handleAuthCode(code) {
         const tokenData = await tokenResponse.json();
         forgeAccessToken = tokenData.access_token;
         
-        // Store token with expiration
         storeToken(tokenData);
-        
-        // Load real project data
         await loadRealProjectData();
         
-        // Remove code from URL
         window.history.replaceState({}, document.title, window.location.pathname);
         
     } catch (error) {
