@@ -1,0 +1,311 @@
+// ACC Authentication Configuration
+const ACC_CLIENT_ID = 'phUPKRBuqECpJUoBmRuKdKhSP3ZTRALH4LMWKAzAnymnYkQU';
+const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
+
+// Global authentication state
+let forgeAccessToken = null;
+let isAuthenticated = false;
+let authCheckComplete = false;
+
+// UI Elements
+const authProcessing = document.getElementById('authProcessing');
+const authTitle = document.getElementById('authTitle');
+const authMessage = document.getElementById('authMessage');
+
+// Authentication Flow
+async function initializeApp() {
+    try {
+        updateAuthStatus('Checking authentication...', 'Verifying your login status...');
+        
+        // Check for OAuth callback first
+        const urlParams = new URLSearchParams(window.location.search);
+        const authCode = urlParams.get('code');
+        const error = urlParams.get('error');
+        
+        if (error) {
+            throw new Error(`Authentication error: ${error}`);
+        }
+        
+        if (authCode) {
+            // Handle OAuth callback
+            await handleOAuthCallback(authCode);
+        } else {
+            // Check for existing valid token
+            const storedToken = getStoredToken();
+            if (storedToken && !isTokenExpired(storedToken)) {
+                forgeAccessToken = storedToken.access_token;
+                updateAuthStatus('Verifying token...', 'Checking your authentication...');
+                
+                // Verify token is still valid by making a test API call
+                const isValid = await verifyToken(forgeAccessToken);
+                if (isValid) {
+                    await completeAuthentication();
+                } else {
+                    // Token is invalid, clear it and start fresh
+                    clearStoredToken();
+                    await startAuthFlow();
+                }
+            } else {
+                // No valid token, start authentication flow
+                await startAuthFlow();
+            }
+        }
+    } catch (error) {
+        console.error('App initialization failed:', error);
+        showAuthError(error.message);
+    }
+}
+
+async function startAuthFlow() {
+    updateAuthStatus('Redirecting to Login...', 'You will be redirected to Autodesk to sign in...');
+    
+    // Small delay to show the message
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    const authUrl = `https://developer.api.autodesk.com/authentication/v2/authorize?` +
+        `response_type=code&` +
+        `client_id=${ACC_CLIENT_ID}&` +
+        `redirect_uri=${encodeURIComponent(ACC_CALLBACK_URL)}&` +
+        `scope=${encodeURIComponent('data:read account:read')}&` +
+        `state=castlink-auth`;
+    
+    console.log('Redirecting to auth URL:', authUrl);
+    window.location.href = authUrl;
+}
+
+async function handleOAuthCallback(authCode) {
+    try {
+        updateAuthStatus('Processing Login...', 'Exchanging authorization code for access token...');
+        
+        const tokenResponse = await fetch('/.netlify/functions/auth', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                code: authCode,
+                redirect_uri: ACC_CALLBACK_URL
+            })
+        });
+        
+        if (!tokenResponse.ok) {
+            const errorText = await tokenResponse.text();
+            throw new Error(`Token exchange failed: ${errorText}`);
+        }
+        
+        const tokenData = await tokenResponse.json();
+        
+        if (tokenData.error) {
+            throw new Error(`Auth error: ${tokenData.error}`);
+        }
+        
+        if (!tokenData.access_token) {
+            throw new Error('No access token received');
+        }
+        
+        forgeAccessToken = tokenData.access_token;
+        storeToken(tokenData);
+        
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        await completeAuthentication();
+        
+    } catch (error) {
+        console.error('OAuth callback failed:', error);
+        throw error;
+    }
+}
+
+async function completeAuthentication() {
+    try {
+        updateAuthStatus('Loading Projects...', 'Connecting to your Autodesk Construction Cloud account...');
+        
+        // Test the connection and load basic account info
+        const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+        
+        if (!hubsResponse.ok) {
+            throw new Error('Failed to connect to ACC');
+        }
+        
+        const hubsData = await hubsResponse.json();
+        const accHubs = hubsData.data.filter(hub => 
+            hub.attributes.extension?.type === 'hubs:autodesk.bim360:Account'
+        );
+        
+        if (accHubs.length === 0) {
+            throw new Error('No ACC hubs found in your account');
+        }
+        
+        isAuthenticated = true;
+        authCheckComplete = true;
+        
+        updateAuthStatus('Success!', 'Successfully connected to Autodesk Construction Cloud');
+        
+        // Small delay to show success message
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Hide auth overlay and show main content
+        authProcessing.classList.remove('active');
+        document.body.classList.remove('auth-loading');
+        
+        // Initialize page interactions
+        initializePageInteractions();
+        
+        console.log('Authentication completed successfully');
+        
+    } catch (error) {
+        console.error('Authentication completion failed:', error);
+        throw error;
+    }
+}
+
+async function verifyToken(token) {
+    try {
+        const response = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        return response.ok;
+    } catch (error) {
+        console.error('Token verification failed:', error);
+        return false;
+    }
+}
+
+function updateAuthStatus(title, message) {
+    authTitle.textContent = title;
+    authMessage.textContent = message;
+}
+
+function showAuthError(message) {
+    updateAuthStatus('Authentication Failed', message);
+    authProcessing.innerHTML = `
+        <div class="auth-processing-content">
+            <div style="color: #dc2626; font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
+            <h3 style="color: #dc2626;">Authentication Failed</h3>
+            <p style="color: #6b7280; margin-bottom: 1.5rem;">${message}</p>
+            <button onclick="location.reload()" style="background: #059669; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem;">
+                Try Again
+            </button>
+        </div>
+    `;
+}
+
+// Token Management
+function storeToken(tokenData) {
+    const expirationTime = Date.now() + (tokenData.expires_in * 1000);
+    const tokenInfo = {
+        access_token: tokenData.access_token,
+        expires_at: expirationTime,
+        stored_at: Date.now()
+    };
+    sessionStorage.setItem('forge_token', JSON.stringify(tokenInfo));
+    localStorage.setItem('forge_token_backup', JSON.stringify(tokenInfo)); // Backup in localStorage
+    console.log('Token stored successfully');
+}
+
+function getStoredToken() {
+    // Try sessionStorage first, then localStorage
+    let stored = sessionStorage.getItem('forge_token');
+    if (!stored) {
+        stored = localStorage.getItem('forge_token_backup');
+        if (stored) {
+            // Restore to sessionStorage
+            sessionStorage.setItem('forge_token', stored);
+        }
+    }
+    return stored ? JSON.parse(stored) : null;
+}
+
+function isTokenExpired(tokenInfo) {
+    const now = Date.now();
+    const expiresAt = tokenInfo.expires_at;
+    const timeUntilExpiry = expiresAt - now;
+    
+    // Consider token expired if it expires in less than 5 minutes
+    return timeUntilExpiry < (5 * 60 * 1000);
+}
+
+function clearStoredToken() {
+    sessionStorage.removeItem('forge_token');
+    localStorage.removeItem('forge_token_backup');
+    console.log('Token cleared');
+}
+
+// Navigation functions
+function navigateToModule(module) {
+    if (!isAuthenticated) {
+        showNotification('Please wait for authentication to complete');
+        return;
+    }
+    
+    switch(module) {
+        case 'quality':
+            window.location.href = 'quality-control.html';
+            break;
+        case 'design':
+            showNotification('Design Development coming Q3 2025');
+            break;
+        case 'production':
+            showNotification('Production Scheduling coming Q2 2025');
+            break;
+        case 'inventory':
+            showNotification('Inventory Tracking coming Q1 2025');
+            break;
+        case 'haul':
+            showNotification('Haul Management coming Q3 2025');
+            break;
+        case 'fab':
+            showNotification('Fab Shop coming Q2 2025');
+            break;
+        default:
+            showNotification('Module not yet available');
+    }
+}
+
+function showNotification(message) {
+    const notification = document.getElementById('notification');
+    const notificationText = document.getElementById('notificationText');
+    
+    notificationText.textContent = message;
+    notification.classList.add('show');
+    
+    setTimeout(() => {
+        notification.classList.remove('show');
+    }, 3000);
+}
+
+function initializePageInteractions() {
+    // Add interactive effects to module cards
+    const cards = document.querySelectorAll('.module-card');
+    cards.forEach(card => {
+        card.addEventListener('mouseenter', function() {
+            this.style.transform = 'translateY(-8px)';
+        });
+        
+        card.addEventListener('mouseleave', function() {
+            this.style.transform = 'translateY(0)';
+        });
+    });
+}
+
+// Global auth state checker for other pages
+window.CastLinkAuth = {
+    isAuthenticated: () => isAuthenticated,
+    getToken: () => forgeAccessToken,
+    waitForAuth: async () => {
+        while (!authCheckComplete) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        return isAuthenticated;
+    }
+};
+
+// Initialize the app on page load
+document.addEventListener('DOMContentLoaded', initializeApp);
