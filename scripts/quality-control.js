@@ -16,6 +16,7 @@ let currentCalculation = null;
 let userProjects = [];
 let currentProjectBucketKey = null;
 let bedQCFolderId = null;
+let projectTopFolderId = null;
 
 // Form Instance Management
 let currentReportId = null;
@@ -178,13 +179,232 @@ function clearStoredToken() {
 }
 
 // =================================================================
-// ACC DATA MANAGEMENT API FUNCTIONS (Simplified Approach)
+// ACC DATA MANAGEMENT API FUNCTIONS (FIXED APPROACH)
 // =================================================================
 
-// Save Bed QC Report directly to ACC Project (simplified approach)
+// Get project's top folder
+async function getProjectTopFolder(projectId) {
+    try {
+        const response = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to get project folders: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const topFolders = data.data.filter(folder =>
+            folder.attributes.name === 'Project Files' ||
+            folder.attributes.extension?.type === 'folders:autodesk.bim360:Folder'
+        );
+
+        if (topFolders.length > 0) {
+            projectTopFolderId = topFolders[0].id;
+            console.log('Found project top folder:', projectTopFolderId);
+            return topFolders[0].id;
+        } else {
+            throw new Error('No accessible folders found in project');
+        }
+    } catch (error) {
+        console.error('Error getting project top folder:', error);
+        throw error;
+    }
+}
+
+// Create or find BedQC folder
+async function ensureBedQCFolder(projectId, parentFolderId) {
+    try {
+        console.log('Ensuring BedQC folder exists...');
+
+        // First, try to find existing BedQC folder
+        const foldersResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders/${parentFolderId}/contents`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (foldersResponse.ok) {
+            const foldersData = await foldersResponse.json();
+            const existingFolder = foldersData.data.find(item =>
+                item.type === 'folders' &&
+                item.attributes.name === 'BedQC Reports'
+            );
+
+            if (existingFolder) {
+                bedQCFolderId = existingFolder.id;
+                console.log('Found existing BedQC folder:', bedQCFolderId);
+                return existingFolder.id;
+            }
+        }
+
+        // Create new BedQC folder
+        console.log('Creating new BedQC Reports folder...');
+        const createFolderResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/vnd.api+json'
+            },
+            body: JSON.stringify({
+                data: {
+                    type: 'folders',
+                    attributes: {
+                        name: 'BedQC Reports',
+                        extension: {
+                            type: 'folders:autodesk.bim360:Folder',
+                            version: '1.0'
+                        }
+                    },
+                    relationships: {
+                        parent: {
+                            data: {
+                                type: 'folders',
+                                id: parentFolderId
+                            }
+                        }
+                    }
+                }
+            })
+        });
+
+        if (createFolderResponse.ok) {
+            const folderData = await createFolderResponse.json();
+            bedQCFolderId = folderData.data.id;
+            console.log('Created BedQC folder:', bedQCFolderId);
+            return folderData.data.id;
+        } else {
+            const errorText = await createFolderResponse.text();
+            console.error('Failed to create folder:', createFolderResponse.status, errorText);
+            throw new Error(`Failed to create BedQC folder: ${createFolderResponse.status}`);
+        }
+    } catch (error) {
+        console.error('Error ensuring BedQC folder:', error);
+        throw error;
+    }
+}
+
+// Upload JSON file to ACC
+async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
+    try {
+        console.log('Uploading JSON file to ACC:', fileName);
+
+        // Step 1: Create storage location
+        const storageResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/storage`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/vnd.api+json'
+            },
+            body: JSON.stringify({
+                data: {
+                    type: 'objects',
+                    attributes: {
+                        name: fileName
+                    },
+                    relationships: {
+                        target: {
+                            data: {
+                                type: 'folders',
+                                id: folderId
+                            }
+                        }
+                    }
+                }
+            })
+        });
+
+        if (!storageResponse.ok) {
+            const errorText = await storageResponse.text();
+            throw new Error(`Failed to create storage location: ${storageResponse.status} - ${errorText}`);
+        }
+
+        const storageData = await storageResponse.json();
+        const bucketKey = storageData.data.id;
+        const uploadURL = storageData.data.attributes.location;
+
+        console.log('Storage location created:', bucketKey);
+
+        // Step 2: Upload file content
+        const fileContent = JSON.stringify(jsonData, null, 2);
+        const uploadResponse = await fetch(uploadURL, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${forgeAccessToken}`
+            },
+            body: fileContent
+        });
+
+        if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            throw new Error(`Failed to upload file: ${uploadResponse.status} - ${errorText}`);
+        }
+
+        console.log('File uploaded successfully');
+
+        // Step 3: Create first version
+        const versionResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/versions`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/vnd.api+json'
+            },
+            body: JSON.stringify({
+                data: {
+                    type: 'versions',
+                    attributes: {
+                        name: fileName,
+                        extension: {
+                            type: 'versions:autodesk.bim360:File',
+                            version: '1.0'
+                        }
+                    },
+                    relationships: {
+                        item: {
+                            data: {
+                                type: 'items'
+                            }
+                        },
+                        storage: {
+                            data: {
+                                type: 'objects',
+                                id: bucketKey
+                            }
+                        }
+                    }
+                }
+            })
+        });
+
+        if (!versionResponse.ok) {
+            const errorText = await versionResponse.text();
+            throw new Error(`Failed to create version: ${versionResponse.status} - ${errorText}`);
+        }
+
+        const versionData = await versionResponse.json();
+        console.log('Version created successfully:', versionData.data.id);
+
+        return {
+            success: true,
+            versionId: versionData.data.id,
+            itemId: versionData.data.relationships?.item?.data?.id,
+            storageId: bucketKey,
+            method: 'acc-file-upload'
+        };
+
+    } catch (error) {
+        console.error('Error uploading to ACC:', error);
+        throw error;
+    }
+}
+
+// Save Bed QC Report to ACC (Fixed Implementation)
 async function saveBedQCReportToACC(reportData) {
     try {
-        console.log('Saving Bed QC Report to ACC using simplified approach...');
+        console.log('Saving Bed QC Report to ACC using proper file upload...');
 
         // Create the report content
         const reportContent = {
@@ -202,149 +422,76 @@ async function saveBedQCReportToACC(reportData) {
             }
         };
 
-        // Try Method 1: Create a simple project version with custom data
+        // Try Method 1: Upload as JSON file to ACC
         try {
-            console.log('Attempting Method 1: Create version with custom data...');
+            console.log('Attempting Method 1: Upload JSON file to ACC...');
 
-            const versionResponse = await fetch(`${ACC_PROJECT_API_BASE}/hubs/${hubId}/projects/${projectId}/versions`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${forgeAccessToken}`,
-                    'Content-Type': 'application/vnd.api+json'
-                },
-                body: JSON.stringify({
-                    data: {
-                        type: 'versions',
-                        attributes: {
-                            name: `Bed QC Report - ${reportData.bedName} - ${reportData.reportId}`,
-                            extension: {
-                                type: 'versions:autodesk.core:File',
-                                version: '1.0',
-                                data: {
-                                    // Store report data in the version metadata
-                                    bedQCReport: true,
-                                    reportId: reportData.reportId,
-                                    bedName: reportData.bedName,
-                                    bedId: reportData.bedId,
-                                    projectNumber: reportData.projectNumber || '',
-                                    createdDate: reportData.timestamp,
-                                    createdBy: reportData.createdBy || '',
-                                    status: reportData.status || 'Completed',
-                                    selfStressPull: reportData.selfStressing?.outputs?.calculatedPullRounded || 0,
-                                    nonSelfStressPull: reportData.nonSelfStressing?.outputs?.calculatedPullRounded || 0,
-                                    // Store compact report data
-                                    reportDataCompact: JSON.stringify(reportData)
-                                }
-                            }
-                        }
-                    }
-                })
-            });
-
-            if (versionResponse.ok) {
-                const versionResult = await versionResponse.json();
-                console.log('Successfully created version with report data:', versionResult);
-
-                return {
-                    success: true,
-                    versionId: versionResult.data.id,
-                    reportId: reportData.reportId,
-                    method: 'version-storage'
-                };
-            } else {
-                console.warn('Method 1 failed:', versionResponse.statusText);
+            // Ensure we have project folder access
+            if (!projectTopFolderId) {
+                await getProjectTopFolder(projectId);
             }
+
+            // Ensure BedQC folder exists
+            if (!bedQCFolderId) {
+                await ensureBedQCFolder(projectId, projectTopFolderId);
+            }
+
+            // Generate filename
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const fileName = `BedQC-${reportData.bedName}-${reportData.reportId}-${timestamp}.json`;
+
+            // Upload the file
+            const uploadResult = await uploadJSONToACC(projectId, bedQCFolderId, fileName, reportContent);
+
+            console.log('Successfully uploaded report to ACC:', uploadResult);
+
+            return {
+                success: true,
+                versionId: uploadResult.versionId,
+                itemId: uploadResult.itemId,
+                fileName: fileName,
+                reportId: reportData.reportId,
+                method: 'acc-file-upload'
+            };
+
         } catch (method1Error) {
-            console.warn('Method 1 error:', method1Error);
-        }
+            console.warn('Method 1 (file upload) failed:', method1Error);
 
-        // Try Method 2: Use webhooks/custom attributes approach
-        try {
-            console.log('Attempting Method 2: Custom project data storage...');
+            // Try Method 2: Store in local storage with enhanced metadata
+            console.log('Attempting Method 2: Enhanced local storage...');
 
-            // Store in a simple way that doesn't require complex folder navigation
-            const customDataResponse = await fetch(`${ACC_PROJECT_API_BASE}/hubs/${hubId}/projects/${projectId}`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${forgeAccessToken}`,
-                    'Content-Type': 'application/vnd.api+json'
-                },
-                body: JSON.stringify({
-                    data: {
-                        type: 'projects',
-                        id: projectId,
-                        attributes: {
-                            extension: {
-                                type: 'projects:autodesk.bim360:Project',
-                                version: '1.0',
-                                data: {
-                                    // Add our report to project custom data
-                                    [`bedQCReport_${reportData.reportId}`]: {
-                                        reportId: reportData.reportId,
-                                        bedName: reportData.bedName,
-                                        timestamp: reportData.timestamp,
-                                        status: reportData.status || 'Completed',
-                                        selfStressPull: reportData.selfStressing?.outputs?.calculatedPullRounded || 0,
-                                        nonSelfStressPull: reportData.nonSelfStressing?.outputs?.calculatedPullRounded || 0
-                                    }
-                                }
-                            }
-                        }
-                    }
-                })
-            });
+            const storageKey = `bedqc_${projectId}_${reportData.reportId}`;
+            const storageData = {
+                ...reportContent,
+                storedLocally: true,
+                needsACCSync: true,
+                storageMethod: 'local-fallback',
+                uploadError: method1Error.message,
+                retryCount: 0,
+                lastRetryAttempt: null
+            };
 
-            if (customDataResponse.ok) {
-                console.log('Successfully stored report in project custom data');
+            localStorage.setItem(storageKey, JSON.stringify(storageData));
 
-                // For now, we'll also store the full data in browser storage as backup
-                const storageKey = `bedqc_${projectId}_${reportData.reportId}`;
-                localStorage.setItem(storageKey, JSON.stringify(reportContent));
+            // Store list of all reports for this project
+            const projectReportsKey = `bedqc_reports_${projectId}`;
+            const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
 
-                return {
-                    success: true,
-                    projectId: projectId,
-                    reportId: reportData.reportId,
-                    storageKey: storageKey,
-                    method: 'project-custom-data'
-                };
-            } else {
-                console.warn('Method 2 failed:', customDataResponse.statusText);
+            if (!existingReports.includes(reportData.reportId)) {
+                existingReports.push(reportData.reportId);
+                localStorage.setItem(projectReportsKey, JSON.stringify(existingReports));
             }
-        } catch (method2Error) {
-            console.warn('Method 2 error:', method2Error);
+
+            return {
+                success: true,
+                projectId: projectId,
+                reportId: reportData.reportId,
+                storageKey: storageKey,
+                method: 'local-storage',
+                warning: 'Report saved locally. File upload to ACC failed - check permissions.',
+                error: method1Error.message
+            };
         }
-
-        // Method 3: Local storage with sync indicator
-        console.log('Using fallback Method 3: Enhanced local storage...');
-
-        const storageKey = `bedqc_${projectId}_${reportData.reportId}`;
-        const storageData = {
-            ...reportContent,
-            storedLocally: true,
-            needsACCSync: true,
-            storageMethod: 'local-fallback'
-        };
-
-        localStorage.setItem(storageKey, JSON.stringify(storageData));
-
-        // Store list of all reports for this project
-        const projectReportsKey = `bedqc_reports_${projectId}`;
-        const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
-
-        if (!existingReports.includes(reportData.reportId)) {
-            existingReports.push(reportData.reportId);
-            localStorage.setItem(projectReportsKey, JSON.stringify(existingReports));
-        }
-
-        return {
-            success: true,
-            projectId: projectId,
-            reportId: reportData.reportId,
-            storageKey: storageKey,
-            method: 'local-storage',
-            warning: 'Report saved locally. ACC integration needs additional permissions.'
-        };
 
     } catch (error) {
         console.error('All save methods failed:', error);
@@ -352,14 +499,70 @@ async function saveBedQCReportToACC(reportData) {
     }
 }
 
-// Load reports using simplified approach
+// Load reports using improved approach
 async function loadBedQCReportsFromACC(projectId) {
     try {
         console.log('Loading reports using multiple methods...');
-
         const reports = [];
 
-        // Method 1: Try to load from local storage
+        // Method 1: Try to load from ACC BedQC folder
+        try {
+            if (!projectTopFolderId) {
+                await getProjectTopFolder(projectId);
+            }
+
+            if (!bedQCFolderId) {
+                await ensureBedQCFolder(projectId, projectTopFolderId);
+            }
+
+            const folderContentsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders/${bedQCFolderId}/contents`, {
+                headers: {
+                    'Authorization': `Bearer ${forgeAccessToken}`
+                }
+            });
+
+            if (folderContentsResponse.ok) {
+                const contentsData = await folderContentsResponse.json();
+                console.log('Found items in BedQC folder:', contentsData.data.length);
+
+                for (const item of contentsData.data) {
+                    if (item.type === 'items' && item.attributes.name.endsWith('.json')) {
+                        try {
+                            // Get the latest version of the item
+                            const versionsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/items/${item.id}/versions`, {
+                                headers: {
+                                    'Authorization': `Bearer ${forgeAccessToken}`
+                                }
+                            });
+
+                            if (versionsResponse.ok) {
+                                const versionsData = await versionsResponse.json();
+                                if (versionsData.data.length > 0) {
+                                    const latestVersion = versionsData.data[0];
+
+                                    reports.push({
+                                        itemId: item.id,
+                                        versionId: latestVersion.id,
+                                        fileName: item.attributes.name,
+                                        lastModified: item.attributes.lastModifiedTime,
+                                        displayName: item.attributes.displayName || item.attributes.name,
+                                        source: 'acc-file',
+                                        // We'll need to download the file content when loading specific reports
+                                        needsDownload: true
+                                    });
+                                }
+                            }
+                        } catch (itemError) {
+                            console.warn('Could not process item:', item.attributes.name, itemError);
+                        }
+                    }
+                }
+            }
+        } catch (accError) {
+            console.warn('Could not load from ACC folder:', accError);
+        }
+
+        // Method 2: Load from local storage
         const projectReportsKey = `bedqc_reports_${projectId}`;
         const localReportIds = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
 
@@ -372,57 +575,26 @@ async function loadBedQCReportsFromACC(projectId) {
             if (reportDataStr) {
                 try {
                     const reportData = JSON.parse(reportDataStr);
-                    reports.push({
-                        itemId: storageKey,
-                        storageKey: storageKey,
-                        lastModified: reportData.timestamp,
-                        displayName: `${reportData.reportData.bedName} - ${reportData.reportData.reportId}`,
-                        data: reportData,
-                        source: reportData.storedLocally ? 'local' : 'acc'
-                    });
+
+                    // Skip if we already have this report from ACC
+                    const existingReport = reports.find(r =>
+                        r.fileName && r.fileName.includes(reportId)
+                    );
+
+                    if (!existingReport) {
+                        reports.push({
+                            itemId: storageKey,
+                            storageKey: storageKey,
+                            lastModified: reportData.timestamp,
+                            displayName: `${reportData.reportData.bedName} - ${reportData.reportData.reportId}`,
+                            data: reportData,
+                            source: reportData.storedLocally ? 'local' : 'local-synced'
+                        });
+                    }
                 } catch (parseError) {
                     console.warn('Could not parse report:', reportId, parseError);
                 }
             }
-        }
-
-        // Method 2: Try to load from ACC project custom data (if we stored any there)
-        try {
-            const projectResponse = await fetch(`${ACC_PROJECT_API_BASE}/hubs/${hubId}/projects/${projectId}`, {
-                headers: {
-                    'Authorization': `Bearer ${forgeAccessToken}`
-                }
-            });
-
-            if (projectResponse.ok) {
-                const projectData = await projectResponse.json();
-                console.log('Project data from ACC:', projectData);
-
-                // Look for any bedQC reports in project custom data
-                const customData = projectData.data?.attributes?.extension?.data || {};
-
-                for (const [key, value] of Object.entries(customData)) {
-                    if (key.startsWith('bedQCReport_') && value.reportId) {
-                        // Try to find the full data in local storage
-                        const fullStorageKey = `bedqc_${projectId}_${value.reportId}`;
-                        const fullDataStr = localStorage.getItem(fullStorageKey);
-
-                        if (fullDataStr && !reports.find(r => r.itemId === fullStorageKey)) {
-                            const fullData = JSON.parse(fullDataStr);
-                            reports.push({
-                                itemId: fullStorageKey,
-                                storageKey: fullStorageKey,
-                                lastModified: value.timestamp,
-                                displayName: `${value.bedName} - ${value.reportId}`,
-                                data: fullData,
-                                source: 'acc-custom'
-                            });
-                        }
-                    }
-                }
-            }
-        } catch (accError) {
-            console.warn('Could not load from ACC custom data:', accError);
         }
 
         // Sort by date (newest first)
@@ -437,21 +609,85 @@ async function loadBedQCReportsFromACC(projectId) {
     }
 }
 
+// Download report content from ACC
+async function downloadReportFromACC(versionId) {
+    try {
+        console.log('Downloading report from ACC:', versionId);
+
+        // Get download URL
+        const downloadResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/versions/${versionId}/downloads`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!downloadResponse.ok) {
+            throw new Error(`Failed to get download URL: ${downloadResponse.status}`);
+        }
+
+        const downloadData = await downloadResponse.json();
+        const downloadUrl = downloadData.data.attributes.location;
+
+        // Download the file content
+        const contentResponse = await fetch(downloadUrl, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!contentResponse.ok) {
+            throw new Error(`Failed to download file: ${contentResponse.status}`);
+        }
+
+        const reportContent = await contentResponse.json();
+        console.log('Successfully downloaded report from ACC');
+
+        return reportContent;
+
+    } catch (error) {
+        console.error('Error downloading report from ACC:', error);
+        throw error;
+    }
+}
+
 // Delete report (works with our storage methods)
-async function deleteBedQCReportFromACC(itemId) {
+async function deleteBedQCReportFromACC(itemId, isACCFile = false) {
     try {
         console.log('Deleting report:', itemId);
+
+        if (isACCFile && itemId.startsWith('urn:')) {
+            // Try to delete from ACC
+            try {
+                const deleteResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/items/${itemId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+
+                if (deleteResponse.ok) {
+                    console.log('Report deleted from ACC');
+                    return true;
+                } else {
+                    console.warn('Could not delete from ACC, removing from local list only');
+                }
+            } catch (accDeleteError) {
+                console.warn('ACC delete failed:', accDeleteError);
+            }
+        }
 
         // Remove from local storage
         localStorage.removeItem(itemId);
 
-        // Remove from project reports list
-        const projectReportsKey = `bedqc_reports_${projectId}`;
-        const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
-        const reportIdToRemove = itemId.split('_').pop(); // Extract report ID from storage key
+        // Remove from project reports list if it's a storage key
+        if (itemId.startsWith('bedqc_')) {
+            const projectReportsKey = `bedqc_reports_${projectId}`;
+            const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
+            const reportIdToRemove = itemId.split('_').pop(); // Extract report ID from storage key
 
-        const updatedReports = existingReports.filter(id => id !== reportIdToRemove);
-        localStorage.setItem(projectReportsKey, JSON.stringify(updatedReports));
+            const updatedReports = existingReports.filter(id => id !== reportIdToRemove);
+            localStorage.setItem(projectReportsKey, JSON.stringify(updatedReports));
+        }
 
         console.log('Report deleted from storage');
         return true;
@@ -604,13 +840,28 @@ async function refreshReportHistory() {
 // Populate Bed Filter Dropdown
 function populateBedFilter() {
     const bedFilter = document.getElementById('bedFilter');
-    const beds = [...new Set(existingReports.map(r => r.data.reportData.bedName).filter(b => b))];
+
+    // Get bed names from loaded reports
+    const bedNames = [];
+    existingReports.forEach(report => {
+        let bedName = '';
+        if (report.data && report.data.reportData) {
+            bedName = report.data.reportData.bedName;
+        } else if (report.displayName) {
+            // Extract bed name from display name (format: "BedName - ReportID")
+            const parts = report.displayName.split(' - ');
+            if (parts.length > 0) bedName = parts[0];
+        }
+        if (bedName && !bedNames.includes(bedName)) {
+            bedNames.push(bedName);
+        }
+    });
 
     // Clear existing options except "All Beds"
     bedFilter.innerHTML = '<option value="">All Beds</option>';
 
     // Add bed options
-    beds.sort().forEach(bed => {
+    bedNames.sort().forEach(bed => {
         const option = document.createElement('option');
         option.value = bed;
         option.textContent = bed;
@@ -629,29 +880,42 @@ function filterReports() {
 
     // Apply filters
     let filteredReports = existingReports.filter(report => {
-        const data = report.data.reportData;
+        let data = null;
+        let bedName = '';
+        let reportId = '';
+        let notes = '';
+        let status = '';
+        let createdBy = '';
+
+        if (report.data && report.data.reportData) {
+            data = report.data.reportData;
+            bedName = data.bedName || '';
+            reportId = data.reportId || '';
+            notes = data.notes || '';
+            status = data.status || 'Draft';
+            createdBy = data.createdBy || '';
+        } else if (report.displayName) {
+            // Extract info from display name for ACC files
+            const parts = report.displayName.split(' - ');
+            bedName = parts[0] || '';
+            reportId = parts[1] || '';
+            status = 'Completed'; // Assume completed if in ACC
+        }
 
         // Search filter
         if (searchTerm) {
-            const searchableText = [
-                data.bedName,
-                data.reportId,
-                data.notes,
-                data.projectName,
-                data.createdBy
-            ].join(' ').toLowerCase();
-
+            const searchableText = [bedName, reportId, notes, createdBy].join(' ').toLowerCase();
             if (!searchableText.includes(searchTerm)) return false;
         }
 
         // Bed filter
-        if (bedFilter && data.bedName !== bedFilter) return false;
+        if (bedFilter && bedName !== bedFilter) return false;
 
         // Status filter
-        if (statusFilter && data.status !== statusFilter) return false;
+        if (statusFilter && status !== statusFilter) return false;
 
         // Date filters
-        const reportDate = new Date(data.createdDate || report.lastModified);
+        const reportDate = new Date(data?.createdDate || data?.timestamp || report.lastModified);
         if (dateFrom && reportDate < new Date(dateFrom)) return false;
         if (dateTo && reportDate > new Date(dateTo + 'T23:59:59')) return false;
 
@@ -660,22 +924,26 @@ function filterReports() {
 
     // Apply sorting
     filteredReports.sort((a, b) => {
-        const dataA = a.data.reportData;
-        const dataB = b.data.reportData;
+        const dataA = a.data?.reportData;
+        const dataB = b.data?.reportData;
 
         switch (sortBy) {
             case 'date-asc':
-                return new Date(dataA.createdDate || a.lastModified) - new Date(dataB.createdDate || b.lastModified);
+                return new Date(dataA?.createdDate || a.lastModified) - new Date(dataB?.createdDate || b.lastModified);
             case 'date-desc':
-                return new Date(dataB.createdDate || b.lastModified) - new Date(dataA.createdDate || a.lastModified);
+                return new Date(dataB?.createdDate || b.lastModified) - new Date(dataA?.createdDate || a.lastModified);
             case 'bed':
-                return (dataA.bedName || '').localeCompare(dataB.bedName || '');
+                const bedA = dataA?.bedName || a.displayName?.split(' - ')[0] || '';
+                const bedB = dataB?.bedName || b.displayName?.split(' - ')[0] || '';
+                return bedA.localeCompare(bedB);
             case 'status':
-                return (dataA.status || '').localeCompare(dataB.status || '');
+                const statusA = dataA?.status || (a.source === 'acc-file' ? 'Completed' : 'Draft');
+                const statusB = dataB?.status || (b.source === 'acc-file' ? 'Completed' : 'Draft');
+                return statusA.localeCompare(statusB);
             case 'reporter':
-                return (dataA.createdBy || '').localeCompare(dataB.createdBy || '');
+                return (dataA?.createdBy || '').localeCompare(dataB?.createdBy || '');
             default:
-                return new Date(dataB.createdDate || b.lastModified) - new Date(dataA.createdDate || a.lastModified);
+                return new Date(dataB?.createdDate || b.lastModified) - new Date(dataA?.createdDate || a.lastModified);
         }
     });
 
@@ -705,18 +973,45 @@ function displayReports(reports) {
     }
 
     const reportsHTML = reports.map(report => {
-        const data = report.data.reportData;
-        const date = new Date(data.createdDate || data.timestamp || report.lastModified);
-        const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        let data = null;
+        let bedName = '';
+        let reportId = '';
+        let projectName = '';
+        let createdBy = '';
+        let status = 'Draft';
+        let formattedDate = '';
+        let selfStressPull = 0;
+        let nonSelfStressPull = 0;
+        let notes = '';
+
+        if (report.data && report.data.reportData) {
+            data = report.data.reportData;
+            bedName = data.bedName || '';
+            reportId = data.reportId || '';
+            projectName = data.projectName || '';
+            createdBy = data.createdBy || '';
+            status = data.status || 'Draft';
+            notes = data.notes || '';
+            selfStressPull = data.selfStressing?.outputs?.calculatedPullRounded || 0;
+            nonSelfStressPull = data.nonSelfStressing?.outputs?.calculatedPullRounded || 0;
+
+            const date = new Date(data.createdDate || data.timestamp || report.lastModified);
+            formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        } else {
+            // ACC file without local data
+            const parts = report.displayName?.split(' - ') || ['', ''];
+            bedName = parts[0] || 'Unknown Bed';
+            reportId = parts[1] || 'Unknown ID';
+            status = 'Completed';
+
+            const date = new Date(report.lastModified);
+            formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        }
 
         // Determine status badge style
         let statusClass = 'status-development';
-        if (data.status === 'Completed') statusClass = 'status-active';
-        if (data.status === 'Approved') statusClass = 'status-active';
-
-        // Get critical results for preview
-        const selfStressPull = data.selfStressing?.outputs?.calculatedPullRounded || 0;
-        const nonSelfStressPull = data.nonSelfStressing?.outputs?.calculatedPullRounded || 0;
+        if (status === 'Completed') statusClass = 'status-active';
+        if (status === 'Approved') statusClass = 'status-active';
 
         // Determine storage source indicator
         let sourceIndicator = '';
@@ -724,8 +1019,8 @@ function displayReports(reports) {
         if (report.source === 'local') {
             sourceIndicator = '💾 Local';
             sourceClass = 'background: #fef3c7; color: #92400e;';
-        } else if (report.source === 'acc-custom') {
-            sourceIndicator = '☁️ ACC';
+        } else if (report.source === 'acc-file') {
+            sourceIndicator = '☁️ ACC File';
             sourceClass = 'background: #dcfce7; color: #166534;';
         } else {
             sourceIndicator = '💾 Stored';
@@ -734,23 +1029,23 @@ function displayReports(reports) {
 
         return `
             <div class="tool-card" style="margin-bottom: 1rem; cursor: pointer;" 
-                 onclick="loadExistingReport('${report.itemId}')">
+                 onclick="loadExistingReport('${report.itemId}', ${report.needsDownload || false})">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
                     <div>
                         <h4 style="font-size: 1.125rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;">
-                            ${data.bedName} - ${data.reportId}
+                            ${bedName} - ${reportId}
                         </h4>
                         <div style="display: flex; gap: 1rem; font-size: 0.875rem; color: #6b7280;">
-                            <span><strong>Project:</strong> ${data.projectName || 'N/A'}</span>
+                            <span><strong>Project:</strong> ${projectName || 'N/A'}</span>
                             <span><strong>Date:</strong> ${formattedDate}</span>
-                            <span><strong>By:</strong> ${data.createdBy || 'Unknown'}</span>
+                            <span><strong>By:</strong> ${createdBy || 'Unknown'}</span>
                         </div>
                     </div>
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
-                        <span class="status-badge ${statusClass}">${data.status || 'Draft'}</span>
+                        <span class="status-badge ${statusClass}">${status}</span>
                         <span style="padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 500; ${sourceClass}">${sourceIndicator}</span>
                         <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" 
-                                onclick="event.stopPropagation(); deleteReport('${report.itemId}', '${data.reportId}')">
+                                onclick="event.stopPropagation(); deleteReport('${report.itemId}', '${reportId}', ${report.source === 'acc-file'})">
                             <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
                             </svg>
@@ -769,10 +1064,10 @@ function displayReports(reports) {
                     </div>
                 </div>
                 
-                ${data.notes ? `<div style="font-size: 0.875rem; color: #6b7280; font-style: italic;">"${data.notes}"</div>` : ''}
+                ${notes ? `<div style="font-size: 0.875rem; color: #6b7280; font-style: italic;">"${notes}"</div>` : ''}
                 
                 <div style="margin-top: 1rem; font-size: 0.75rem; color: #9ca3af;">
-                    Storage: ${report.storageKey || report.itemId} | Source: ${report.source || 'unknown'}
+                    ${report.needsDownload ? 'Will download from ACC when opened' : 'Ready to load'} | Source: ${report.source || 'unknown'}
                 </div>
             </div>
         `;
@@ -782,17 +1077,24 @@ function displayReports(reports) {
 }
 
 // Load Existing Report
-async function loadExistingReport(itemId) {
+async function loadExistingReport(itemId, needsDownload = false) {
     try {
-        console.log('Loading existing report:', itemId);
+        console.log('Loading existing report:', itemId, 'needsDownload:', needsDownload);
 
-        // Find the report in our loaded data
-        const reportObj = existingReports.find(r => r.itemId === itemId);
-        if (!reportObj) {
-            throw new Error('Report not found in loaded data');
+        let reportData = null;
+
+        if (needsDownload) {
+            // Download from ACC
+            const reportContent = await downloadReportFromACC(itemId);
+            reportData = reportContent.reportData;
+        } else {
+            // Find the report in our loaded data
+            const reportObj = existingReports.find(r => r.itemId === itemId);
+            if (!reportObj) {
+                throw new Error('Report not found in loaded data');
+            }
+            reportData = reportObj.data.reportData;
         }
-
-        const reportData = reportObj.data.reportData;
 
         // Set up form instance
         currentReportId = reportData.reportId;
@@ -877,13 +1179,13 @@ function populateFormWithReportData(data) {
 }
 
 // Delete Report
-async function deleteReport(itemId, reportId) {
+async function deleteReport(itemId, reportId, isACCFile = false) {
     if (!confirm(`Are you sure you want to delete report "${reportId}"? This action cannot be undone.`)) {
         return;
     }
 
     try {
-        await deleteBedQCReportFromACC(itemId);
+        await deleteBedQCReportFromACC(itemId, isACCFile);
 
         // Remove from local array
         existingReports = existingReports.filter(r => r.itemId !== itemId);
@@ -920,16 +1222,28 @@ function exportFilteredReports() {
 
     // Get filtered reports (reuse the same filtering logic)
     let filteredReports = existingReports.filter(report => {
-        const data = report.data.reportData;
+        let data = null;
+        let bedName = '';
+        let status = '';
+
+        if (report.data && report.data.reportData) {
+            data = report.data.reportData;
+            bedName = data.bedName || '';
+            status = data.status || 'Draft';
+        } else if (report.displayName) {
+            const parts = report.displayName.split(' - ');
+            bedName = parts[0] || '';
+            status = 'Completed';
+        }
 
         if (searchTerm) {
-            const searchableText = [data.bedName, data.reportId, data.notes, data.projectName, data.createdBy].join(' ').toLowerCase();
+            const searchableText = [bedName, data?.reportId, data?.notes, data?.projectName, data?.createdBy].join(' ').toLowerCase();
             if (!searchableText.includes(searchTerm)) return false;
         }
-        if (bedFilter && data.bedName !== bedFilter) return false;
-        if (statusFilter && data.status !== statusFilter) return false;
+        if (bedFilter && bedName !== bedFilter) return false;
+        if (statusFilter && status !== statusFilter) return false;
 
-        const reportDate = new Date(data.createdDate || report.lastModified);
+        const reportDate = new Date(data?.createdDate || report.lastModified);
         if (dateFrom && reportDate < new Date(dateFrom)) return false;
         if (dateTo && reportDate > new Date(dateTo + 'T23:59:59')) return false;
 
@@ -943,19 +1257,31 @@ function exportFilteredReports() {
     ];
 
     const csvData = filteredReports.map(report => {
-        const data = report.data.reportData;
+        const data = report.data?.reportData;
+        let bedName = '';
+        let reportId = '';
+
+        if (data) {
+            bedName = data.bedName || '';
+            reportId = data.reportId || '';
+        } else if (report.displayName) {
+            const parts = report.displayName.split(' - ');
+            bedName = parts[0] || '';
+            reportId = parts[1] || '';
+        }
+
         return [
-            data.reportId || '',
-            data.bedName || '',
-            data.projectName || '',
-            data.projectNumber || '',
-            data.date || '',
-            data.createdBy || '',
-            data.reviewedBy || '',
-            data.status || '',
-            data.selfStressing?.outputs?.calculatedPullRounded || 0,
-            data.nonSelfStressing?.outputs?.calculatedPullRounded || 0,
-            (data.notes || '').replace(/"/g, '""'), // Escape quotes
+            reportId,
+            bedName,
+            data?.projectName || '',
+            data?.projectNumber || '',
+            data?.date || '',
+            data?.createdBy || '',
+            data?.reviewedBy || '',
+            data?.status || (report.source === 'acc-file' ? 'Completed' : 'Draft'),
+            data?.selfStressing?.outputs?.calculatedPullRounded || 0,
+            data?.nonSelfStressing?.outputs?.calculatedPullRounded || 0,
+            (data?.notes || '').replace(/"/g, '""'), // Escape quotes
             report.storageKey || report.itemId,
             report.source || 'unknown'
         ];
@@ -1395,7 +1721,7 @@ function populateProjectDropdown(projects) {
             <strong>Status:</strong> Connected to ACC<br>
             <strong>Projects Found:</strong> ${projects.length} ACC projects (filtered by format)<br>
             <strong>Hub:</strong> Metromont ACC Account<br>
-            <strong>Storage:</strong> Enhanced local storage with ACC project sync
+            <strong>Storage:</strong> JSON file upload to ACC with local fallback
         `;
 
     } catch (error) {
@@ -1611,7 +1937,7 @@ function calculateAll() {
 // ACC INTEGRATION FUNCTIONS (SAVE/EXPORT)
 // =================================================================
 
-// Updated saveToACC function that actually saves to ACC
+// Updated saveToACC function that uses proper file upload
 async function saveToACC() {
     if (!isACCConnected) {
         alert('Not connected to ACC. Please check your connection.');
@@ -1645,7 +1971,7 @@ async function saveToACC() {
             }
         };
 
-        // Save to ACC Data Management API
+        // Save to ACC Data Management API using proper file upload
         const result = await saveBedQCReportToACC(enhancedCalculation);
 
         console.log('Successfully saved report:', result);
@@ -1661,12 +1987,13 @@ async function saveToACC() {
         // Show appropriate success message based on storage method
         let successMessage = `Report saved successfully!\nReport ID: ${result.reportId}`;
 
-        if (result.method === 'local-storage') {
-            successMessage += `\n\nStorage: Local browser storage with project sync\nNote: ${result.warning || 'Working on direct ACC integration'}`;
-        } else if (result.method === 'project-custom-data') {
-            successMessage += `\n\nStorage: ACC project custom data\nProject ID: ${result.projectId}`;
-        } else if (result.method === 'version-storage') {
-            successMessage += `\n\nStorage: ACC version storage\nVersion ID: ${result.versionId}`;
+        if (result.method === 'acc-file-upload') {
+            successMessage += `\n\nStorage: ACC JSON File Upload\nFile Name: ${result.fileName}\nVersion ID: ${result.versionId}`;
+        } else if (result.method === 'local-storage') {
+            successMessage += `\n\nStorage: Local browser storage with project sync\nNote: ${result.warning || 'File upload failed - check permissions'}`;
+            if (result.error) {
+                successMessage += `\nError Details: ${result.error}`;
+            }
         }
 
         alert(successMessage);
@@ -1763,7 +2090,7 @@ async function exportToACCDocs() {
             Export Report
         `;
 
-        alert(`Report exported as HTML file!\n\nFile: BedQC-Report-${currentReportId}-${new Date().toISOString().split('T')[0]}.html\n\nNote: Direct ACC document upload is being configured. For now, you can manually upload this file to your ACC project if needed.`);
+        alert(`Report exported as HTML file!\n\nFile: BedQC-Report-${currentReportId}-${new Date().toISOString().split('T')[0]}.html\n\nNote: JSON reports are uploaded to ACC automatically. HTML exports are for sharing/printing purposes.`);
 
     } catch (error) {
         console.error('Export failed:', error);
