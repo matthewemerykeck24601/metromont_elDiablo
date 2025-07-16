@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="frame-ancestors 'self' https://*.autodesk.com https://*.autodeskbim360.com https://*.acc.autodesk.com;">
     <title>PPPQC Stressing Calculator - ACC Connect</title>
     <style>
         * {
@@ -159,7 +160,7 @@
             color: #374151;
         }
 
-        .form-group input, .form-group textarea {
+        .form-group input, .form-group textarea, .form-group select {
             padding: 8px 12px;
             border: 1px solid #d1d5db;
             border-radius: 6px;
@@ -167,13 +168,13 @@
             transition: border-color 0.2s, box-shadow 0.2s;
         }
 
-        .form-group input:focus, .form-group textarea:focus {
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
             outline: none;
             border-color: #2563eb;
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
 
-        .form-group input:disabled {
+        .form-group input:disabled, .form-group select:disabled {
             background-color: #f9fafb;
             color: #6b7280;
         }
@@ -290,6 +291,34 @@
             100% { transform: rotate(360deg); }
         }
 
+        /* Embedded mode styles for ACC Custom Cards */
+        .embedded-mode {
+            background: white;
+        }
+
+        .embedded-mode .container {
+            padding: 8px !important;
+        }
+
+        .embedded-mode .header {
+            margin-bottom: 8px;
+            padding: 12px;
+        }
+
+        .embedded-mode .card {
+            margin-bottom: 8px;
+            padding: 12px;
+        }
+
+        .embedded-mode .grid-cols-3 {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .embedded-mode .acc-info {
+            margin-bottom: 8px;
+            padding: 8px;
+        }
+
         #pdf-content {
             display: none;
         }
@@ -307,7 +336,7 @@
         <div class="header">
             <div class="header-left">
                 <svg class="header-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 002 2z"></path>
                 </svg>
                 <div class="header-title">
                     <h1>PPPQC Stressing Calculator</h1>
@@ -362,7 +391,9 @@
             <div class="grid grid-cols-3">
                 <div class="form-group">
                     <label for="projectName">Project Name</label>
-                    <input type="text" id="projectName" placeholder="Loading from ACC..." disabled>
+                    <select id="projectName" onchange="onProjectSelected()" disabled>
+                        <option value="">Loading projects from ACC...</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label for="projectNumber">Project Number</label>
@@ -587,18 +618,14 @@
             </div>
         </div>
     </div>
-
-    <!-- Forge Viewer SDK -->
-    <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
     
     <script>
         // ========================================
         // ACC CONNECT CONFIGURATION
-        // Replace these with your actual ACC Connect credentials
         // ========================================
-        const ACC_CLIENT_ID = 'your_client_id_here';
-        const ACC_CALLBACK_URL = 'https://yourusername.github.io/pppqc-acc-calculator';
-        const ACC_ENVIRONMENT = 'production'; // or 'staging' for testing
+        const ACC_CLIENT_ID = 'phUPKRBuqECpJUoBmRuKdKhSP3ZTRALH4LMWKAzAnymnYkQU';
+        const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
+        const ACC_ENVIRONMENT = 'production';
         
         // ACC/Forge Integration Variables
         let forgeAccessToken = null;
@@ -609,9 +636,388 @@
 
         // Global calculation variables
         let currentCalculation = null;
+        let userProjects = [];
+
+        // Utility functions for iframe detection
+        function isInIframe() {
+            return window.self !== window.top;
+        }
+
+        // OAuth and Token Management - Made globally accessible
+        window.showAuthButton = function() {
+            updateConnectionStatus('disconnected', 'Click to Connect to ACC');
+            document.getElementById('accStatus').innerHTML = `
+                <button onclick="authenticateWithACC()" class="btn" style="background: #059669; color: white; border: none; padding: 4px 8px; border-radius: 4px;">
+                    Connect to ACC
+                </button>
+            `;
+        };
+
+        window.authenticateWithACC = function() {
+            const currentUrl = new URL(window.location.href);
+            const callbackUrl = `${currentUrl.protocol}//${currentUrl.host}/`;
+            
+            const authUrl = `https://developer.api.autodesk.com/authentication/v2/authorize?` +
+                `response_type=code&` +
+                `client_id=${ACC_CLIENT_ID}&` +
+                `redirect_uri=${encodeURIComponent(callbackUrl)}&` +
+                `scope=${encodeURIComponent('data:read account:read')}&` +
+                `state=pppqc-calc`;
+            
+            if (isInIframe()) {
+                // If in iframe, open in new window/tab
+                const authWindow = window.open(authUrl, 'acc_auth', 'width=600,height=700,scrollbars=yes,resizable=yes');
+                
+                // Listen for completion
+                const checkClosed = setInterval(() => {
+                    if (authWindow.closed) {
+                        clearInterval(checkClosed);
+                        // Check if we got a token
+                        setTimeout(() => {
+                            const storedToken = getStoredToken();
+                            if (storedToken && !isTokenExpired(storedToken)) {
+                                forgeAccessToken = storedToken.access_token;
+                                loadRealProjectData();
+                            } else {
+                                // Reload to check for auth code in URL
+                                window.location.reload();
+                            }
+                        }, 1000);
+                    }
+                }, 1000);
+            } else {
+                // Normal redirect flow
+                console.log('Redirecting to auth URL:', authUrl);
+                window.location.href = authUrl;
+            }
+        };
+
+        async function handleAuthCode(code) {
+            try {
+                updateConnectionStatus('connected', 'Authenticating...');
+                
+                console.log('Authorization code received:', code);
+                
+                // Make sure we're using the correct callback URL
+                const currentUrl = new URL(window.location.href);
+                const callbackUrl = `${currentUrl.protocol}//${currentUrl.host}/`;
+                
+                console.log('Using callback URL:', callbackUrl);
+                
+                const tokenResponse = await fetch('/.netlify/functions/auth', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        code: code,
+                        redirect_uri: callbackUrl
+                    })
+                });
+                
+                console.log('Token response status:', tokenResponse.status);
+                
+                const responseText = await tokenResponse.text();
+                console.log('Token response text:', responseText);
+                
+                if (!tokenResponse.ok) {
+                    throw new Error(`Token exchange failed: ${responseText}`);
+                }
+                
+                let tokenData;
+                try {
+                    tokenData = JSON.parse(responseText);
+                } catch (e) {
+                    throw new Error(`Invalid JSON response: ${responseText}`);
+                }
+                
+                if (tokenData.error) {
+                    throw new Error(`Auth error: ${tokenData.error} - ${tokenData.error_description || ''}`);
+                }
+                
+                if (!tokenData.access_token) {
+                    throw new Error('No access token received');
+                }
+                
+                forgeAccessToken = tokenData.access_token;
+                console.log('Access token received successfully');
+                
+                storeToken(tokenData);
+                await loadRealProjectData();
+                
+                // Clean up URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+            } catch (error) {
+                console.error('Authentication failed:', error);
+                handleACCConnectionError(error);
+            }
+        }
+
+        function storeToken(tokenData) {
+            const expirationTime = Date.now() + (tokenData.expires_in * 1000);
+            const tokenInfo = {
+                access_token: tokenData.access_token,
+                expires_at: expirationTime
+            };
+            sessionStorage.setItem('forge_token', JSON.stringify(tokenInfo));
+        }
+
+        function getStoredToken() {
+            const stored = sessionStorage.getItem('forge_token');
+            return stored ? JSON.parse(stored) : null;
+        }
+
+        function isTokenExpired(tokenInfo) {
+            return Date.now() >= tokenInfo.expires_at;
+        }
+
+        async function loadRealProjectData() {
+            try {
+                updateConnectionStatus('connected', 'Loading Projects...');
+                
+                console.log('Starting to load real project data...');
+                
+                // Get user's hubs
+                console.log('Fetching user hubs...');
+                const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+                
+                if (!hubsResponse.ok) {
+                    const errorText = await hubsResponse.text();
+                    console.error('Hubs response error:', hubsResponse.status, errorText);
+                    throw new Error(`Failed to load hubs: ${hubsResponse.status} ${errorText}`);
+                }
+                
+                const hubsData = await hubsResponse.json();
+                console.log('Hubs data received:', hubsData);
+                
+                // Find ACC/BIM360 hubs specifically (not Fusion hubs)
+                const accHubs = hubsData.data.filter(hub => 
+                    hub.attributes.extension?.type === 'hubs:autodesk.bim360:Account'
+                );
+                
+                console.log('ACC hubs found:', accHubs.length);
+                
+                if (accHubs.length > 0) {
+                    const firstAccHub = accHubs[0];
+                    console.log('Using ACC hub:', firstAccHub.attributes.name, firstAccHub.id);
+                    
+                    await loadProjectsFromHub(firstAccHub.id);
+                } else {
+                    console.warn('No ACC hubs found in response');
+                    throw new Error('No ACC hubs found - only Fusion 360 hubs available');
+                }
+                
+                console.log('Project data loading completed successfully');
+                updateConnectionStatus('connected', 'Connected to ACC');
+                isACCConnected = true;
+                enableACCFeatures();
+                
+            } catch (error) {
+                console.error('Failed to load project data:', error);
+                
+                // Show error but still enable features for manual entry
+                updateConnectionStatus('connected', 'Connected (Manual Entry Mode)');
+                isACCConnected = true;
+                enableACCFeatures();
+                
+                // Enable manual project entry
+                document.getElementById('accDetails').innerHTML = `
+                    <div style="color: #dc2626;">
+                        <strong>Project Loading Issue:</strong> ${error.message}<br>
+                        <small>You can still use the calculator by entering project details manually</small>
+                    </div>
+                `;
+                
+                // Setup for manual entry
+                const projectSelect = document.getElementById('projectName');
+                projectSelect.innerHTML = '<option value="">Enter project details manually below...</option>';
+                projectSelect.disabled = false;
+                
+                // Enable all manual input fields
+                ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) {
+                        element.disabled = false;
+                        element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
+                    }
+                });
+            }
+        }
+
+        async function loadProjectsFromHub(hubId) {
+            try {
+                console.log('Loading projects from ACC hub:', hubId);
+                
+                const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+                
+                if (!projectsResponse.ok) {
+                    throw new Error('Failed to load projects');
+                }
+                
+                const projectsData = await projectsResponse.json();
+                console.log('ACC projects data received:', projectsData);
+                
+                // Convert to our format with enhanced project metadata extraction
+                const projects = projectsData.data.map(project => {
+                    console.log('Processing ACC project:', project.attributes.name);
+                    
+                    // Extract project number from various possible locations
+                    let projectNumber = '';
+                    
+                    // Try different places where project number might be stored
+                    if (project.attributes.extension?.data) {
+                        const extData = project.attributes.extension.data;
+                        projectNumber = extData.projectNumber || 
+                                      extData.project_number || 
+                                      extData.number || 
+                                      extData.projectId ||
+                                      extData.project_id || '';
+                    }
+                    
+                    // If no project number found, generate one from project name or ID
+                    if (!projectNumber) {
+                        // Try to extract from project name (common patterns like "Project ABC-123")
+                        const nameMatch = project.attributes.name.match(/([A-Z]{2,}-\d+|\d{4}-\d+|[A-Z]+\d+)/);
+                        if (nameMatch) {
+                            projectNumber = nameMatch[0];
+                        } else {
+                            // Use last 6 characters of project ID as fallback
+                            projectNumber = `ACC-${project.id.slice(-6)}`;
+                        }
+                    }
+                    
+                    return {
+                        id: project.id,
+                        name: project.attributes.name || 'Unnamed Project',
+                        number: projectNumber,
+                        location: project.attributes.extension?.data?.location || 
+                                 project.attributes.extension?.data?.project_location || 
+                                 'Location not specified',
+                        // Store full project data for additional metadata
+                        fullData: project
+                    };
+                });
+                
+                console.log('Processed ACC projects:', projects);
+                
+                populateProjectDropdown(projects);
+                
+                // Auto-select first project if available
+                if (projects.length > 0) {
+                    setTimeout(() => {
+                        const projectSelect = document.getElementById('projectName');
+                        projectSelect.value = projects[0].id;
+                        onProjectSelected();
+                    }, 100);
+                }
+                
+            } catch (error) {
+                console.error('Error in loadProjectsFromHub:', error);
+                throw error;
+            }
+        }
+
+        function populateProjectDropdown(projects) {
+            try {
+                console.log('Populating dropdown with ACC projects:', projects);
+                
+                userProjects = projects;
+                const projectSelect = document.getElementById('projectName');
+                
+                if (!projectSelect) {
+                    console.error('Project select element not found');
+                    return;
+                }
+                
+                // Clear existing options
+                projectSelect.innerHTML = '<option value="">Select an ACC project...</option>';
+                
+                // Add projects to dropdown
+                projects.forEach((project, index) => {
+                    console.log(`Adding ACC project ${index + 1}:`, project.name, 'Number:', project.number);
+                    
+                    const option = document.createElement('option');
+                    option.value = project.id;
+                    option.textContent = `${project.name} (${project.number})`;
+                    option.dataset.projectNumber = project.number || '';
+                    option.dataset.location = project.location || '';
+                    projectSelect.appendChild(option);
+                });
+                
+                // Enable the dropdown
+                projectSelect.disabled = false;
+                projectSelect.style.backgroundColor = '';
+                
+                console.log('ACC project dropdown populated successfully');
+                
+                // Update status to show connection is complete
+                updateConnectionStatus('connected', 'ACC Projects Loaded');
+                
+                // Stop any loading spinners
+                document.getElementById('accDetails').innerHTML = `
+                    <strong>Status:</strong> Connected to ACC<br>
+                    <strong>Projects Found:</strong> ${projects.length} ACC projects<br>
+                    <strong>Hub:</strong> Metromont ACC Account
+                `;
+                
+            } catch (error) {
+                console.error('Error in populateProjectDropdown:', error);
+                throw error;
+            }
+        }
+
+        function onProjectSelected() {
+            const projectSelect = document.getElementById('projectName');
+            const selectedOption = projectSelect.selectedOptions[0];
+            
+            if (selectedOption && selectedOption.value) {
+                // Auto-populate related fields from ACC project data
+                const projectNumber = selectedOption.dataset.projectNumber || '';
+                const location = selectedOption.dataset.location || '';
+                
+                console.log('Selected ACC project:', selectedOption.textContent);
+                console.log('Project number:', projectNumber);
+                console.log('Location:', location);
+                
+                document.getElementById('projectNumber').value = projectNumber;
+                document.getElementById('location').value = location;
+                
+                // Enable other fields
+                document.getElementById('projectNumber').disabled = false;
+                document.getElementById('location').disabled = false;
+                document.getElementById('calculatedBy').disabled = false;
+                
+                // Update project source indicator
+                document.getElementById('projectSource').style.display = 'inline-flex';
+                document.getElementById('projectSource').textContent = 'Selected from ACC';
+                
+                // Set calculated by field to current user if available
+                if (!document.getElementById('calculatedBy').value) {
+                    // Could extract user info from token or set a default
+                    document.getElementById('calculatedBy').value = 'ACC User';
+                }
+            }
+        }
 
         // Initialize ACC Connection
         document.addEventListener('DOMContentLoaded', function() {
+            // Detect if we're running in an iframe (ACC Custom Card)
+            if (window.self !== window.top) {
+                document.body.classList.add('embedded-mode');
+                // Adjust layout for embedded context
+                document.querySelector('.container').style.maxWidth = '100%';
+                document.querySelector('.container').style.padding = '8px';
+            }
+            
             initializeACCConnection();
             setupUI();
             calculateAll();
@@ -620,93 +1026,70 @@
         // ACC/Forge Authentication and Setup
         async function initializeACCConnection() {
             try {
-                // Check if we're running in ACC Connect context
-                if (window.location.search.includes('code=') || window.sessionStorage.getItem('forge_access_token')) {
-                    await handleACCAuthentication();
+                // Check if we have an authorization code from ACC
+                const urlParams = new URLSearchParams(window.location.search);
+                const authCode = urlParams.get('code');
+                const state = urlParams.get('state');
+                const error = urlParams.get('error');
+                
+                // Handle OAuth errors
+                if (error) {
+                    throw new Error(`OAuth error: ${error} - ${urlParams.get('error_description') || ''}`);
+                }
+                
+                if (authCode) {
+                    // Verify state parameter for security
+                    if (state !== 'pppqc-calc') {
+                        console.warn('State parameter mismatch');
+                    }
+                    await handleAuthCode(authCode);
                 } else {
-                    // For development/testing - simulate ACC environment
-                    simulateACCEnvironment();
+                    // Check if we have a stored token
+                    const storedToken = getStoredToken();
+                    if (storedToken && !isTokenExpired(storedToken)) {
+                        forgeAccessToken = storedToken.access_token;
+                        console.log('Using stored token');
+                        await loadRealProjectData();
+                    } else {
+                        // Need to authenticate
+                        console.log('No valid token found, showing auth button');
+                        showAuthButton();
+                    }
                 }
             } catch (error) {
-                console.error('ACC Connection Error:', error);
+                console.error('Connection Error:', error);
                 handleACCConnectionError(error);
             }
         }
 
-        async function handleACCAuthentication() {
-            try {
-                // Check if we have the required configuration
-                if (ACC_CLIENT_ID === 'your_client_id_here') {
-                    throw new Error('Please configure your ACC Connect credentials in the HTML file');
-                }
-                
-                // This would normally handle the OAuth flow
-                // For now, we'll simulate a successful connection
-                updateConnectionStatus('connected', 'Connected to ACC');
-                
-                // Get project context
-                await getProjectContext();
-                
-                // Enable ACC features
-                enableACCFeatures();
-                
-            } catch (error) {
-                throw new Error('Failed to authenticate with ACC: ' + error.message);
-            }
-        }
-
         function simulateACCEnvironment() {
-            // Simulate ACC connection for development
-            setTimeout(() => {
-                updateConnectionStatus('connected', 'Connected to ACC (Development Mode)');
-                
-                // Simulate project data
-                populateProjectData({
-                    name: 'Sample Construction Project',
-                    number: 'PROJ-2024-001',
-                    location: 'Charlotte, NC',
-                    userId: 'john.engineer@company.com'
-                });
-                
-                enableACCFeatures();
-            }, 2000);
-        }
-
-        async function getProjectContext() {
-            // In real implementation, this would call Forge APIs
-            // For now, simulate project context
-            const mockProjectData = {
-                name: window.location.search.includes('projectName=') ? 
-                      decodeURIComponent(window.location.search.split('projectName=')[1].split('&')[0]) : 
-                      'ACC Construction Project',
-                number: 'ACC-2024-' + Math.floor(Math.random() * 1000),
-                location: 'Project Location',
-                userId: 'current.user@company.com'
-            };
+            // Immediate connection in simulation mode
+            updateConnectionStatus('connected', 'Simulation Mode - Ready to Use');
             
-            populateProjectData(mockProjectData);
-        }
-
-        function populateProjectData(projectData) {
-            document.getElementById('projectName').value = projectData.name || '';
-            document.getElementById('projectNumber').value = projectData.number || '';
-            document.getElementById('calculatedBy').value = projectData.userId || '';
-            document.getElementById('location').value = projectData.location || '';
-            
-            // Enable fields and show auto-population indicator
-            ['projectName', 'projectNumber', 'calculatedBy', 'location'].forEach(id => {
+            // Enable all fields for manual entry
+            ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
                 const element = document.getElementById(id);
-                element.disabled = false;
-                element.style.backgroundColor = '#f0f9ff'; // Light blue to indicate auto-populated
+                if (element) {
+                    element.disabled = false;
+                    if (element.placeholder && element.placeholder.includes('Loading from ACC...')) {
+                        element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter or select');
+                    }
+                }
             });
             
-            document.getElementById('projectSource').style.display = 'inline-flex';
+            // Handle dropdown separately
+            const projectSelect = document.getElementById('projectName');
+            projectSelect.disabled = false;
+            projectSelect.innerHTML = '<option value="">Enter project name manually below...</option>';
             
+            // Show that it's simulation mode
             document.getElementById('accDetails').innerHTML = `
-                <strong>Project:</strong> ${projectData.name}<br>
-                <strong>User:</strong> ${projectData.userId}<br>
-                <strong>Connected:</strong> ${new Date().toLocaleString()}
+                <strong>Mode:</strong> Simulation Mode<br>
+                <strong>Features:</strong> All calculations working, manual project entry<br>
+                <strong>Status:</strong> Ready for use
             `;
+            
+            enableACCFeatures();
         }
 
         function updateConnectionStatus(status, message) {
@@ -744,23 +1127,49 @@
 
         function handleACCConnectionError(error) {
             updateConnectionStatus('disconnected', 'Connection Failed');
+            console.error('Full error details:', error);
+            
+            // Show user-friendly error message
+            let errorMessage = 'Connection failed';
+            if (error.message.includes('Token exchange failed')) {
+                errorMessage = 'Authentication failed - please check app configuration';
+            } else if (error.message.includes('OAuth error')) {
+                errorMessage = error.message;
+            }
+            
             document.getElementById('accDetails').innerHTML = `
-                <strong>Error:</strong> ${error.message}<br>
-                <em>Calculator will work in offline mode</em>
+                <div style="color: #dc2626;">
+                    <strong>Error:</strong> ${errorMessage}<br>
+                    <small>${error.message}</small><br>
+                    <button onclick="showAuthButton(); location.reload();" style="margin-top: 8px; padding: 4px 8px; background: #059669; color: white; border: none; border-radius: 4px;">
+                        Try Again
+                    </button>
+                </div>
+                <div style="margin-top: 8px; color: #6b7280;">
+                    <em>Calculator will work in offline mode</em>
+                </div>
             `;
             
             // Enable manual input mode
-            ['projectName', 'projectNumber', 'calculatedBy', 'location'].forEach(id => {
-                const element = document.getElementById(id);
-                element.disabled = false;
-                element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
-            });
+            simulateACCEnvironment();
         }
 
         function setupUI() {
             // Set current date
             document.getElementById('date').value = new Date().toISOString().split('T')[0];
         }
+
+        // Post-message handler for iframe authentication
+        window.addEventListener('message', function(event) {
+            if (event.origin !== window.location.origin) return;
+            
+            if (event.data.type === 'ACC_AUTH_SUCCESS' && event.data.token) {
+                forgeAccessToken = event.data.token;
+                storeToken({ access_token: event.data.token, expires_in: 3600 });
+                loadRealProjectData();
+                updateConnectionStatus('connected', 'Connected to ACC');
+            }
+        });
 
         // Utility functions
         function formatNumber(num) {
@@ -777,7 +1186,7 @@
             return parseFloat(document.getElementById(id).value) || 0;
         }
 
-        // Calculation functions (same as before)
+        // Calculation functions
         function calculateSelfStressing() {
             const ip = getValue('ss_initialPull');
             const rf = getValue('ss_requiredForce');
@@ -1047,3 +1456,4 @@
     </script>
 </body>
 </html>
+                
