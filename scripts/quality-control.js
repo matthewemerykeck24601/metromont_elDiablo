@@ -29,19 +29,19 @@ async function initializeApp() {
         if (window.opener && window.opener.CastLinkAuth) {
             const parentAuth = window.opener.CastLinkAuth;
             const isParentAuth = await parentAuth.waitForAuth();
-            
+
             if (isParentAuth) {
                 forgeAccessToken = parentAuth.getToken();
                 await completeAuthentication();
                 return;
             }
         }
-        
+
         // Check for stored authentication
         const storedToken = getStoredToken();
         if (storedToken && !isTokenExpired(storedToken)) {
             forgeAccessToken = storedToken.access_token;
-            
+
             // Verify token is still valid
             const isValid = await verifyToken(forgeAccessToken);
             if (isValid) {
@@ -71,31 +71,31 @@ function redirectToMainApp() {
 async function completeAuthentication() {
     try {
         updateAuthStatus('Loading Projects...', 'Connecting to your Autodesk Construction Cloud account...');
-        
+
         // Load project data
         await loadRealProjectData();
-        
+
         // Authentication complete
         isACCConnected = true;
-        
+
         // Show success and hide auth overlay
         updateAuthStatus('Success!', 'Successfully connected to ACC');
-        
+
         // Small delay to show success message
         await new Promise(resolve => setTimeout(resolve, 800));
-        
+
         // Hide auth overlay and show main content
         authProcessing.classList.remove('active');
         document.body.classList.remove('auth-loading');
-        
+
         // Show auth status badge
         document.getElementById('authStatusBadge').style.display = 'inline-flex';
-        
+
         // Enable ACC features
         enableACCFeatures();
-        
+
         console.log('Authentication completed successfully');
-        
+
     } catch (error) {
         console.error('Authentication completion failed:', error);
         showAuthError('Failed to load project data: ' + error.message);
@@ -156,7 +156,7 @@ function isTokenExpired(tokenInfo) {
     const now = Date.now();
     const expiresAt = tokenInfo.expires_at;
     const timeUntilExpiry = expiresAt - now;
-    
+
     // Consider token expired if it expires in less than 5 minutes
     return timeUntilExpiry < (5 * 60 * 1000);
 }
@@ -191,7 +191,7 @@ function startBedReport() {
 
     // Generate unique report ID
     const reportId = generateReportId(bedId);
-    
+
     // Store report instance
     currentReportId = reportId;
     currentBedId = bedId;
@@ -250,17 +250,17 @@ function initializeFormInstance(reportId, bedId, bedName, description) {
 
 function showCalculator() {
     document.getElementById('calculatorModal').classList.add('active');
-    
+
     // Clear form data for new instance
     clearFormData();
-    
+
     // Initialize calculations
     calculateAll();
 }
 
 function closeCalculator() {
     document.getElementById('calculatorModal').classList.remove('active');
-    
+
     // Save current state to instance before closing
     if (currentReportId) {
         saveFormInstance();
@@ -308,13 +308,13 @@ function saveFormInstance() {
 }
 
 // Modal click outside to close
-document.getElementById('bedSelectionModal').addEventListener('click', function(e) {
+document.getElementById('bedSelectionModal').addEventListener('click', function (e) {
     if (e.target === this) {
         closeBedSelection();
     }
 });
 
-document.getElementById('calculatorModal').addEventListener('click', function(e) {
+document.getElementById('calculatorModal').addEventListener('click', function (e) {
     if (e.target === this) {
         closeCalculator();
     }
@@ -324,48 +324,48 @@ document.getElementById('calculatorModal').addEventListener('click', function(e)
 async function loadRealProjectData() {
     try {
         console.log('Starting to load real project data...');
-        
+
         const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
             headers: {
                 'Authorization': `Bearer ${forgeAccessToken}`
             }
         });
-        
+
         if (!hubsResponse.ok) {
             const errorText = await hubsResponse.text();
             console.error('Hubs response error:', hubsResponse.status, errorText);
             throw new Error(`Failed to load hubs: ${hubsResponse.status} ${errorText}`);
         }
-        
+
         const hubsData = await hubsResponse.json();
         console.log('Hubs data received:', hubsData);
-        
-        const accHubs = hubsData.data.filter(hub => 
+
+        const accHubs = hubsData.data.filter(hub =>
             hub.attributes.extension?.type === 'hubs:autodesk.bim360:Account'
         );
-        
+
         console.log('ACC hubs found:', accHubs.length);
-        
+
         if (accHubs.length > 0) {
             const firstAccHub = accHubs[0];
             console.log('Using ACC hub:', firstAccHub.attributes.name, firstAccHub.id);
-            
+
             await loadProjectsFromHub(firstAccHub.id);
         } else {
             console.warn('No ACC hubs found in response');
             throw new Error('No ACC hubs found - only Fusion 360 hubs available');
         }
-        
+
         console.log('Project data loading completed successfully');
-        
+
     } catch (error) {
         console.error('Failed to load project data:', error);
-        
+
         // Still enable manual entry mode
         const projectSelect = document.getElementById('projectName');
         projectSelect.innerHTML = '<option value="">Enter project details manually below...</option>';
         projectSelect.disabled = false;
-        
+
         ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
             const element = document.getElementById(id);
             if (element) {
@@ -373,7 +373,7 @@ async function loadRealProjectData() {
                 element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
             }
         });
-        
+
         document.getElementById('accDetails').innerHTML = `
             <div style="color: #dc2626;">
                 <strong>Project Loading Issue:</strong> ${error.message}<br>
@@ -386,84 +386,88 @@ async function loadRealProjectData() {
 async function loadProjectsFromHub(hubId) {
     try {
         console.log('Loading projects from ACC hub:', hubId);
-        
+
         const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
             headers: {
                 'Authorization': `Bearer ${forgeAccessToken}`
             }
         });
-        
+
         if (!projectsResponse.ok) {
             throw new Error('Failed to load projects');
         }
-        
+
         const projectsData = await projectsResponse.json();
         console.log('ACC projects data received:', projectsData);
-        
+
         const projects = await Promise.all(projectsData.data.map(async (project) => {
             console.log('Processing ACC project:', project.attributes.name);
-            
+
             let projectNumber = '';
             let location = '';
             let additionalData = {};
-            
+
+            // First, check if project number is in the main project attributes
+            if (project.attributes.extension?.data?.projectNumber) {
+                projectNumber = project.attributes.extension.data.projectNumber;
+            }
+
             try {
                 const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
                     headers: {
                         'Authorization': `Bearer ${forgeAccessToken}`
                     }
                 });
-                
+
                 if (projectDetailResponse.ok) {
                     const projectDetail = await projectDetailResponse.json();
                     console.log('Project detail for', project.attributes.name, ':', projectDetail);
-                    
+
                     if (projectDetail.data?.attributes?.extension?.data) {
                         const extData = projectDetail.data.attributes.extension.data;
-                        
-                        projectNumber = extData.projectNumber || 
-                                      extData.project_number || 
-                                      extData.number || 
-                                      extData.jobNumber ||
-                                      extData.job_number ||
-                                      extData.projectId ||
-                                      extData.project_id ||
-                                      extData.accountId ||
-                                      extData.projectCode ||
-                                      extData.code || '';
-                        
-                        location = extData.location || 
-                                 extData.project_location || 
-                                 extData.address ||
-                                 extData.city ||
-                                 extData.state ||
-                                 extData.jobLocation ||
-                                 extData.site || '';
+
+                        // Look for project number in extension data - prioritize the actual project number field
+                        if (!projectNumber) {
+                            projectNumber = extData.projectNumber ||
+                                extData.project_number ||
+                                extData.number ||
+                                extData.jobNumber ||
+                                extData.job_number ||
+                                extData.projectCode ||
+                                extData.code || '';
+                        }
+
+                        location = extData.location ||
+                            extData.project_location ||
+                            extData.address ||
+                            extData.city ||
+                            extData.state ||
+                            extData.jobLocation ||
+                            extData.site || '';
+                    }
+
+                    // Also check the main project attributes for project number
+                    if (!projectNumber && projectDetail.data?.attributes) {
+                        const attrs = projectDetail.data.attributes;
+                        projectNumber = attrs.projectNumber || attrs.number || '';
                     }
                 }
             } catch (detailError) {
                 console.warn('Could not get detailed project info for', project.attributes.name, ':', detailError);
             }
-            
-            if (!projectNumber && project.attributes.extension?.data) {
-                const extData = project.attributes.extension.data;
-                projectNumber = extData.projectNumber || 
-                              extData.project_number || 
-                              extData.number || 
-                              extData.projectId ||
-                              extData.project_id || '';
-            }
-            
+
+            // If still no project number found, try to extract from project name or use fallback
             if (!projectNumber) {
                 const namePatterns = [
+                    /Project\s*#?\s*([A-Z0-9\-]+)/i,
+                    /Job\s*#?\s*([A-Z0-9\-]+)/i,
                     /([A-Z]{2,}-\d+)/,
                     /(\d{4}-\d+)/,
                     /([A-Z]+\d+)/,
-                    /(Job\s*\d+)/i,
                     /(\d{6,})/,
                     /([A-Z]{3,}\d{3,})/
                 ];
-                
+
                 for (const pattern of namePatterns) {
                     const match = project.attributes.name.match(pattern);
                     if (match) {
@@ -472,11 +476,12 @@ async function loadProjectsFromHub(hubId) {
                     }
                 }
             }
-            
+
+            // Final fallback - use a recognizable format instead of random ID
             if (!projectNumber) {
-                projectNumber = `ACC-${project.id.split('#').pop().slice(-6)}`;
+                projectNumber = `PRJ-${project.id.split('#').pop().slice(-6).toUpperCase()}`;
             }
-            
+
             return {
                 id: project.id,
                 name: project.attributes.name || 'Unnamed Project',
@@ -486,11 +491,11 @@ async function loadProjectsFromHub(hubId) {
                 fullData: project
             };
         }));
-        
+
         console.log('Processed ACC projects with enhanced metadata:', projects);
-        
+
         populateProjectDropdown(projects);
-        
+
         if (projects.length > 0) {
             setTimeout(() => {
                 const projectSelect = document.getElementById('projectName');
@@ -500,7 +505,7 @@ async function loadProjectsFromHub(hubId) {
                 }
             }, 100);
         }
-        
+
     } catch (error) {
         console.error('Error in loadProjectsFromHub:', error);
         throw error;
@@ -510,20 +515,20 @@ async function loadProjectsFromHub(hubId) {
 function populateProjectDropdown(projects) {
     try {
         console.log('Populating dropdown with ACC projects:', projects);
-        
+
         userProjects = projects;
         const projectSelect = document.getElementById('projectName');
-        
+
         if (!projectSelect) {
             console.error('Project select element not found');
             return;
         }
-        
+
         projectSelect.innerHTML = '<option value="">Select an ACC project...</option>';
-        
+
         projects.forEach((project, index) => {
-            console.log(`Adding ACC project ${index + 1}:`, project.name, 'Number:', project.number);
-            
+            console.log(`Adding ACC project ${index + 1}:`, project.name, 'Project Number:', project.number);
+
             const option = document.createElement('option');
             option.value = project.id;
             option.textContent = `${project.name} (${project.number})`;
@@ -531,18 +536,18 @@ function populateProjectDropdown(projects) {
             option.dataset.location = project.location || '';
             projectSelect.appendChild(option);
         });
-        
+
         projectSelect.disabled = false;
         projectSelect.style.backgroundColor = '';
-        
+
         console.log('ACC project dropdown populated successfully');
-        
+
         document.getElementById('accDetails').innerHTML = `
             <strong>Status:</strong> Connected to ACC<br>
             <strong>Projects Found:</strong> ${projects.length} ACC projects<br>
             <strong>Hub:</strong> Metromont ACC Account
         `;
-        
+
     } catch (error) {
         console.error('Error in populateProjectDropdown:', error);
         throw error;
@@ -552,28 +557,33 @@ function populateProjectDropdown(projects) {
 function onProjectSelected() {
     const projectSelect = document.getElementById('projectName');
     const selectedOption = projectSelect.selectedOptions[0];
-    
+
     if (selectedOption && selectedOption.value) {
         const projectNumber = selectedOption.dataset.projectNumber || '';
         const location = selectedOption.dataset.location || '';
-        
+
         console.log('Selected ACC project:', selectedOption.textContent);
-        console.log('Project number:', projectNumber);
-        console.log('Location:', location);
-        
+        console.log('Project number from ACC:', projectNumber);
+        console.log('Location from ACC:', location);
+
+        // Set the project number field with the actual ACC project number
         document.getElementById('projectNumber').value = projectNumber;
         document.getElementById('location').value = location;
-        
+
+        // Enable editing of these fields in case user wants to modify
         document.getElementById('projectNumber').disabled = false;
         document.getElementById('location').disabled = false;
         document.getElementById('calculatedBy').disabled = false;
-        
+
         document.getElementById('projectSource').style.display = 'inline-flex';
-        document.getElementById('projectSource').textContent = 'Selected from ACC';
-        
+        document.getElementById('projectSource').textContent = 'Project Number from ACC';
+
         if (!document.getElementById('calculatedBy').value) {
             document.getElementById('calculatedBy').value = 'ACC User';
         }
+
+        // Log for debugging
+        console.log('Project number field set to:', document.getElementById('projectNumber').value);
     }
 }
 
@@ -680,7 +690,7 @@ function calculateNonSelfStressing() {
 function calculateAll() {
     const selfStressingResults = calculateSelfStressing();
     const nonSelfStressingResults = calculateNonSelfStressing();
-    
+
     currentCalculation = {
         timestamp: new Date().toISOString(),
         reportId: currentReportId,
@@ -742,7 +752,7 @@ async function saveToACC() {
         await new Promise(resolve => setTimeout(resolve, 1500));
 
         console.log('Saved to ACC:', currentCalculation);
-        
+
         saveBtn.disabled = false;
         saveBtn.innerHTML = `
             <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
@@ -750,12 +760,12 @@ async function saveToACC() {
             </svg>
             Save to ACC
         `;
-        
+
         alert('Calculation saved to ACC successfully!');
     } catch (error) {
         console.error('Save to ACC failed:', error);
         alert('Failed to save to ACC: ' + error.message);
-        
+
         saveBtn.disabled = false;
         saveBtn.innerHTML = `
             <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
@@ -867,7 +877,7 @@ function generatePDFData() {
 }
 
 // Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     setupUI();
     initializeApp();
 });
