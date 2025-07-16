@@ -248,19 +248,71 @@
             margin-bottom: 1.5rem;
         }
 
+        /* Auth Processing Overlay */
+        .auth-processing {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .auth-processing.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .auth-processing-content {
+            background: white;
+            padding: 3rem;
+            border-radius: 16px;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            max-width: 400px;
+        }
+
+        .auth-processing-content h3 {
+            color: #1e293b;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+
+        .auth-processing-content p {
+            color: #64748b;
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
+        }
+
         .loading {
             display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #3b82f6;
+            width: 32px;
+            height: 32px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
             border-radius: 50%;
             animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
         }
 
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+
+        /* Hide main content during auth */
+        .auth-loading .header,
+        .auth-loading .container,
+        .auth-loading .footer {
+            opacity: 0.3;
+            pointer-events: none;
         }
 
         /* Bed Selection Modal */
@@ -587,7 +639,15 @@
         }
     </style>
 </head>
-<body>
+<body class="auth-loading">
+    <!-- Auth Processing Overlay -->
+    <div class="auth-processing active" id="authProcessing">
+        <div class="auth-processing-content">
+            <div class="loading"></div>
+            <h3 id="authTitle">Verifying Authentication</h3>
+            <p id="authMessage">Checking your Autodesk Construction Cloud connection...</p>
+        </div>
+    </div>
     <header class="header">
         <div class="header-content">
             <div class="logo-section">
@@ -616,10 +676,12 @@
                     </svg>
                     Back to Dashboard
                 </button>
-                <span id="accStatus" class="status-badge status-disconnected">
-                    <div class="loading"></div>
-                    Connecting to ACC...
-                </span>
+                <div class="status-badge status-connected" id="authStatusBadge" style="display: none;">
+                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                    Connected to ACC
+                </div>
             </div>
         </div>
     </header>
@@ -638,8 +700,9 @@
         <!-- ACC Integration Status -->
         <div class="acc-info" id="accInfo">
             <div id="accDetails">
-                <div class="loading"></div>
-                Initializing ACC Connection...
+                <strong>Status:</strong> Connected to ACC<br>
+                <strong>Authentication:</strong> Automatically verified<br>
+                <strong>Hub:</strong> Metromont ACC Account
             </div>
         </div>
 
@@ -1028,7 +1091,6 @@
         // ACC CONNECT CONFIGURATION
         const ACC_CLIENT_ID = 'phUPKRBuqECpJUoBmRuKdKhSP3ZTRALH4LMWKAzAnymnYkQU';
         const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
-        const ACC_ENVIRONMENT = 'production';
         
         // ACC/Forge Integration Variables
         let forgeAccessToken = null;
@@ -1044,6 +1106,156 @@
         let currentBedId = null;
         let currentBedName = null;
         let reportInstances = new Map(); // Store multiple form instances
+
+        // UI Elements
+        const authProcessing = document.getElementById('authProcessing');
+        const authTitle = document.getElementById('authTitle');
+        const authMessage = document.getElementById('authMessage');
+
+        // Authentication Flow
+        async function initializeApp() {
+            try {
+                // Check if we're coming from the main app with authentication
+                if (window.opener && window.opener.CastLinkAuth) {
+                    const parentAuth = window.opener.CastLinkAuth;
+                    const isParentAuth = await parentAuth.waitForAuth();
+                    
+                    if (isParentAuth) {
+                        forgeAccessToken = parentAuth.getToken();
+                        await completeAuthentication();
+                        return;
+                    }
+                }
+                
+                // Check for stored authentication
+                const storedToken = getStoredToken();
+                if (storedToken && !isTokenExpired(storedToken)) {
+                    forgeAccessToken = storedToken.access_token;
+                    
+                    // Verify token is still valid
+                    const isValid = await verifyToken(forgeAccessToken);
+                    if (isValid) {
+                        await completeAuthentication();
+                    } else {
+                        // Token is invalid, redirect to main app for re-authentication
+                        clearStoredToken();
+                        redirectToMainApp();
+                    }
+                } else {
+                    // No valid token, redirect to main app
+                    redirectToMainApp();
+                }
+            } catch (error) {
+                console.error('App initialization failed:', error);
+                showAuthError(error.message);
+            }
+        }
+
+        function redirectToMainApp() {
+            updateAuthStatus('Redirecting to Login...', 'Taking you to the main app for authentication...');
+            setTimeout(() => {
+                window.location.href = 'index.html';
+            }, 2000);
+        }
+
+        async function completeAuthentication() {
+            try {
+                updateAuthStatus('Loading Projects...', 'Connecting to your Autodesk Construction Cloud account...');
+                
+                // Load project data
+                await loadRealProjectData();
+                
+                // Authentication complete
+                isACCConnected = true;
+                
+                // Show success and hide auth overlay
+                updateAuthStatus('Success!', 'Successfully connected to ACC');
+                
+                // Small delay to show success message
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+                // Hide auth overlay and show main content
+                authProcessing.classList.remove('active');
+                document.body.classList.remove('auth-loading');
+                
+                // Show auth status badge
+                document.getElementById('authStatusBadge').style.display = 'inline-flex';
+                
+                // Enable ACC features
+                enableACCFeatures();
+                
+                console.log('Authentication completed successfully');
+                
+            } catch (error) {
+                console.error('Authentication completion failed:', error);
+                showAuthError('Failed to load project data: ' + error.message);
+            }
+        }
+
+        async function verifyToken(token) {
+            try {
+                const response = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                return response.ok;
+            } catch (error) {
+                console.error('Token verification failed:', error);
+                return false;
+            }
+        }
+
+        function updateAuthStatus(title, message) {
+            authTitle.textContent = title;
+            authMessage.textContent = message;
+        }
+
+        function showAuthError(message) {
+            updateAuthStatus('Authentication Error', message);
+            authProcessing.innerHTML = `
+                <div class="auth-processing-content">
+                    <div style="color: #dc2626; font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
+                    <h3 style="color: #dc2626;">Authentication Error</h3>
+                    <p style="color: #6b7280; margin-bottom: 1.5rem;">${message}</p>
+                    <button onclick="window.location.href='index.html'" style="background: #059669; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem; margin-right: 0.5rem;">
+                        Go to Main App
+                    </button>
+                    <button onclick="location.reload()" style="background: #6b7280; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem;">
+                        Try Again
+                    </button>
+                </div>
+            `;
+        }
+
+        // Token Management
+        function getStoredToken() {
+            // Try sessionStorage first, then localStorage
+            let stored = sessionStorage.getItem('forge_token');
+            if (!stored) {
+                stored = localStorage.getItem('forge_token_backup');
+                if (stored) {
+                    // Restore to sessionStorage
+                    sessionStorage.setItem('forge_token', stored);
+                }
+            }
+            return stored ? JSON.parse(stored) : null;
+        }
+
+        function isTokenExpired(tokenInfo) {
+            const now = Date.now();
+            const expiresAt = tokenInfo.expires_at;
+            const timeUntilExpiry = expiresAt - now;
+            
+            // Consider token expired if it expires in less than 5 minutes
+            return timeUntilExpiry < (5 * 60 * 1000);
+        }
+
+        function clearStoredToken() {
+            sessionStorage.removeItem('forge_token');
+            localStorage.removeItem('forge_token_backup');
+            console.log('Token cleared');
+        }
 
         // Bed Selection Functions
         function showBedSelection() {
@@ -1198,136 +1410,9 @@
             }
         });
 
-        // ACC Authentication and Project Management (same as before)
-        function isInIframe() {
-            return window.self !== window.top;
-        }
-
-        window.showAuthButton = function() {
-            updateConnectionStatus('disconnected', 'Click to Connect to ACC');
-            document.getElementById('accStatus').innerHTML = `
-                <button onclick="authenticateWithACC()" class="btn" style="background: #059669; color: white; border: none; padding: 4px 8px; border-radius: 4px;">
-                    Connect to ACC
-                </button>
-            `;
-        };
-
-        window.authenticateWithACC = function() {
-            const currentUrl = new URL(window.location.href);
-            const callbackUrl = `${currentUrl.protocol}//${currentUrl.host}/`;
-            
-            const authUrl = `https://developer.api.autodesk.com/authentication/v2/authorize?` +
-                `response_type=code&` +
-                `client_id=${ACC_CLIENT_ID}&` +
-                `redirect_uri=${encodeURIComponent(callbackUrl)}&` +
-                `scope=${encodeURIComponent('data:read account:read')}&` +
-                `state=pppqc-calc`;
-            
-            if (isInIframe()) {
-                const authWindow = window.open(authUrl, 'acc_auth', 'width=600,height=700,scrollbars=yes,resizable=yes');
-                
-                const checkClosed = setInterval(() => {
-                    if (authWindow.closed) {
-                        clearInterval(checkClosed);
-                        setTimeout(() => {
-                            const storedToken = getStoredToken();
-                            if (storedToken && !isTokenExpired(storedToken)) {
-                                forgeAccessToken = storedToken.access_token;
-                                loadRealProjectData();
-                            } else {
-                                window.location.reload();
-                            }
-                        }, 1000);
-                    }
-                }, 1000);
-            } else {
-                console.log('Redirecting to auth URL:', authUrl);
-                window.location.href = authUrl;
-            }
-        };
-
-        async function handleAuthCode(code) {
-            try {
-                updateConnectionStatus('connected', 'Authenticating...');
-                
-                console.log('Authorization code received:', code);
-                
-                const currentUrl = new URL(window.location.href);
-                const callbackUrl = `${currentUrl.protocol}//${currentUrl.host}/`;
-                
-                console.log('Using callback URL:', callbackUrl);
-                
-                const tokenResponse = await fetch('/.netlify/functions/auth', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        code: code,
-                        redirect_uri: callbackUrl
-                    })
-                });
-                
-                console.log('Token response status:', tokenResponse.status);
-                
-                const responseText = await tokenResponse.text();
-                console.log('Token response text:', responseText);
-                
-                if (!tokenResponse.ok) {
-                    throw new Error(`Token exchange failed: ${responseText}`);
-                }
-                
-                let tokenData;
-                try {
-                    tokenData = JSON.parse(responseText);
-                } catch (e) {
-                    throw new Error(`Invalid JSON response: ${responseText}`);
-                }
-                
-                if (tokenData.error) {
-                    throw new Error(`Auth error: ${tokenData.error} - ${tokenData.error_description || ''}`);
-                }
-                
-                if (!tokenData.access_token) {
-                    throw new Error('No access token received');
-                }
-                
-                forgeAccessToken = tokenData.access_token;
-                console.log('Access token received successfully');
-                
-                storeToken(tokenData);
-                await loadRealProjectData();
-                
-                window.history.replaceState({}, document.title, window.location.pathname);
-                
-            } catch (error) {
-                console.error('Authentication failed:', error);
-                handleACCConnectionError(error);
-            }
-        }
-
-        function storeToken(tokenData) {
-            const expirationTime = Date.now() + (tokenData.expires_in * 1000);
-            const tokenInfo = {
-                access_token: tokenData.access_token,
-                expires_at: expirationTime
-            };
-            sessionStorage.setItem('forge_token', JSON.stringify(tokenInfo));
-        }
-
-        function getStoredToken() {
-            const stored = sessionStorage.getItem('forge_token');
-            return stored ? JSON.parse(stored) : null;
-        }
-
-        function isTokenExpired(tokenInfo) {
-            return Date.now() >= tokenInfo.expires_at;
-        }
-
+        // Project Data Loading
         async function loadRealProjectData() {
             try {
-                updateConnectionStatus('connected', 'Loading Projects...');
-                
                 console.log('Starting to load real project data...');
                 
                 const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
@@ -1362,24 +1447,11 @@
                 }
                 
                 console.log('Project data loading completed successfully');
-                updateConnectionStatus('connected', 'Connected to ACC');
-                isACCConnected = true;
-                enableACCFeatures();
                 
             } catch (error) {
                 console.error('Failed to load project data:', error);
                 
-                updateConnectionStatus('connected', 'Connected (Manual Entry Mode)');
-                isACCConnected = true;
-                enableACCFeatures();
-                
-                document.getElementById('accDetails').innerHTML = `
-                    <div style="color: #dc2626;">
-                        <strong>Project Loading Issue:</strong> ${error.message}<br>
-                        <small>You can still use the calculator by entering project details manually</small>
-                    </div>
-                `;
-                
+                // Still enable manual entry mode
                 const projectSelect = document.getElementById('projectName');
                 projectSelect.innerHTML = '<option value="">Enter project details manually below...</option>';
                 projectSelect.disabled = false;
@@ -1391,6 +1463,13 @@
                         element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
                     }
                 });
+                
+                document.getElementById('accDetails').innerHTML = `
+                    <div style="color: #dc2626;">
+                        <strong>Project Loading Issue:</strong> ${error.message}<br>
+                        <small>You can still use the calculator by entering project details manually</small>
+                    </div>
+                `;
             }
         }
 
@@ -1450,14 +1529,6 @@
                                          extData.state ||
                                          extData.jobLocation ||
                                          extData.site || '';
-                                
-                                additionalData = {
-                                    description: extData.description || extData.project_description || '',
-                                    status: extData.status || extData.project_status || '',
-                                    type: extData.type || extData.project_type || '',
-                                    startDate: extData.startDate || extData.start_date || '',
-                                    endDate: extData.endDate || extData.end_date || ''
-                                };
                             }
                         }
                     } catch (detailError) {
@@ -1556,8 +1627,6 @@
                 
                 console.log('ACC project dropdown populated successfully');
                 
-                updateConnectionStatus('connected', 'ACC Projects Loaded');
-                
                 document.getElementById('accDetails').innerHTML = `
                     <strong>Status:</strong> Connected to ACC<br>
                     <strong>Projects Found:</strong> ${projects.length} ACC projects<br>
@@ -1598,122 +1667,9 @@
             }
         }
 
-        async function initializeACCConnection() {
-            try {
-                const urlParams = new URLSearchParams(window.location.search);
-                const authCode = urlParams.get('code');
-                const state = urlParams.get('state');
-                const error = urlParams.get('error');
-                
-                if (error) {
-                    throw new Error(`OAuth error: ${error} - ${urlParams.get('error_description') || ''}`);
-                }
-                
-                if (authCode) {
-                    if (state !== 'pppqc-calc') {
-                        console.warn('State parameter mismatch');
-                    }
-                    await handleAuthCode(authCode);
-                } else {
-                    const storedToken = getStoredToken();
-                    if (storedToken && !isTokenExpired(storedToken)) {
-                        forgeAccessToken = storedToken.access_token;
-                        console.log('Using stored token');
-                        await loadRealProjectData();
-                    } else {
-                        console.log('No valid token found, showing auth button');
-                        showAuthButton();
-                    }
-                }
-            } catch (error) {
-                console.error('Connection Error:', error);
-                handleACCConnectionError(error);
-            }
-        }
-
-        function updateConnectionStatus(status, message) {
-            const statusElement = document.getElementById('accStatus');
-            const accInfo = document.getElementById('accInfo');
-            
-            if (status === 'connected') {
-                statusElement.className = 'status-badge status-connected';
-                statusElement.innerHTML = `
-                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                    </svg>
-                    ${message}
-                `;
-                isACCConnected = true;
-                accInfo.style.borderColor = '#10b981';
-                accInfo.style.backgroundColor = '#ecfdf5';
-            } else {
-                statusElement.className = 'status-badge status-disconnected';
-                statusElement.innerHTML = `
-                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                    </svg>
-                    ${message}
-                `;
-                isACCConnected = false;
-            }
-        }
-
         function enableACCFeatures() {
             document.getElementById('saveBtn').disabled = false;
             document.getElementById('exportBtn').disabled = false;
-        }
-
-        function handleACCConnectionError(error) {
-            updateConnectionStatus('disconnected', 'Connection Failed');
-            console.error('Full error details:', error);
-            
-            let errorMessage = 'Connection failed';
-            if (error.message.includes('Token exchange failed')) {
-                errorMessage = 'Authentication failed - please check app configuration';
-            } else if (error.message.includes('OAuth error')) {
-                errorMessage = error.message;
-            }
-            
-            document.getElementById('accDetails').innerHTML = `
-                <div style="color: #dc2626;">
-                    <strong>Error:</strong> ${errorMessage}<br>
-                    <small>${error.message}</small><br>
-                    <button onclick="showAuthButton(); location.reload();" style="margin-top: 8px; padding: 4px 8px; background: #059669; color: white; border: none; border-radius: 4px;">
-                        Try Again
-                    </button>
-                </div>
-                <div style="margin-top: 8px; color: #6b7280;">
-                    <em>Calculator will work in offline mode</em>
-                </div>
-            `;
-            
-            simulateACCEnvironment();
-        }
-
-        function simulateACCEnvironment() {
-            updateConnectionStatus('connected', 'Simulation Mode - Ready to Use');
-            
-            ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
-                const element = document.getElementById(id);
-                if (element) {
-                    element.disabled = false;
-                    if (element.placeholder && element.placeholder.includes('Loading from ACC...')) {
-                        element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter or select');
-                    }
-                }
-            });
-            
-            const projectSelect = document.getElementById('projectName');
-            projectSelect.disabled = false;
-            projectSelect.innerHTML = '<option value="">Enter project name manually below...</option>';
-            
-            document.getElementById('accDetails').innerHTML = `
-                <strong>Mode:</strong> Simulation Mode<br>
-                <strong>Features:</strong> All calculations working, manual project entry<br>
-                <strong>Status:</strong> Ready for use
-            `;
-            
-            enableACCFeatures();
         }
 
         function setupUI() {
@@ -1722,17 +1678,6 @@
                 dateInput.value = new Date().toISOString().split('T')[0];
             }
         }
-
-        window.addEventListener('message', function(event) {
-            if (event.origin !== window.location.origin) return;
-            
-            if (event.data.type === 'ACC_AUTH_SUCCESS' && event.data.token) {
-                forgeAccessToken = event.data.token;
-                storeToken({ access_token: event.data.token, expires_in: 3600 });
-                loadRealProjectData();
-                updateConnectionStatus('connected', 'Connected to ACC');
-            }
-        });
 
         // Utility functions
         function formatNumber(num) {
@@ -2013,12 +1958,8 @@
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            if (window.self !== window.top) {
-                document.body.classList.add('embedded-mode');
-            }
-            
-            initializeACCConnection();
             setupUI();
+            initializeApp();
         });
     </script>
 </body>
