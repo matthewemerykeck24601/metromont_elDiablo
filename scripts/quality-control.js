@@ -377,7 +377,8 @@ async function loadRealProjectData() {
         document.getElementById('accDetails').innerHTML = `
             <div style="color: #dc2626;">
                 <strong>Project Loading Issue:</strong> ${error.message}<br>
-                <small>You can still use the calculator by entering project details manually</small>
+                <small>You can still use the calculator by entering project details manually</small><br>
+                <small><em>Note: Projects must follow format "12345 - Project Name" to appear in dropdown</em></small>
             </div>
         `;
     }
@@ -403,13 +404,26 @@ async function loadProjectsFromHub(hubId) {
         const projects = await Promise.all(projectsData.data.map(async (project) => {
             console.log('Processing ACC project:', project.attributes.name);
 
-            let projectNumber = '';
+            // First, check if project name matches the required format: "12345 - Project name"
+            const projectNamePattern = /^(\d{5})\s*-\s*(.+)$/;
+            const nameMatch = project.attributes.name.match(projectNamePattern);
+
+            if (!nameMatch) {
+                console.log('Skipping project (does not match format):', project.attributes.name);
+                return null; // Filter out projects that don't match the format
+            }
+
+            const projectNumberFromName = nameMatch[1]; // Extract the 5-digit code
+            const projectDisplayName = nameMatch[2]; // Extract the project name part
+
+            let projectNumber = projectNumberFromName; // Default to the 5-digit code from name
             let location = '';
             let additionalData = {};
 
-            // First, check if project number is in the main project attributes
+            // Try to get project number from ACC fields first, but fall back to name extraction
             if (project.attributes.extension?.data?.projectNumber) {
                 projectNumber = project.attributes.extension.data.projectNumber;
+                console.log('Found project number in extension data:', projectNumber);
             }
 
             try {
@@ -426,15 +440,18 @@ async function loadProjectsFromHub(hubId) {
                     if (projectDetail.data?.attributes?.extension?.data) {
                         const extData = projectDetail.data.attributes.extension.data;
 
-                        // Look for project number in extension data - prioritize the actual project number field
-                        if (!projectNumber) {
-                            projectNumber = extData.projectNumber ||
-                                extData.project_number ||
-                                extData.number ||
-                                extData.jobNumber ||
-                                extData.job_number ||
-                                extData.projectCode ||
-                                extData.code || '';
+                        // Look for project number in extension data - only override if we find a valid one
+                        const accProjectNumber = extData.projectNumber ||
+                            extData.project_number ||
+                            extData.number ||
+                            extData.jobNumber ||
+                            extData.job_number ||
+                            extData.projectCode ||
+                            extData.code || '';
+
+                        if (accProjectNumber && accProjectNumber.trim() !== '') {
+                            projectNumber = accProjectNumber;
+                            console.log('Updated project number from detail data:', projectNumber);
                         }
 
                         location = extData.location ||
@@ -447,54 +464,54 @@ async function loadProjectsFromHub(hubId) {
                     }
 
                     // Also check the main project attributes for project number
-                    if (!projectNumber && projectDetail.data?.attributes) {
+                    if (projectDetail.data?.attributes) {
                         const attrs = projectDetail.data.attributes;
-                        projectNumber = attrs.projectNumber || attrs.number || '';
+                        const mainProjectNumber = attrs.projectNumber || attrs.number || '';
+                        if (mainProjectNumber && mainProjectNumber.trim() !== '') {
+                            projectNumber = mainProjectNumber;
+                            console.log('Updated project number from main attributes:', projectNumber);
+                        }
                     }
                 }
             } catch (detailError) {
                 console.warn('Could not get detailed project info for', project.attributes.name, ':', detailError);
             }
 
-            // If still no project number found, try to extract from project name or use fallback
-            if (!projectNumber) {
-                const namePatterns = [
-                    /Project\s*#?\s*([A-Z0-9\-]+)/i,
-                    /Job\s*#?\s*([A-Z0-9\-]+)/i,
-                    /([A-Z]{2,}-\d+)/,
-                    /(\d{4}-\d+)/,
-                    /([A-Z]+\d+)/,
-                    /(\d{6,})/,
-                    /([A-Z]{3,}\d{3,})/
-                ];
-
-                for (const pattern of namePatterns) {
-                    const match = project.attributes.name.match(pattern);
-                    if (match) {
-                        projectNumber = match[1];
-                        break;
-                    }
-                }
+            // Final fallback - ensure we have the 5-digit code from the project name
+            if (!projectNumber || projectNumber.trim() === '') {
+                projectNumber = projectNumberFromName;
+                console.log('Using project number from name as final fallback:', projectNumber);
             }
 
-            // Final fallback - use a recognizable format instead of random ID
-            if (!projectNumber) {
-                projectNumber = `PRJ-${project.id.split('#').pop().slice(-6).toUpperCase()}`;
-            }
+            console.log('Final project number for', project.attributes.name, ':', projectNumber);
 
             return {
                 id: project.id,
                 name: project.attributes.name || 'Unnamed Project',
+                displayName: projectDisplayName,
                 number: projectNumber,
+                numericSort: parseInt(projectNumberFromName, 10), // For sorting
                 location: location || 'Location not specified',
                 additionalData,
                 fullData: project
             };
         }));
 
-        console.log('Processed ACC projects with enhanced metadata:', projects);
+        // Filter out null entries (projects that didn't match the format)
+        const filteredProjects = projects.filter(project => project !== null);
 
-        populateProjectDropdown(projects);
+        if (filteredProjects.length === 0) {
+            console.warn('No projects matched the required format "12345 - Project Name"');
+            throw new Error('No projects found matching required format "12345 - Project Name"');
+        }
+
+        // Sort projects numerically by the 5-digit code (lowest to highest)
+        const sortedProjects = filteredProjects.sort((a, b) => a.numericSort - b.numericSort);
+
+        console.log('Filtered and sorted ACC projects:', sortedProjects);
+        console.log(`${filteredProjects.length} projects matched the format out of ${projectsData.data.length} total projects`);
+
+        populateProjectDropdown(sortedProjects);
 
         if (projects.length > 0) {
             setTimeout(() => {
@@ -514,7 +531,7 @@ async function loadProjectsFromHub(hubId) {
 
 function populateProjectDropdown(projects) {
     try {
-        console.log('Populating dropdown with ACC projects:', projects);
+        console.log('Populating dropdown with filtered and sorted ACC projects:', projects);
 
         userProjects = projects;
         const projectSelect = document.getElementById('projectName');
@@ -531,6 +548,7 @@ function populateProjectDropdown(projects) {
 
             const option = document.createElement('option');
             option.value = project.id;
+            // Display the full project name, but show the project number in parentheses
             option.textContent = `${project.name} (${project.number})`;
             option.dataset.projectNumber = project.number || '';
             option.dataset.location = project.location || '';
@@ -540,11 +558,11 @@ function populateProjectDropdown(projects) {
         projectSelect.disabled = false;
         projectSelect.style.backgroundColor = '';
 
-        console.log('ACC project dropdown populated successfully');
+        console.log('ACC project dropdown populated successfully with', projects.length, 'filtered projects');
 
         document.getElementById('accDetails').innerHTML = `
             <strong>Status:</strong> Connected to ACC<br>
-            <strong>Projects Found:</strong> ${projects.length} ACC projects<br>
+            <strong>Projects Found:</strong> ${projects.length} ACC projects (filtered by format)<br>
             <strong>Hub:</strong> Metromont ACC Account
         `;
 
@@ -563,8 +581,16 @@ function onProjectSelected() {
         const location = selectedOption.dataset.location || '';
 
         console.log('Selected ACC project:', selectedOption.textContent);
-        console.log('Project number from ACC:', projectNumber);
-        console.log('Location from ACC:', location);
+        console.log('Project number from dataset:', projectNumber);
+        console.log('Location from dataset:', location);
+
+        // Find the project object to get more details
+        const selectedProject = userProjects.find(p => p.id === selectedOption.value);
+        if (selectedProject) {
+            console.log('Selected project object:', selectedProject);
+            console.log('Project number from object:', selectedProject.number);
+            console.log('Project display name:', selectedProject.displayName);
+        }
 
         // Set the project number field with the actual ACC project number
         document.getElementById('projectNumber').value = projectNumber;
@@ -584,6 +610,7 @@ function onProjectSelected() {
 
         // Log for debugging
         console.log('Project number field set to:', document.getElementById('projectNumber').value);
+        console.log('Location field set to:', document.getElementById('location').value);
     }
 }
 
