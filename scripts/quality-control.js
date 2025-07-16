@@ -2,6 +2,9 @@
 const ACC_CLIENT_ID = 'phUPKRBuqECpJUoBmRuKdKhSP3ZTRALH4LMWKAzAnymnYkQU';
 const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 
+// ACC Data Management API Configuration
+const ACC_DATA_API_BASE = 'https://developer.api.autodesk.com/data/v1';
+
 // ACC/Forge Integration Variables
 let forgeAccessToken = null;
 let projectId = null;
@@ -10,12 +13,14 @@ let userProfile = null;
 let isACCConnected = false;
 let currentCalculation = null;
 let userProjects = [];
+let currentProjectBucketKey = null;
 
 // Form Instance Management
 let currentReportId = null;
 let currentBedId = null;
 let currentBedName = null;
 let reportInstances = new Map(); // Store multiple form instances
+let existingReports = []; // Store loaded reports for search/filter
 
 // UI Elements
 const authProcessing = document.getElementById('authProcessing');
@@ -94,6 +99,9 @@ async function completeAuthentication() {
         // Enable ACC features
         enableACCFeatures();
 
+        // Initialize report history
+        await initializeReportHistory();
+
         console.log('Authentication completed successfully');
 
     } catch (error) {
@@ -166,6 +174,697 @@ function clearStoredToken() {
     localStorage.removeItem('forge_token_backup');
     console.log('Token cleared');
 }
+
+// =================================================================
+// ACC DATA MANAGEMENT API FUNCTIONS
+// =================================================================
+
+// Create Storage Bucket for Project (one-time setup)
+async function createProjectDataBucket(projectId) {
+    try {
+        const bucketKey = `metromont-bedqc-${projectId.replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+
+        const response = await fetch(`${ACC_DATA_API_BASE}/buckets`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                bucketKey: bucketKey,
+                policyKey: 'persistent'
+            })
+        });
+
+        if (response.status === 409) {
+            console.log('Bucket already exists:', bucketKey);
+            currentProjectBucketKey = bucketKey;
+            return bucketKey;
+        }
+
+        if (!response.ok) {
+            throw new Error(`Failed to create bucket: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        console.log('Created data bucket:', result);
+        currentProjectBucketKey = bucketKey;
+        return bucketKey;
+
+    } catch (error) {
+        console.error('Error creating bucket:', error);
+        throw error;
+    }
+}
+
+// Save Bed QC Report to ACC
+async function saveBedQCReportToACC(reportData) {
+    try {
+        // Ensure bucket exists
+        const bucketKey = await createProjectDataBucket(projectId);
+
+        // Create unique object key
+        const objectKey = `bedqc-report-${reportData.reportId}-${Date.now()}.json`;
+
+        // Prepare data payload with enhanced metadata
+        const dataPayload = {
+            type: 'bedqc-report',
+            version: '1.0',
+            timestamp: new Date().toISOString(),
+            application: 'MetromontCastLink',
+            module: 'QualityControl',
+            schema: 'BedQCReport-v1',
+            reportData: {
+                ...reportData,
+                savedToACC: true,
+                accObjectKey: objectKey,
+                accBucketKey: bucketKey
+            }
+        };
+
+        // Upload data object
+        const uploadResponse = await fetch(`${ACC_DATA_API_BASE}/buckets/${bucketKey}/objects/${objectKey}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(dataPayload)
+        });
+
+        if (!uploadResponse.ok) {
+            throw new Error(`Failed to save report: ${uploadResponse.statusText}`);
+        }
+
+        const uploadResult = await uploadResponse.json();
+        console.log('Report saved to ACC:', uploadResult);
+
+        return {
+            success: true,
+            objectId: uploadResult.objectId,
+            bucketKey: bucketKey,
+            objectKey: objectKey,
+            reportId: reportData.reportId,
+            urn: uploadResult.objectId
+        };
+
+    } catch (error) {
+        console.error('Error saving to ACC:', error);
+        throw error;
+    }
+}
+
+// Load Existing Reports from ACC
+async function loadBedQCReportsFromACC(projectId) {
+    try {
+        if (!currentProjectBucketKey) {
+            currentProjectBucketKey = `metromont-bedqc-${projectId.replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+        }
+
+        // List objects in bucket
+        const response = await fetch(`${ACC_DATA_API_BASE}/buckets/${currentProjectBucketKey}/objects?limit=100`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!response.ok) {
+            if (response.status === 404) {
+                console.log('No report bucket found yet for project');
+                return []; // No reports yet
+            }
+            throw new Error(`Failed to load reports: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        const reports = [];
+
+        // Load each report object
+        for (const item of result.items) {
+            if (item.objectKey.includes('bedqc-report-')) {
+                try {
+                    const reportResponse = await fetch(`${ACC_DATA_API_BASE}/buckets/${currentProjectBucketKey}/objects/${item.objectKey}`, {
+                        headers: {
+                            'Authorization': `Bearer ${forgeAccessToken}`
+                        }
+                    });
+
+                    if (reportResponse.ok) {
+                        const reportData = await reportResponse.json();
+                        reports.push({
+                            objectId: item.objectId,
+                            objectKey: item.objectKey,
+                            lastModified: item.lastModified,
+                            size: item.size,
+                            data: reportData
+                        });
+                    }
+                } catch (error) {
+                    console.warn('Could not load report:', item.objectKey, error);
+                }
+            }
+        }
+
+        // Sort by date (newest first)
+        reports.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+
+        console.log(`Loaded ${reports.length} reports from ACC`);
+        return reports;
+
+    } catch (error) {
+        console.error('Error loading reports:', error);
+        return [];
+    }
+}
+
+// Delete Report from ACC
+async function deleteBedQCReportFromACC(objectKey) {
+    try {
+        const response = await fetch(`${ACC_DATA_API_BASE}/buckets/${currentProjectBucketKey}/objects/${objectKey}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!response.ok && response.status !== 404) {
+            throw new Error(`Failed to delete report: ${response.statusText}`);
+        }
+
+        console.log('Report deleted from ACC:', objectKey);
+        return true;
+
+    } catch (error) {
+        console.error('Error deleting report:', error);
+        throw error;
+    }
+}
+
+// =================================================================
+// REPORT HISTORY AND SEARCH FUNCTIONALITY
+// =================================================================
+
+// Initialize Report History
+async function initializeReportHistory() {
+    try {
+        console.log('Initializing report history...');
+
+        // Add Report History section to the page
+        addReportHistorySection();
+
+        // Load existing reports
+        await refreshReportHistory();
+
+    } catch (error) {
+        console.error('Error initializing report history:', error);
+    }
+}
+
+// Add Report History UI Section
+function addReportHistorySection() {
+    const container = document.querySelector('.container');
+
+    const historySection = document.createElement('div');
+    historySection.innerHTML = `
+        <!-- Report History Section -->
+        <div class="card" id="reportHistorySection" style="margin-top: 2rem;">
+            <h3 class="card-title">
+                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z"/>
+                </svg>
+                Report History
+                <button class="btn btn-secondary" onclick="refreshReportHistory()" style="margin-left: auto;">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+                    </svg>
+                    Refresh
+                </button>
+            </h3>
+            
+            <!-- Search and Filter Controls -->
+            <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <div class="grid grid-cols-3" style="gap: 1rem; margin-bottom: 1rem;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-size: 0.75rem;">Search Reports</label>
+                        <input type="text" id="reportSearch" placeholder="Search by bed, notes, or report ID..." 
+                               oninput="filterReports()" style="padding: 0.5rem;">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-size: 0.75rem;">Filter by Bed</label>
+                        <select id="bedFilter" onchange="filterReports()" style="padding: 0.5rem;">
+                            <option value="">All Beds</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-size: 0.75rem;">Filter by Status</label>
+                        <select id="statusFilter" onchange="filterReports()" style="padding: 0.5rem;">
+                            <option value="">All Status</option>
+                            <option value="Draft">Draft</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Approved">Approved</option>
+                            <option value="Review Required">Review Required</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3" style="gap: 1rem;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-size: 0.75rem;">Date From</label>
+                        <input type="date" id="dateFromFilter" onchange="filterReports()" style="padding: 0.5rem;">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-size: 0.75rem;">Date To</label>
+                        <input type="date" id="dateToFilter" onchange="filterReports()" style="padding: 0.5rem;">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-size: 0.75rem;">Sort By</label>
+                        <select id="sortFilter" onchange="filterReports()" style="padding: 0.5rem;">
+                            <option value="date-desc">Date (Newest First)</option>
+                            <option value="date-asc">Date (Oldest First)</option>
+                            <option value="bed">Bed Name</option>
+                            <option value="status">Status</option>
+                            <option value="reporter">Created By</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                    <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
+                    <button class="btn btn-export" onclick="exportFilteredReports()">Export Results</button>
+                    <span id="reportCount" style="margin-left: auto; color: #6b7280; font-size: 0.875rem; line-height: 2;"></span>
+                </div>
+            </div>
+            
+            <!-- Reports List -->
+            <div id="reportsList">
+                <div style="text-align: center; color: #6b7280; padding: 2rem;">
+                    <div class="loading"></div>
+                    <p>Loading reports...</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.appendChild(historySection);
+}
+
+// Refresh Report History
+async function refreshReportHistory() {
+    try {
+        const reportsList = document.getElementById('reportsList');
+        reportsList.innerHTML = `
+            <div style="text-align: center; color: #6b7280; padding: 2rem;">
+                <div class="loading"></div>
+                <p>Loading reports from ACC...</p>
+            </div>
+        `;
+
+        // Load reports from ACC
+        existingReports = await loadBedQCReportsFromACC(projectId);
+
+        // Populate bed filter options
+        populateBedFilter();
+
+        // Display reports
+        filterReports();
+
+        console.log(`Loaded ${existingReports.length} reports for display`);
+
+    } catch (error) {
+        console.error('Error refreshing report history:', error);
+        document.getElementById('reportsList').innerHTML = `
+            <div style="text-align: center; color: #dc2626; padding: 2rem;">
+                <p>Error loading reports: ${error.message}</p>
+                <button class="btn btn-secondary" onclick="refreshReportHistory()">Try Again</button>
+            </div>
+        `;
+    }
+}
+
+// Populate Bed Filter Dropdown
+function populateBedFilter() {
+    const bedFilter = document.getElementById('bedFilter');
+    const beds = [...new Set(existingReports.map(r => r.data.reportData.bedName).filter(b => b))];
+
+    // Clear existing options except "All Beds"
+    bedFilter.innerHTML = '<option value="">All Beds</option>';
+
+    // Add bed options
+    beds.sort().forEach(bed => {
+        const option = document.createElement('option');
+        option.value = bed;
+        option.textContent = bed;
+        bedFilter.appendChild(option);
+    });
+}
+
+// Filter and Display Reports
+function filterReports() {
+    const searchTerm = document.getElementById('reportSearch').value.toLowerCase();
+    const bedFilter = document.getElementById('bedFilter').value;
+    const statusFilter = document.getElementById('statusFilter').value;
+    const dateFrom = document.getElementById('dateFromFilter').value;
+    const dateTo = document.getElementById('dateToFilter').value;
+    const sortBy = document.getElementById('sortFilter').value;
+
+    // Apply filters
+    let filteredReports = existingReports.filter(report => {
+        const data = report.data.reportData;
+
+        // Search filter
+        if (searchTerm) {
+            const searchableText = [
+                data.bedName,
+                data.reportId,
+                data.notes,
+                data.projectName,
+                data.createdBy
+            ].join(' ').toLowerCase();
+
+            if (!searchableText.includes(searchTerm)) return false;
+        }
+
+        // Bed filter
+        if (bedFilter && data.bedName !== bedFilter) return false;
+
+        // Status filter
+        if (statusFilter && data.status !== statusFilter) return false;
+
+        // Date filters
+        const reportDate = new Date(data.createdDate || report.lastModified);
+        if (dateFrom && reportDate < new Date(dateFrom)) return false;
+        if (dateTo && reportDate > new Date(dateTo + 'T23:59:59')) return false;
+
+        return true;
+    });
+
+    // Apply sorting
+    filteredReports.sort((a, b) => {
+        const dataA = a.data.reportData;
+        const dataB = b.data.reportData;
+
+        switch (sortBy) {
+            case 'date-asc':
+                return new Date(dataA.createdDate || a.lastModified) - new Date(dataB.createdDate || b.lastModified);
+            case 'date-desc':
+                return new Date(dataB.createdDate || b.lastModified) - new Date(dataA.createdDate || a.lastModified);
+            case 'bed':
+                return (dataA.bedName || '').localeCompare(dataB.bedName || '');
+            case 'status':
+                return (dataA.status || '').localeCompare(dataB.status || '');
+            case 'reporter':
+                return (dataA.createdBy || '').localeCompare(dataB.createdBy || '');
+            default:
+                return new Date(dataB.createdDate || b.lastModified) - new Date(dataA.createdDate || a.lastModified);
+        }
+    });
+
+    // Update count
+    document.getElementById('reportCount').textContent =
+        `${filteredReports.length} of ${existingReports.length} reports`;
+
+    // Display reports
+    displayReports(filteredReports);
+}
+
+// Display Reports List
+function displayReports(reports) {
+    const reportsList = document.getElementById('reportsList');
+
+    if (reports.length === 0) {
+        reportsList.innerHTML = `
+            <div style="text-align: center; color: #6b7280; padding: 2rem;">
+                <svg width="48" height="48" fill="currentColor" viewBox="0 0 24 24" style="margin-bottom: 1rem; opacity: 0.5;">
+                    <path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 002 2z"/>
+                </svg>
+                <p>No reports found matching the current filters.</p>
+                <button class="btn btn-primary" onclick="clearFilters()">Clear Filters</button>
+            </div>
+        `;
+        return;
+    }
+
+    const reportsHTML = reports.map(report => {
+        const data = report.data.reportData;
+        const date = new Date(data.createdDate || report.lastModified);
+        const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+
+        // Determine status badge style
+        let statusClass = 'status-development';
+        if (data.status === 'Completed') statusClass = 'status-active';
+        if (data.status === 'Approved') statusClass = 'status-active';
+
+        // Get critical results for preview
+        const selfStressPull = data.selfStressing?.outputs?.calculatedPullRounded || 0;
+        const nonSelfStressPull = data.nonSelfStressing?.outputs?.calculatedPullRounded || 0;
+
+        return `
+            <div class="tool-card" style="margin-bottom: 1rem; cursor: pointer;" 
+                 onclick="loadExistingReport('${report.objectKey}')">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                    <div>
+                        <h4 style="font-size: 1.125rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;">
+                            ${data.bedName} - ${data.reportId}
+                        </h4>
+                        <div style="display: flex; gap: 1rem; font-size: 0.875rem; color: #6b7280;">
+                            <span><strong>Project:</strong> ${data.projectName || 'N/A'}</span>
+                            <span><strong>Date:</strong> ${formattedDate}</span>
+                            <span><strong>By:</strong> ${data.createdBy || 'Unknown'}</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <span class="status-badge ${statusClass}">${data.status || 'Draft'}</span>
+                        <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" 
+                                onclick="event.stopPropagation(); deleteReport('${report.objectKey}', '${data.reportId}')">
+                            <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div style="background: #eff6ff; padding: 0.75rem; border-radius: 6px;">
+                        <div style="font-size: 0.75rem; color: #2563eb; font-weight: 500; margin-bottom: 0.25rem;">Self-Stressing Pull</div>
+                        <div style="font-size: 1.125rem; font-weight: 600; color: #1e293b;">${selfStressPull.toLocaleString()} lbs</div>
+                    </div>
+                    <div style="background: #f0fdf4; padding: 0.75rem; border-radius: 6px;">
+                        <div style="font-size: 0.75rem; color: #059669; font-weight: 500; margin-bottom: 0.25rem;">Non-Self-Stressing Pull</div>
+                        <div style="font-size: 1.125rem; font-weight: 600; color: #1e293b;">${nonSelfStressPull.toLocaleString()} lbs</div>
+                    </div>
+                </div>
+                
+                ${data.notes ? `<div style="font-size: 0.875rem; color: #6b7280; font-style: italic;">"${data.notes}"</div>` : ''}
+                
+                <div style="margin-top: 1rem; font-size: 0.75rem; color: #9ca3af;">
+                    ACC Object: ${report.objectKey} | Size: ${(report.size / 1024).toFixed(1)} KB
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    reportsList.innerHTML = reportsHTML;
+}
+
+// Load Existing Report
+async function loadExistingReport(objectKey) {
+    try {
+        console.log('Loading existing report:', objectKey);
+
+        // Find the report in our loaded data
+        const reportObj = existingReports.find(r => r.objectKey === objectKey);
+        if (!reportObj) {
+            throw new Error('Report not found in loaded data');
+        }
+
+        const reportData = reportObj.data.reportData;
+
+        // Set up form instance
+        currentReportId = reportData.reportId;
+        currentBedId = reportData.bedId;
+        currentBedName = reportData.bedName;
+        currentCalculation = reportData;
+
+        // Show calculator modal
+        showCalculator();
+
+        // Populate form with existing data
+        populateFormWithReportData(reportData);
+
+        // Update UI to show this is an existing report
+        document.getElementById('reportId').textContent = reportData.reportId + ' (Loaded from ACC)';
+        document.getElementById('selectedBedDisplay').textContent = reportData.bedName;
+
+        // Enable save button
+        document.getElementById('saveBtn').disabled = false;
+        document.getElementById('exportBtn').disabled = false;
+
+        console.log('Successfully loaded existing report');
+
+    } catch (error) {
+        console.error('Error loading existing report:', error);
+        alert('Failed to load report: ' + error.message);
+    }
+}
+
+// Populate Form with Report Data
+function populateFormWithReportData(data) {
+    // Project metadata
+    if (data.projectName) {
+        const projectSelect = document.getElementById('projectName');
+        // Find and select the matching project
+        for (let option of projectSelect.options) {
+            if (option.textContent.includes(data.projectName)) {
+                option.selected = true;
+                break;
+            }
+        }
+    }
+
+    document.getElementById('projectNumber').value = data.projectNumber || '';
+    document.getElementById('date').value = data.date || '';
+    document.getElementById('calculatedBy').value = data.calculatedBy || '';
+    document.getElementById('reviewedBy').value = data.reviewedBy || '';
+    document.getElementById('location').value = data.location || '';
+    document.getElementById('notes').value = data.notes || '';
+
+    // Self-stressing inputs
+    if (data.selfStressing?.inputs) {
+        const inputs = data.selfStressing.inputs;
+        document.getElementById('ss_initialPull').value = inputs.initialPull || '';
+        document.getElementById('ss_requiredForce').value = inputs.requiredForce || '';
+        document.getElementById('ss_MOE').value = inputs.MOE || '';
+        document.getElementById('ss_numberOfStrands').value = inputs.numberOfStrands || '';
+        document.getElementById('ss_adjBedShortening').value = inputs.adjBedShortening || '';
+        document.getElementById('ss_blockToBlockLength').value = inputs.blockToBlockLength || '';
+        document.getElementById('ss_strandArea').value = inputs.strandArea || '';
+        document.getElementById('ss_deadEndSeating').value = inputs.deadEndSeating || '';
+        document.getElementById('ss_liveEndSeating').value = inputs.liveEndSeating || '';
+    }
+
+    // Non-self-stressing inputs
+    if (data.nonSelfStressing?.inputs) {
+        const inputs = data.nonSelfStressing.inputs;
+        document.getElementById('nss_initialPull').value = inputs.initialPull || '';
+        document.getElementById('nss_requiredForce').value = inputs.requiredForce || '';
+        document.getElementById('nss_MOE').value = inputs.MOE || '';
+        document.getElementById('nss_blockToBlockLength').value = inputs.blockToBlockLength || '';
+        document.getElementById('nss_strandArea').value = inputs.strandArea || '';
+        document.getElementById('nss_airTemp').value = inputs.airTemp || '';
+        document.getElementById('nss_concreteTemp').value = inputs.concreteTemp || '';
+        document.getElementById('nss_deadEndSeating').value = inputs.deadEndSeating || '';
+        document.getElementById('nss_liveEndSeating').value = inputs.liveEndSeating || '';
+        document.getElementById('nss_totalAbutmentRotation').value = inputs.totalAbutmentRotation || '';
+    }
+
+    // Recalculate to update results
+    calculateAll();
+}
+
+// Delete Report
+async function deleteReport(objectKey, reportId) {
+    if (!confirm(`Are you sure you want to delete report "${reportId}"? This action cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        await deleteBedQCReportFromACC(objectKey);
+
+        // Remove from local array
+        existingReports = existingReports.filter(r => r.objectKey !== objectKey);
+
+        // Refresh display
+        filterReports();
+
+        alert('Report deleted successfully');
+
+    } catch (error) {
+        console.error('Error deleting report:', error);
+        alert('Failed to delete report: ' + error.message);
+    }
+}
+
+// Clear Filters
+function clearFilters() {
+    document.getElementById('reportSearch').value = '';
+    document.getElementById('bedFilter').value = '';
+    document.getElementById('statusFilter').value = '';
+    document.getElementById('dateFromFilter').value = '';
+    document.getElementById('dateToFilter').value = '';
+    document.getElementById('sortFilter').value = 'date-desc';
+    filterReports();
+}
+
+// Export Filtered Reports
+function exportFilteredReports() {
+    const searchTerm = document.getElementById('reportSearch').value.toLowerCase();
+    const bedFilter = document.getElementById('bedFilter').value;
+    const statusFilter = document.getElementById('statusFilter').value;
+    const dateFrom = document.getElementById('dateFromFilter').value;
+    const dateTo = document.getElementById('dateToFilter').value;
+
+    // Get filtered reports (reuse the same filtering logic)
+    let filteredReports = existingReports.filter(report => {
+        const data = report.data.reportData;
+
+        if (searchTerm) {
+            const searchableText = [data.bedName, data.reportId, data.notes, data.projectName, data.createdBy].join(' ').toLowerCase();
+            if (!searchableText.includes(searchTerm)) return false;
+        }
+        if (bedFilter && data.bedName !== bedFilter) return false;
+        if (statusFilter && data.status !== statusFilter) return false;
+
+        const reportDate = new Date(data.createdDate || report.lastModified);
+        if (dateFrom && reportDate < new Date(dateFrom)) return false;
+        if (dateTo && reportDate > new Date(dateTo + 'T23:59:59')) return false;
+
+        return true;
+    });
+
+    // Create CSV content
+    const csvHeaders = [
+        'Report ID', 'Bed Name', 'Project Name', 'Project Number', 'Date', 'Created By', 'Reviewed By',
+        'Status', 'Self-Stress Pull (lbs)', 'Non-Self-Stress Pull (lbs)', 'Notes', 'ACC Object Key'
+    ];
+
+    const csvData = filteredReports.map(report => {
+        const data = report.data.reportData;
+        return [
+            data.reportId || '',
+            data.bedName || '',
+            data.projectName || '',
+            data.projectNumber || '',
+            data.date || '',
+            data.createdBy || '',
+            data.reviewedBy || '',
+            data.status || '',
+            data.selfStressing?.outputs?.calculatedPullRounded || 0,
+            data.nonSelfStressing?.outputs?.calculatedPullRounded || 0,
+            (data.notes || '').replace(/"/g, '""'), // Escape quotes
+            report.objectKey
+        ];
+    });
+
+    // Generate CSV
+    const csvContent = [csvHeaders, ...csvData]
+        .map(row => row.map(field => `"${field}"`).join(','))
+        .join('\n');
+
+    // Download file
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `BedQC-Reports-Export-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    console.log(`Exported ${filteredReports.length} reports to CSV`);
+}
+
+// =================================================================
+// BED SELECTION AND FORM MANAGEMENT
+// =================================================================
 
 // Bed Selection Functions
 function showBedSelection() {
@@ -252,7 +951,9 @@ function showCalculator() {
     document.getElementById('calculatorModal').classList.add('active');
 
     // Clear form data for new instance
-    clearFormData();
+    if (!currentCalculation) {
+        clearFormData();
+    }
 
     // Initialize calculations
     calculateAll();
@@ -265,6 +966,9 @@ function closeCalculator() {
     if (currentReportId) {
         saveFormInstance();
     }
+
+    // Reset current calculation
+    currentCalculation = null;
 }
 
 function clearFormData() {
@@ -308,17 +1012,23 @@ function saveFormInstance() {
 }
 
 // Modal click outside to close
-document.getElementById('bedSelectionModal').addEventListener('click', function (e) {
-    if (e.target === this) {
-        closeBedSelection();
-    }
+document.addEventListener('DOMContentLoaded', function () {
+    document.getElementById('bedSelectionModal').addEventListener('click', function (e) {
+        if (e.target === this) {
+            closeBedSelection();
+        }
+    });
+
+    document.getElementById('calculatorModal').addEventListener('click', function (e) {
+        if (e.target === this) {
+            closeCalculator();
+        }
+    });
 });
 
-document.getElementById('calculatorModal').addEventListener('click', function (e) {
-    if (e.target === this) {
-        closeCalculator();
-    }
-});
+// =================================================================
+// PROJECT DATA LOADING AND MANAGEMENT
+// =================================================================
 
 // Project Data Loading
 async function loadRealProjectData() {
@@ -348,9 +1058,10 @@ async function loadRealProjectData() {
 
         if (accHubs.length > 0) {
             const firstAccHub = accHubs[0];
-            console.log('Using ACC hub:', firstAccHub.attributes.name, firstAccHub.id);
+            hubId = firstAccHub.id; // Store hub ID globally
+            console.log('Using ACC hub:', firstAccHub.attributes.name, hubId);
 
-            await loadProjectsFromHub(firstAccHub.id);
+            await loadProjectsFromHub(hubId);
         } else {
             console.warn('No ACC hubs found in response');
             throw new Error('No ACC hubs found - only Fusion 360 hubs available');
@@ -513,11 +1224,12 @@ async function loadProjectsFromHub(hubId) {
 
         populateProjectDropdown(sortedProjects);
 
-        if (projects.length > 0) {
+        if (sortedProjects.length > 0) {
             setTimeout(() => {
                 const projectSelect = document.getElementById('projectName');
                 if (projectSelect) {
-                    projectSelect.value = projects[0].id;
+                    projectSelect.value = sortedProjects[0].id;
+                    projectId = sortedProjects[0].id; // Store project ID globally
                     onProjectSelected();
                 }
             }, 100);
@@ -580,7 +1292,11 @@ function onProjectSelected() {
         const projectNumber = selectedOption.dataset.projectNumber || '';
         const location = selectedOption.dataset.location || '';
 
+        // Store selected project ID globally
+        projectId = selectedOption.value;
+
         console.log('Selected ACC project:', selectedOption.textContent);
+        console.log('Project ID:', projectId);
         console.log('Project number from dataset:', projectNumber);
         console.log('Location from dataset:', location);
 
@@ -625,6 +1341,10 @@ function setupUI() {
         dateInput.value = new Date().toISOString().split('T')[0];
     }
 }
+
+// =================================================================
+// CALCULATION FUNCTIONS
+// =================================================================
 
 // Utility functions
 function formatNumber(num) {
@@ -723,6 +1443,9 @@ function calculateAll() {
         reportId: currentReportId,
         bedId: currentBedId,
         bedName: currentBedName,
+        projectId: projectId,
+        hubId: hubId,
+        status: 'Draft',
         projectMetadata: {
             projectName: document.getElementById('projectName').value,
             projectNumber: document.getElementById('projectNumber').value,
@@ -764,35 +1487,67 @@ function calculateAll() {
     };
 }
 
-// ACC Integration Functions
+// =================================================================
+// ACC INTEGRATION FUNCTIONS (SAVE/EXPORT)
+// =================================================================
+
+// Updated saveToACC function that actually saves to ACC
 async function saveToACC() {
     if (!isACCConnected) {
         alert('Not connected to ACC. Please check your connection.');
         return;
     }
 
+    if (!projectId) {
+        alert('Please select a project before saving.');
+        return;
+    }
+
     try {
         const saveBtn = document.getElementById('saveBtn');
         saveBtn.disabled = true;
-        saveBtn.innerHTML = '<div class="loading"></div> Saving...';
+        saveBtn.innerHTML = '<div class="loading"></div> Saving to ACC...';
 
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Add quality compliance data
+        const enhancedCalculation = {
+            ...currentCalculation,
+            status: 'Completed',
+            createdDate: currentCalculation.timestamp,
+            savedToACC: true,
+            qualityMetrics: {
+                complianceStatus: 'Pass', // Could be calculated based on results
+                deviations: [],
+                approvalRequired: false,
+                criticalResults: [
+                    currentCalculation.selfStressing.outputs.calculatedPullRounded,
+                    currentCalculation.nonSelfStressing.outputs.calculatedPullRounded
+                ]
+            }
+        };
 
-        console.log('Saved to ACC:', currentCalculation);
+        // Save to ACC Data Management API
+        const result = await saveBedQCReportToACC(enhancedCalculation);
+
+        console.log('Successfully saved to ACC:', result);
 
         saveBtn.disabled = false;
         saveBtn.innerHTML = `
             <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
             </svg>
-            Save to ACC
+            Saved to ACC
         `;
 
-        alert('Calculation saved to ACC successfully!');
+        alert(`Report saved to ACC successfully!\nReport ID: ${result.reportId}\nObject ID: ${result.objectId}`);
+
+        // Refresh report history to show the new report
+        await refreshReportHistory();
+
     } catch (error) {
         console.error('Save to ACC failed:', error);
         alert('Failed to save to ACC: ' + error.message);
 
+        const saveBtn = document.getElementById('saveBtn');
         saveBtn.disabled = false;
         saveBtn.innerHTML = `
             <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
