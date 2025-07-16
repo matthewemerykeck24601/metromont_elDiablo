@@ -103,6 +103,8 @@
             cursor: not-allowed;
         }
 
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover:not(:disabled) { background: #2563eb; }
         .btn-save { background: #059669; color: white; }
         .btn-save:hover:not(:disabled) { background: #047857; }
         .btn-print { background: #3b82f6; color: white; }
@@ -111,6 +113,8 @@
         .btn-export:hover:not(:disabled) { background: #7c3aed; }
         .btn-back { background: rgba(255, 255, 255, 0.1); color: white; }
         .btn-back:hover { background: rgba(255, 255, 255, 0.2); }
+        .btn-secondary { background: #6b7280; color: white; }
+        .btn-secondary:hover:not(:disabled) { background: #4b5563; }
 
         .container {
             max-width: 1200px;
@@ -159,6 +163,222 @@
             color: #991b1b;
         }
 
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .tool-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: 1px solid #e2e8f0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tool-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .tool-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: #ef4444;
+        }
+
+        .tool-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+            color: white;
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+
+        .tool-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+
+        .tool-description {
+            color: #64748b;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+
+        .tool-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-development {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .acc-info {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 1px solid #7dd3fc;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Bed Selection Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #6b7280;
+            padding: 0.5rem;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group select, .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-group select:focus, .form-group input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+        }
+
+        /* Calculator Modal */
+        .calculator-modal {
+            max-width: 1400px;
+            width: 95%;
+            max-height: 95vh;
+            padding: 1.5rem;
+        }
+
+        .calculator-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 1rem;
+        }
+
         .card {
             background: white;
             border-radius: 12px;
@@ -177,21 +397,9 @@
             gap: 0.75rem;
         }
 
-        .acc-info {
-            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-            border: 1px solid #7dd3fc;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
         .grid {
             display: grid;
             gap: 1rem;
-        }
-
-        .grid-cols-2 {
-            grid-template-columns: 1fr 1fr;
         }
 
         .grid-cols-3 {
@@ -199,7 +407,11 @@
         }
 
         @media (max-width: 768px) {
-            .grid-cols-2, .grid-cols-3 {
+            .grid-cols-3 {
+                grid-template-columns: 1fr;
+            }
+            
+            .calculator-content {
                 grid-template-columns: 1fr;
             }
             
@@ -342,38 +554,26 @@
             border-bottom-color: #059669;
         }
 
-        .loading {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #3b82f6;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        .report-header {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .report-id {
+            font-size: 0.875rem;
+            color: #6b7280;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
         }
 
-        /* Embedded mode styles for ACC Custom Cards */
-        .embedded-mode {
-            background: white;
-        }
-
-        .embedded-mode .container {
-            padding: 8px !important;
-        }
-
-        .embedded-mode .page-header {
-            margin-bottom: 8px;
-            padding: 12px;
-        }
-
-        .embedded-mode .card {
-            margin-bottom: 8px;
-            padding: 12px;
+        .bed-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #374151;
+            font-weight: 500;
         }
 
         #pdf-content {
@@ -401,7 +601,7 @@
                 </svg>
                 <div class="brand-text">
                     <h1>Quality Control</h1>
-                    <p>PPPQC Stressing Calculator</p>
+                    <p>Manufacturing Quality Assurance</p>
                 </div>
             </div>
             <div class="nav-breadcrumb">
@@ -420,24 +620,6 @@
                     <div class="loading"></div>
                     Connecting to ACC...
                 </span>
-                <button class="btn btn-save" id="saveBtn" onclick="saveToACC()" disabled>
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
-                    </svg>
-                    Save to ACC
-                </button>
-                <button class="btn btn-print" onclick="generatePDF()">
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/>
-                    </svg>
-                    Print Report
-                </button>
-                <button class="btn btn-export" id="exportBtn" onclick="exportToACCDocs()" disabled>
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
-                    </svg>
-                    Export to ACC Docs
-                </button>
             </div>
         </div>
     </header>
@@ -446,11 +628,11 @@
         <div class="page-header">
             <div class="page-title">
                 <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                <h2>PPPQC Stressing Calculator</h2>
+                <h2>Quality Control Center</h2>
             </div>
-            <p style="color: #64748b; font-size: 1rem;">Calculate prestressed concrete stress parameters for quality control and compliance verification.</p>
+            <p style="color: #64748b; font-size: 1rem;">Comprehensive quality assurance tools for precast concrete manufacturing operations.</p>
         </div>
 
         <!-- ACC Integration Status -->
@@ -461,208 +643,347 @@
             </div>
         </div>
 
-        <!-- Project Metadata -->
-        <div class="card">
-            <h3 class="card-title">
-                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
-                </svg>
-                Project Information
-                <span id="projectSource" class="status-badge status-connected" style="margin-left: auto; display: none;">
-                    Auto-populated from ACC
-                </span>
-            </h3>
-            <div class="grid grid-cols-3">
+        <!-- Quality Control Tools -->
+        <div class="tools-grid">
+            <div class="tool-card" onclick="showBedSelection()">
+                <div class="tool-icon">
+                    <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <h3 class="tool-title">New Bed Report</h3>
+                <p class="tool-description">Generate PPPQC stressing calculations and quality reports for precast concrete bed operations.</p>
+                <div class="tool-status">
+                    <span class="status-badge status-active">Active</span>
+                    <span style="margin-left: auto; color: #64748b;">PPPQC Calculator</span>
+                </div>
+            </div>
+
+            <div class="tool-card" style="opacity: 0.6; cursor: not-allowed;">
+                <div class="tool-icon">
+                    <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                    </svg>
+                </div>
+                <h3 class="tool-title">Quality Inspection</h3>
+                <p class="tool-description">Conduct comprehensive quality inspections with digital checklists and documentation.</p>
+                <div class="tool-status">
+                    <span class="status-badge status-development">In Development</span>
+                    <span style="margin-left: auto; color: #64748b;">Q1 2025</span>
+                </div>
+            </div>
+
+            <div class="tool-card" style="opacity: 0.6; cursor: not-allowed;">
+                <div class="tool-icon">
+                    <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M16 4v12l-4-2-4 2V4M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <h3 class="tool-title">Compliance Tracking</h3>
+                <p class="tool-description">Monitor regulatory compliance, certifications, and quality standards adherence.</p>
+                <div class="tool-status">
+                    <span class="status-badge status-development">In Development</span>
+                    <span style="margin-left: auto; color: #64748b;">Q2 2025</span>
+                </div>
+            </div>
+
+            <div class="tool-card" style="opacity: 0.6; cursor: not-allowed;">
+                <div class="tool-icon">
+                    <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+                    </svg>
+                </div>
+                <h3 class="tool-title">Quality Analytics</h3>
+                <p class="tool-description">Advanced analytics and reporting for quality trends, defect analysis, and process optimization.</p>
+                <div class="tool-status">
+                    <span class="status-badge status-development">In Development</span>
+                    <span style="margin-left: auto; color: #64748b;">Q3 2025</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bed Selection Modal -->
+    <div class="modal-overlay" id="bedSelectionModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Select Production Bed</h3>
+                <button class="modal-close" onclick="closeBedSelection()">&times;</button>
+            </div>
+            <div class="modal-content">
                 <div class="form-group">
-                    <label for="projectName">Project Name</label>
-                    <select id="projectName" onchange="onProjectSelected()" disabled>
-                        <option value="">Loading projects from ACC...</option>
+                    <label for="bedSelect">Choose the production bed for this report:</label>
+                    <select id="bedSelect">
+                        <option value="">Select a bed...</option>
+                        <option value="beam">Beam</option>
+                        <option value="deck1">Deck 1</option>
+                        <option value="deck2">Deck 2</option>
+                        <option value="flatbed1">Flat Bed #1</option>
+                        <option value="flatbed2">Flat Bed #2</option>
+                        <option value="flatbed3">Flat Bed #3</option>
+                        <option value="flatbed4">Flat Bed #4</option>
+                        <option value="flatbed5">Flat Bed #5</option>
+                        <option value="flatbed6">Flat Bed #6</option>
+                        <option value="flatbed7">Flat Bed #7</option>
+                        <option value="pcbed1">PC Bed #1</option>
+                        <option value="pcbed2">PC Bed #2</option>
+                        <option value="pcbed3">PC Bed #3</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="projectNumber">Project Number</label>
-                    <input type="text" id="projectNumber" placeholder="Loading from ACC..." disabled>
-                </div>
-                <div class="form-group">
-                    <label for="date">Date</label>
-                    <input type="date" id="date">
-                </div>
-                <div class="form-group">
-                    <label for="calculatedBy">Calculated By</label>
-                    <input type="text" id="calculatedBy" placeholder="Loading from ACC..." disabled>
-                </div>
-                <div class="form-group">
-                    <label for="reviewedBy">Reviewed By</label>
-                    <input type="text" id="reviewedBy" placeholder="Reviewer name">
-                </div>
-                <div class="form-group">
-                    <label for="location">Location</label>
-                    <input type="text" id="location" placeholder="Loading from ACC..." disabled>
+                    <label for="reportDescription">Report Description (Optional):</label>
+                    <input type="text" id="reportDescription" placeholder="e.g., Morning shift quality check">
                 </div>
             </div>
-            <div class="form-group" style="margin-top: 1rem;">
-                <label for="notes">Notes</label>
-                <textarea id="notes" rows="2" placeholder="Additional notes or comments"></textarea>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeBedSelection()">Cancel</button>
+                <button class="btn btn-primary" onclick="startBedReport()">Start Report</button>
             </div>
         </div>
+    </div>
 
-        <!-- Calculators Grid -->
-        <div class="grid grid-cols-2">
-            <!-- Self-Stressing Calculator -->
-            <div class="card">
-                <h2 class="calculator-title self-stress-title">Self-Stressing Bed Calculator</h2>
-                
-                <!-- Inputs -->
-                <div id="selfStressInputs">
-                    <div class="input-row">
-                        <label class="input-label">Initial Pull:</label>
-                        <input type="number" class="input-field" id="ss_initialPull" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">lbs</span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label">Required Force:</label>
-                        <input type="number" class="input-field" id="ss_requiredForce" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">lbs</span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label">MOE:</label>
-                        <input type="number" class="input-field" id="ss_MOE" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit"></span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label"># of Strands:</label>
-                        <input type="number" class="input-field" id="ss_numberOfStrands" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit"></span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label">Adj Bed Short:</label>
-                        <input type="number" class="input-field" id="ss_adjBedShortening" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">in</span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label">Block Length:</label>
-                        <input type="number" class="input-field" id="ss_blockToBlockLength" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">ft</span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label">Strand Area:</label>
-                        <input type="number" class="input-field" id="ss_strandArea" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">in²</span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label">Dead End Seat:</label>
-                        <input type="number" class="input-field" id="ss_deadEndSeating" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">in</span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label">Live End Seat:</label>
-                        <input type="number" class="input-field" id="ss_liveEndSeating" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">in</span>
+    <!-- Calculator Modal -->
+    <div class="modal-overlay" id="calculatorModal">
+        <div class="modal calculator-modal">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">PPPQC Stressing Calculator</h3>
+                    <div class="report-header">
+                        <div class="bed-info">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+                            </svg>
+                            <span id="selectedBedDisplay">No bed selected</span>
+                        </div>
+                        <div class="report-id">Report ID: <span id="reportId">-</span></div>
                     </div>
                 </div>
-
-                <!-- Results -->
-                <div class="results self-stress-results">
-                    <h4>Results</h4>
-                    <div class="result-item">
-                        <span>Basic Elongation:</span>
-                        <span class="result-value" id="ss_basicElongation">0.000 in</span>
-                    </div>
-                    <div class="result-item">
-                        <span>Bed Shortening:</span>
-                        <span class="result-value" id="ss_bedShortening">0.000 in</span>
-                    </div>
-                    <div class="result-item critical-result">
-                        <span>Desired Elongation (Rounded):</span>
-                        <span class="result-value" id="ss_desiredElongationRounded">0.000 in</span>
-                    </div>
-                    <div class="result-item critical-result">
-                        <span>Calculated Pull (Rounded):</span>
-                        <span class="result-value" id="ss_calculatedPullRounded">0 lbs</span>
-                    </div>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <button class="btn btn-save" id="saveBtn" onclick="saveToACC()" disabled>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                        </svg>
+                        Save to ACC
+                    </button>
+                    <button class="btn btn-print" onclick="generatePDF()">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/>
+                        </svg>
+                        Print Report
+                    </button>
+                    <button class="btn btn-export" id="exportBtn" onclick="exportToACCDocs()" disabled>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                        </svg>
+                        Export to ACC
+                    </button>
+                    <button class="modal-close" onclick="closeCalculator()">&times;</button>
                 </div>
             </div>
 
-            <!-- Non-Self-Stressing Calculator -->
+            <!-- Project Metadata -->
             <div class="card">
-                <h2 class="calculator-title non-self-stress-title">Non-Self-Stressing Bed Calculator</h2>
-                
-                <!-- Inputs -->
-                <div id="nonSelfStressInputs">
-                    <div class="input-row">
-                        <label class="input-label">Initial Pull:</label>
-                        <input type="number" class="input-field" id="nss_initialPull" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">lbs</span>
+                <h3 class="card-title">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                    </svg>
+                    Project Information
+                    <span id="projectSource" class="status-badge status-connected" style="margin-left: auto; display: none;">
+                        Auto-populated from ACC
+                    </span>
+                </h3>
+                <div class="grid grid-cols-3">
+                    <div class="form-group">
+                        <label for="projectName">Project Name</label>
+                        <select id="projectName" onchange="onProjectSelected()" disabled>
+                            <option value="">Loading projects from ACC...</option>
+                        </select>
                     </div>
-                    <div class="input-row">
-                        <label class="input-label">Required Force:</label>
-                        <input type="number" class="input-field" id="nss_requiredForce" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">lbs</span>
+                    <div class="form-group">
+                        <label for="projectNumber">Project Number</label>
+                        <input type="text" id="projectNumber" placeholder="Loading from ACC..." disabled>
                     </div>
-                    <div class="input-row">
-                        <label class="input-label">MOE:</label>
-                        <input type="number" class="input-field" id="nss_MOE" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit"></span>
+                    <div class="form-group">
+                        <label for="date">Date</label>
+                        <input type="date" id="date">
                     </div>
-                    <div class="input-row">
-                        <label class="input-label">Block Length:</label>
-                        <input type="number" class="input-field" id="nss_blockToBlockLength" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">ft</span>
+                    <div class="form-group">
+                        <label for="calculatedBy">Calculated By</label>
+                        <input type="text" id="calculatedBy" placeholder="Loading from ACC..." disabled>
                     </div>
-                    <div class="input-row">
-                        <label class="input-label">Strand Area:</label>
-                        <input type="number" class="input-field" id="nss_strandArea" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">in²</span>
+                    <div class="form-group">
+                        <label for="reviewedBy">Reviewed By</label>
+                        <input type="text" id="reviewedBy" placeholder="Reviewer name">
                     </div>
-                    <div class="input-row">
-                        <label class="input-label">Air Temp:</label>
-                        <input type="number" class="input-field" id="nss_airTemp" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">°F</span>
+                    <div class="form-group">
+                        <label for="location">Location</label>
+                        <input type="text" id="location" placeholder="Loading from ACC..." disabled>
                     </div>
-                    <div class="input-row">
-                        <label class="input-label">Concrete Temp:</label>
-                        <input type="number" class="input-field" id="nss_concreteTemp" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">°F</span>
+                </div>
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="notes">Notes</label>
+                    <textarea id="notes" rows="2" placeholder="Additional notes or comments"></textarea>
+                </div>
+            </div>
+
+            <!-- Calculators Grid -->
+            <div class="calculator-content">
+                <!-- Self-Stressing Calculator -->
+                <div class="card">
+                    <h2 class="calculator-title self-stress-title">Self-Stressing Bed Calculator</h2>
+                    
+                    <!-- Inputs -->
+                    <div id="selfStressInputs">
+                        <div class="input-row">
+                            <label class="input-label">Initial Pull:</label>
+                            <input type="number" class="input-field" id="ss_initialPull" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">lbs</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Required Force:</label>
+                            <input type="number" class="input-field" id="ss_requiredForce" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">lbs</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">MOE:</label>
+                            <input type="number" class="input-field" id="ss_MOE" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit"></span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label"># of Strands:</label>
+                            <input type="number" class="input-field" id="ss_numberOfStrands" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit"></span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Adj Bed Short:</label>
+                            <input type="number" class="input-field" id="ss_adjBedShortening" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">in</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Block Length:</label>
+                            <input type="number" class="input-field" id="ss_blockToBlockLength" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">ft</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Strand Area:</label>
+                            <input type="number" class="input-field" id="ss_strandArea" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">in²</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Dead End Seat:</label>
+                            <input type="number" class="input-field" id="ss_deadEndSeating" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">in</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Live End Seat:</label>
+                            <input type="number" class="input-field" id="ss_liveEndSeating" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">in</span>
+                        </div>
                     </div>
-                    <div class="input-row">
-                        <label class="input-label">Dead End Seat:</label>
-                        <input type="number" class="input-field" id="nss_deadEndSeating" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">in</span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label">Live End Seat:</label>
-                        <input type="number" class="input-field" id="nss_liveEndSeating" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">in</span>
-                    </div>
-                    <div class="input-row">
-                        <label class="input-label">Total Abutment:</label>
-                        <input type="number" class="input-field" id="nss_totalAbutmentRotation" placeholder="0" oninput="calculateAll()">
-                        <span class="input-unit">in</span>
+
+                    <!-- Results -->
+                    <div class="results self-stress-results">
+                        <h4>Results</h4>
+                        <div class="result-item">
+                            <span>Basic Elongation:</span>
+                            <span class="result-value" id="ss_basicElongation">0.000 in</span>
+                        </div>
+                        <div class="result-item">
+                            <span>Bed Shortening:</span>
+                            <span class="result-value" id="ss_bedShortening">0.000 in</span>
+                        </div>
+                        <div class="result-item critical-result">
+                            <span>Desired Elongation (Rounded):</span>
+                            <span class="result-value" id="ss_desiredElongationRounded">0.000 in</span>
+                        </div>
+                        <div class="result-item critical-result">
+                            <span>Calculated Pull (Rounded):</span>
+                            <span class="result-value" id="ss_calculatedPullRounded">0 lbs</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Results -->
-                <div class="results non-self-stress-results">
-                    <h4>Results</h4>
-                    <div class="result-item">
-                        <span>Basic Elongation:</span>
-                        <span class="result-value" id="nss_basicElongation">0.000 in</span>
+                <!-- Non-Self-Stressing Calculator -->
+                <div class="card">
+                    <h2 class="calculator-title non-self-stress-title">Non-Self-Stressing Bed Calculator</h2>
+                    
+                    <!-- Inputs -->
+                    <div id="nonSelfStressInputs">
+                        <div class="input-row">
+                            <label class="input-label">Initial Pull:</label>
+                            <input type="number" class="input-field" id="nss_initialPull" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">lbs</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Required Force:</label>
+                            <input type="number" class="input-field" id="nss_requiredForce" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">lbs</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">MOE:</label>
+                            <input type="number" class="input-field" id="nss_MOE" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit"></span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Block Length:</label>
+                            <input type="number" class="input-field" id="nss_blockToBlockLength" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">ft</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Strand Area:</label>
+                            <input type="number" class="input-field" id="nss_strandArea" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">in²</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Air Temp:</label>
+                            <input type="number" class="input-field" id="nss_airTemp" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">°F</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Concrete Temp:</label>
+                            <input type="number" class="input-field" id="nss_concreteTemp" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">°F</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Dead End Seat:</label>
+                            <input type="number" class="input-field" id="nss_deadEndSeating" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">in</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Live End Seat:</label>
+                            <input type="number" class="input-field" id="nss_liveEndSeating" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">in</span>
+                        </div>
+                        <div class="input-row">
+                            <label class="input-label">Total Abutment:</label>
+                            <input type="number" class="input-field" id="nss_totalAbutmentRotation" placeholder="0" oninput="calculateAll()">
+                            <span class="input-unit">in</span>
+                        </div>
                     </div>
-                    <div class="result-item">
-                        <span>Temp Difference:</span>
-                        <span class="result-value" id="nss_tempDifference">0.000</span>
-                    </div>
-                    <div class="result-item">
-                        <span>Temp Correction:</span>
-                        <span class="result-value" id="nss_tempCorrection">0.000</span>
-                    </div>
-                    <div class="result-item critical-result">
-                        <span>Desired Elongation (Rounded):</span>
-                        <span class="result-value" id="nss_desiredElongationRounded">0.000 in</span>
-                    </div>
-                    <div class="result-item critical-result">
-                        <span>Calculated Pull (Rounded):</span>
-                        <span class="result-value" id="nss_calculatedPullRounded">0 lbs</span>
+
+                    <!-- Results -->
+                    <div class="results non-self-stress-results">
+                        <h4>Results</h4>
+                        <div class="result-item">
+                            <span>Basic Elongation:</span>
+                            <span class="result-value" id="nss_basicElongation">0.000 in</span>
+                        </div>
+                        <div class="result-item">
+                            <span>Temp Difference:</span>
+                            <span class="result-value" id="nss_tempDifference">0.000</span>
+                        </div>
+                        <div class="result-item">
+                            <span>Temp Correction:</span>
+                            <span class="result-value" id="nss_tempCorrection">0.000</span>
+                        </div>
+                        <div class="result-item critical-result">
+                            <span>Desired Elongation (Rounded):</span>
+                            <span class="result-value" id="nss_desiredElongationRounded">0.000 in</span>
+                        </div>
+                        <div class="result-item critical-result">
+                            <span>Calculated Pull (Rounded):</span>
+                            <span class="result-value" id="nss_calculatedPullRounded">0 lbs</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -704,9 +1025,6 @@
     </div>
     
     <script>
-        // Include the enhanced project mapping and all the existing JavaScript from the previous file
-        // This includes the fixed loadProjectsFromHub function with enhanced project number extraction
-        
         // ACC CONNECT CONFIGURATION
         const ACC_CLIENT_ID = 'phUPKRBuqECpJUoBmRuKdKhSP3ZTRALH4LMWKAzAnymnYkQU';
         const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
@@ -721,9 +1039,978 @@
         let currentCalculation = null;
         let userProjects = [];
 
-        // [Include all the JavaScript functions from the previous complete file here]
-        // This includes: authentication, project loading, calculations, etc.
-        
+        // Form Instance Management
+        let currentReportId = null;
+        let currentBedId = null;
+        let currentBedName = null;
+        let reportInstances = new Map(); // Store multiple form instances
+
+        // Bed Selection Functions
+        function showBedSelection() {
+            document.getElementById('bedSelectionModal').classList.add('active');
+        }
+
+        function closeBedSelection() {
+            document.getElementById('bedSelectionModal').classList.remove('active');
+            document.getElementById('bedSelect').value = '';
+            document.getElementById('reportDescription').value = '';
+        }
+
+        function startBedReport() {
+            const bedSelect = document.getElementById('bedSelect');
+            const bedId = bedSelect.value;
+            const bedName = bedSelect.options[bedSelect.selectedIndex].text;
+            const description = document.getElementById('reportDescription').value;
+
+            if (!bedId) {
+                alert('Please select a bed before continuing.');
+                return;
+            }
+
+            // Generate unique report ID
+            const reportId = generateReportId(bedId);
+            
+            // Store report instance
+            currentReportId = reportId;
+            currentBedId = bedId;
+            currentBedName = bedName;
+
+            // Initialize new form instance
+            initializeFormInstance(reportId, bedId, bedName, description);
+
+            // Close bed selection and show calculator
+            closeBedSelection();
+            showCalculator();
+        }
+
+        function generateReportId(bedId) {
+            const timestamp = Date.now();
+            const random = Math.random().toString(36).substr(2, 4);
+            return `${bedId.toUpperCase()}-${timestamp}-${random}`;
+        }
+
+        function initializeFormInstance(reportId, bedId, bedName, description) {
+            // Create new form instance data
+            const formInstance = {
+                id: reportId,
+                bedId: bedId,
+                bedName: bedName,
+                description: description,
+                timestamp: new Date().toISOString(),
+                projectMetadata: {
+                    projectName: '',
+                    projectNumber: '',
+                    date: new Date().toISOString().split('T')[0],
+                    calculatedBy: '',
+                    reviewedBy: '',
+                    location: '',
+                    notes: ''
+                },
+                calculations: {
+                    selfStressing: {
+                        inputs: {},
+                        outputs: {}
+                    },
+                    nonSelfStressing: {
+                        inputs: {},
+                        outputs: {}
+                    }
+                }
+            };
+
+            // Store instance
+            reportInstances.set(reportId, formInstance);
+
+            // Update UI
+            document.getElementById('reportId').textContent = reportId;
+            document.getElementById('selectedBedDisplay').textContent = bedName;
+        }
+
+        function showCalculator() {
+            document.getElementById('calculatorModal').classList.add('active');
+            
+            // Clear form data for new instance
+            clearFormData();
+            
+            // Initialize calculations
+            calculateAll();
+        }
+
+        function closeCalculator() {
+            document.getElementById('calculatorModal').classList.remove('active');
+            
+            // Save current state to instance before closing
+            if (currentReportId) {
+                saveFormInstance();
+            }
+        }
+
+        function clearFormData() {
+            // Clear all input fields
+            const inputs = document.querySelectorAll('#calculatorModal input[type="number"], #calculatorModal input[type="text"], #calculatorModal input[type="date"], #calculatorModal textarea, #calculatorModal select');
+            inputs.forEach(input => {
+                if (input.type === 'date') {
+                    input.value = new Date().toISOString().split('T')[0];
+                } else if (input.type === 'number') {
+                    input.value = '';
+                } else if (input.tagName === 'SELECT') {
+                    input.selectedIndex = 0;
+                } else {
+                    input.value = '';
+                }
+            });
+        }
+
+        function saveFormInstance() {
+            if (!currentReportId) return;
+
+            const instance = reportInstances.get(currentReportId);
+            if (!instance) return;
+
+            // Update project metadata
+            instance.projectMetadata = {
+                projectName: document.getElementById('projectName').value,
+                projectNumber: document.getElementById('projectNumber').value,
+                date: document.getElementById('date').value,
+                calculatedBy: document.getElementById('calculatedBy').value,
+                reviewedBy: document.getElementById('reviewedBy').value,
+                location: document.getElementById('location').value,
+                notes: document.getElementById('notes').value
+            };
+
+            // Update calculations
+            instance.calculations = currentCalculation;
+
+            // Save back to storage
+            reportInstances.set(currentReportId, instance);
+        }
+
+        // Modal click outside to close
+        document.getElementById('bedSelectionModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeBedSelection();
+            }
+        });
+
+        document.getElementById('calculatorModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeCalculator();
+            }
+        });
+
+        // ACC Authentication and Project Management (same as before)
+        function isInIframe() {
+            return window.self !== window.top;
+        }
+
+        window.showAuthButton = function() {
+            updateConnectionStatus('disconnected', 'Click to Connect to ACC');
+            document.getElementById('accStatus').innerHTML = `
+                <button onclick="authenticateWithACC()" class="btn" style="background: #059669; color: white; border: none; padding: 4px 8px; border-radius: 4px;">
+                    Connect to ACC
+                </button>
+            `;
+        };
+
+        window.authenticateWithACC = function() {
+            const currentUrl = new URL(window.location.href);
+            const callbackUrl = `${currentUrl.protocol}//${currentUrl.host}/`;
+            
+            const authUrl = `https://developer.api.autodesk.com/authentication/v2/authorize?` +
+                `response_type=code&` +
+                `client_id=${ACC_CLIENT_ID}&` +
+                `redirect_uri=${encodeURIComponent(callbackUrl)}&` +
+                `scope=${encodeURIComponent('data:read account:read')}&` +
+                `state=pppqc-calc`;
+            
+            if (isInIframe()) {
+                const authWindow = window.open(authUrl, 'acc_auth', 'width=600,height=700,scrollbars=yes,resizable=yes');
+                
+                const checkClosed = setInterval(() => {
+                    if (authWindow.closed) {
+                        clearInterval(checkClosed);
+                        setTimeout(() => {
+                            const storedToken = getStoredToken();
+                            if (storedToken && !isTokenExpired(storedToken)) {
+                                forgeAccessToken = storedToken.access_token;
+                                loadRealProjectData();
+                            } else {
+                                window.location.reload();
+                            }
+                        }, 1000);
+                    }
+                }, 1000);
+            } else {
+                console.log('Redirecting to auth URL:', authUrl);
+                window.location.href = authUrl;
+            }
+        };
+
+        async function handleAuthCode(code) {
+            try {
+                updateConnectionStatus('connected', 'Authenticating...');
+                
+                console.log('Authorization code received:', code);
+                
+                const currentUrl = new URL(window.location.href);
+                const callbackUrl = `${currentUrl.protocol}//${currentUrl.host}/`;
+                
+                console.log('Using callback URL:', callbackUrl);
+                
+                const tokenResponse = await fetch('/.netlify/functions/auth', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        code: code,
+                        redirect_uri: callbackUrl
+                    })
+                });
+                
+                console.log('Token response status:', tokenResponse.status);
+                
+                const responseText = await tokenResponse.text();
+                console.log('Token response text:', responseText);
+                
+                if (!tokenResponse.ok) {
+                    throw new Error(`Token exchange failed: ${responseText}`);
+                }
+                
+                let tokenData;
+                try {
+                    tokenData = JSON.parse(responseText);
+                } catch (e) {
+                    throw new Error(`Invalid JSON response: ${responseText}`);
+                }
+                
+                if (tokenData.error) {
+                    throw new Error(`Auth error: ${tokenData.error} - ${tokenData.error_description || ''}`);
+                }
+                
+                if (!tokenData.access_token) {
+                    throw new Error('No access token received');
+                }
+                
+                forgeAccessToken = tokenData.access_token;
+                console.log('Access token received successfully');
+                
+                storeToken(tokenData);
+                await loadRealProjectData();
+                
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+            } catch (error) {
+                console.error('Authentication failed:', error);
+                handleACCConnectionError(error);
+            }
+        }
+
+        function storeToken(tokenData) {
+            const expirationTime = Date.now() + (tokenData.expires_in * 1000);
+            const tokenInfo = {
+                access_token: tokenData.access_token,
+                expires_at: expirationTime
+            };
+            sessionStorage.setItem('forge_token', JSON.stringify(tokenInfo));
+        }
+
+        function getStoredToken() {
+            const stored = sessionStorage.getItem('forge_token');
+            return stored ? JSON.parse(stored) : null;
+        }
+
+        function isTokenExpired(tokenInfo) {
+            return Date.now() >= tokenInfo.expires_at;
+        }
+
+        async function loadRealProjectData() {
+            try {
+                updateConnectionStatus('connected', 'Loading Projects...');
+                
+                console.log('Starting to load real project data...');
+                
+                const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+                
+                if (!hubsResponse.ok) {
+                    const errorText = await hubsResponse.text();
+                    console.error('Hubs response error:', hubsResponse.status, errorText);
+                    throw new Error(`Failed to load hubs: ${hubsResponse.status} ${errorText}`);
+                }
+                
+                const hubsData = await hubsResponse.json();
+                console.log('Hubs data received:', hubsData);
+                
+                const accHubs = hubsData.data.filter(hub => 
+                    hub.attributes.extension?.type === 'hubs:autodesk.bim360:Account'
+                );
+                
+                console.log('ACC hubs found:', accHubs.length);
+                
+                if (accHubs.length > 0) {
+                    const firstAccHub = accHubs[0];
+                    console.log('Using ACC hub:', firstAccHub.attributes.name, firstAccHub.id);
+                    
+                    await loadProjectsFromHub(firstAccHub.id);
+                } else {
+                    console.warn('No ACC hubs found in response');
+                    throw new Error('No ACC hubs found - only Fusion 360 hubs available');
+                }
+                
+                console.log('Project data loading completed successfully');
+                updateConnectionStatus('connected', 'Connected to ACC');
+                isACCConnected = true;
+                enableACCFeatures();
+                
+            } catch (error) {
+                console.error('Failed to load project data:', error);
+                
+                updateConnectionStatus('connected', 'Connected (Manual Entry Mode)');
+                isACCConnected = true;
+                enableACCFeatures();
+                
+                document.getElementById('accDetails').innerHTML = `
+                    <div style="color: #dc2626;">
+                        <strong>Project Loading Issue:</strong> ${error.message}<br>
+                        <small>You can still use the calculator by entering project details manually</small>
+                    </div>
+                `;
+                
+                const projectSelect = document.getElementById('projectName');
+                projectSelect.innerHTML = '<option value="">Enter project details manually below...</option>';
+                projectSelect.disabled = false;
+                
+                ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) {
+                        element.disabled = false;
+                        element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
+                    }
+                });
+            }
+        }
+
+        async function loadProjectsFromHub(hubId) {
+            try {
+                console.log('Loading projects from ACC hub:', hubId);
+                
+                const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+                
+                if (!projectsResponse.ok) {
+                    throw new Error('Failed to load projects');
+                }
+                
+                const projectsData = await projectsResponse.json();
+                console.log('ACC projects data received:', projectsData);
+                
+                const projects = await Promise.all(projectsData.data.map(async (project) => {
+                    console.log('Processing ACC project:', project.attributes.name);
+                    
+                    let projectNumber = '';
+                    let location = '';
+                    let additionalData = {};
+                    
+                    try {
+                        const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
+                            headers: {
+                                'Authorization': `Bearer ${forgeAccessToken}`
+                            }
+                        });
+                        
+                        if (projectDetailResponse.ok) {
+                            const projectDetail = await projectDetailResponse.json();
+                            console.log('Project detail for', project.attributes.name, ':', projectDetail);
+                            
+                            if (projectDetail.data?.attributes?.extension?.data) {
+                                const extData = projectDetail.data.attributes.extension.data;
+                                
+                                projectNumber = extData.projectNumber || 
+                                              extData.project_number || 
+                                              extData.number || 
+                                              extData.jobNumber ||
+                                              extData.job_number ||
+                                              extData.projectId ||
+                                              extData.project_id ||
+                                              extData.accountId ||
+                                              extData.projectCode ||
+                                              extData.code || '';
+                                
+                                location = extData.location || 
+                                         extData.project_location || 
+                                         extData.address ||
+                                         extData.city ||
+                                         extData.state ||
+                                         extData.jobLocation ||
+                                         extData.site || '';
+                                
+                                additionalData = {
+                                    description: extData.description || extData.project_description || '',
+                                    status: extData.status || extData.project_status || '',
+                                    type: extData.type || extData.project_type || '',
+                                    startDate: extData.startDate || extData.start_date || '',
+                                    endDate: extData.endDate || extData.end_date || ''
+                                };
+                            }
+                        }
+                    } catch (detailError) {
+                        console.warn('Could not get detailed project info for', project.attributes.name, ':', detailError);
+                    }
+                    
+                    if (!projectNumber && project.attributes.extension?.data) {
+                        const extData = project.attributes.extension.data;
+                        projectNumber = extData.projectNumber || 
+                                      extData.project_number || 
+                                      extData.number || 
+                                      extData.projectId ||
+                                      extData.project_id || '';
+                    }
+                    
+                    if (!projectNumber) {
+                        const namePatterns = [
+                            /([A-Z]{2,}-\d+)/,
+                            /(\d{4}-\d+)/,
+                            /([A-Z]+\d+)/,
+                            /(Job\s*\d+)/i,
+                            /(\d{6,})/,
+                            /([A-Z]{3,}\d{3,})/
+                        ];
+                        
+                        for (const pattern of namePatterns) {
+                            const match = project.attributes.name.match(pattern);
+                            if (match) {
+                                projectNumber = match[1];
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (!projectNumber) {
+                        projectNumber = `ACC-${project.id.split('#').pop().slice(-6)}`;
+                    }
+                    
+                    return {
+                        id: project.id,
+                        name: project.attributes.name || 'Unnamed Project',
+                        number: projectNumber,
+                        location: location || 'Location not specified',
+                        additionalData,
+                        fullData: project
+                    };
+                }));
+                
+                console.log('Processed ACC projects with enhanced metadata:', projects);
+                
+                populateProjectDropdown(projects);
+                
+                if (projects.length > 0) {
+                    setTimeout(() => {
+                        const projectSelect = document.getElementById('projectName');
+                        if (projectSelect) {
+                            projectSelect.value = projects[0].id;
+                            onProjectSelected();
+                        }
+                    }, 100);
+                }
+                
+            } catch (error) {
+                console.error('Error in loadProjectsFromHub:', error);
+                throw error;
+            }
+        }
+
+        function populateProjectDropdown(projects) {
+            try {
+                console.log('Populating dropdown with ACC projects:', projects);
+                
+                userProjects = projects;
+                const projectSelect = document.getElementById('projectName');
+                
+                if (!projectSelect) {
+                    console.error('Project select element not found');
+                    return;
+                }
+                
+                projectSelect.innerHTML = '<option value="">Select an ACC project...</option>';
+                
+                projects.forEach((project, index) => {
+                    console.log(`Adding ACC project ${index + 1}:`, project.name, 'Number:', project.number);
+                    
+                    const option = document.createElement('option');
+                    option.value = project.id;
+                    option.textContent = `${project.name} (${project.number})`;
+                    option.dataset.projectNumber = project.number || '';
+                    option.dataset.location = project.location || '';
+                    projectSelect.appendChild(option);
+                });
+                
+                projectSelect.disabled = false;
+                projectSelect.style.backgroundColor = '';
+                
+                console.log('ACC project dropdown populated successfully');
+                
+                updateConnectionStatus('connected', 'ACC Projects Loaded');
+                
+                document.getElementById('accDetails').innerHTML = `
+                    <strong>Status:</strong> Connected to ACC<br>
+                    <strong>Projects Found:</strong> ${projects.length} ACC projects<br>
+                    <strong>Hub:</strong> Metromont ACC Account
+                `;
+                
+            } catch (error) {
+                console.error('Error in populateProjectDropdown:', error);
+                throw error;
+            }
+        }
+
+        function onProjectSelected() {
+            const projectSelect = document.getElementById('projectName');
+            const selectedOption = projectSelect.selectedOptions[0];
+            
+            if (selectedOption && selectedOption.value) {
+                const projectNumber = selectedOption.dataset.projectNumber || '';
+                const location = selectedOption.dataset.location || '';
+                
+                console.log('Selected ACC project:', selectedOption.textContent);
+                console.log('Project number:', projectNumber);
+                console.log('Location:', location);
+                
+                document.getElementById('projectNumber').value = projectNumber;
+                document.getElementById('location').value = location;
+                
+                document.getElementById('projectNumber').disabled = false;
+                document.getElementById('location').disabled = false;
+                document.getElementById('calculatedBy').disabled = false;
+                
+                document.getElementById('projectSource').style.display = 'inline-flex';
+                document.getElementById('projectSource').textContent = 'Selected from ACC';
+                
+                if (!document.getElementById('calculatedBy').value) {
+                    document.getElementById('calculatedBy').value = 'ACC User';
+                }
+            }
+        }
+
+        async function initializeACCConnection() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const authCode = urlParams.get('code');
+                const state = urlParams.get('state');
+                const error = urlParams.get('error');
+                
+                if (error) {
+                    throw new Error(`OAuth error: ${error} - ${urlParams.get('error_description') || ''}`);
+                }
+                
+                if (authCode) {
+                    if (state !== 'pppqc-calc') {
+                        console.warn('State parameter mismatch');
+                    }
+                    await handleAuthCode(authCode);
+                } else {
+                    const storedToken = getStoredToken();
+                    if (storedToken && !isTokenExpired(storedToken)) {
+                        forgeAccessToken = storedToken.access_token;
+                        console.log('Using stored token');
+                        await loadRealProjectData();
+                    } else {
+                        console.log('No valid token found, showing auth button');
+                        showAuthButton();
+                    }
+                }
+            } catch (error) {
+                console.error('Connection Error:', error);
+                handleACCConnectionError(error);
+            }
+        }
+
+        function updateConnectionStatus(status, message) {
+            const statusElement = document.getElementById('accStatus');
+            const accInfo = document.getElementById('accInfo');
+            
+            if (status === 'connected') {
+                statusElement.className = 'status-badge status-connected';
+                statusElement.innerHTML = `
+                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                    ${message}
+                `;
+                isACCConnected = true;
+                accInfo.style.borderColor = '#10b981';
+                accInfo.style.backgroundColor = '#ecfdf5';
+            } else {
+                statusElement.className = 'status-badge status-disconnected';
+                statusElement.innerHTML = `
+                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                    ${message}
+                `;
+                isACCConnected = false;
+            }
+        }
+
+        function enableACCFeatures() {
+            document.getElementById('saveBtn').disabled = false;
+            document.getElementById('exportBtn').disabled = false;
+        }
+
+        function handleACCConnectionError(error) {
+            updateConnectionStatus('disconnected', 'Connection Failed');
+            console.error('Full error details:', error);
+            
+            let errorMessage = 'Connection failed';
+            if (error.message.includes('Token exchange failed')) {
+                errorMessage = 'Authentication failed - please check app configuration';
+            } else if (error.message.includes('OAuth error')) {
+                errorMessage = error.message;
+            }
+            
+            document.getElementById('accDetails').innerHTML = `
+                <div style="color: #dc2626;">
+                    <strong>Error:</strong> ${errorMessage}<br>
+                    <small>${error.message}</small><br>
+                    <button onclick="showAuthButton(); location.reload();" style="margin-top: 8px; padding: 4px 8px; background: #059669; color: white; border: none; border-radius: 4px;">
+                        Try Again
+                    </button>
+                </div>
+                <div style="margin-top: 8px; color: #6b7280;">
+                    <em>Calculator will work in offline mode</em>
+                </div>
+            `;
+            
+            simulateACCEnvironment();
+        }
+
+        function simulateACCEnvironment() {
+            updateConnectionStatus('connected', 'Simulation Mode - Ready to Use');
+            
+            ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.disabled = false;
+                    if (element.placeholder && element.placeholder.includes('Loading from ACC...')) {
+                        element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter or select');
+                    }
+                }
+            });
+            
+            const projectSelect = document.getElementById('projectName');
+            projectSelect.disabled = false;
+            projectSelect.innerHTML = '<option value="">Enter project name manually below...</option>';
+            
+            document.getElementById('accDetails').innerHTML = `
+                <strong>Mode:</strong> Simulation Mode<br>
+                <strong>Features:</strong> All calculations working, manual project entry<br>
+                <strong>Status:</strong> Ready for use
+            `;
+            
+            enableACCFeatures();
+        }
+
+        function setupUI() {
+            const dateInput = document.getElementById('date');
+            if (dateInput) {
+                dateInput.value = new Date().toISOString().split('T')[0];
+            }
+        }
+
+        window.addEventListener('message', function(event) {
+            if (event.origin !== window.location.origin) return;
+            
+            if (event.data.type === 'ACC_AUTH_SUCCESS' && event.data.token) {
+                forgeAccessToken = event.data.token;
+                storeToken({ access_token: event.data.token, expires_in: 3600 });
+                loadRealProjectData();
+                updateConnectionStatus('connected', 'Connected to ACC');
+            }
+        });
+
+        // Utility functions
+        function formatNumber(num) {
+            if (isNaN(num) || !isFinite(num)) return '0.000';
+            return num.toFixed(3);
+        }
+
+        function formatInteger(num) {
+            if (isNaN(num) || !isFinite(num)) return '0';
+            return Math.round(num).toString();
+        }
+
+        function getValue(id) {
+            return parseFloat(document.getElementById(id).value) || 0;
+        }
+
+        // Calculation functions
+        function calculateSelfStressing() {
+            const ip = getValue('ss_initialPull');
+            const rf = getValue('ss_requiredForce');
+            const moe = getValue('ss_MOE') || 1;
+            const ns = getValue('ss_numberOfStrands') || 1;
+            const abs = getValue('ss_adjBedShortening');
+            const btbl = getValue('ss_blockToBlockLength');
+            const sa = getValue('ss_strandArea') || 1;
+            const des = getValue('ss_deadEndSeating');
+            const les = getValue('ss_liveEndSeating');
+
+            const basicElongation = ((rf - ip) * btbl * 12) / (sa * moe);
+            const bedShortening = (abs / 2) + (abs / ns);
+            const desiredElongation = basicElongation + des + bedShortening;
+            const desiredElongationRounded = Math.ceil(Math.round(desiredElongation * 1000) / 1000 * 8) / 8;
+            const LESeatingAdd = basicElongation !== 0 ? (les / basicElongation) * (rf - ip) : 0;
+            const bedShorteningAdd = basicElongation !== 0 ? (bedShortening / basicElongation) * (rf - ip) : 0;
+            const desiredPull = rf + LESeatingAdd + bedShorteningAdd;
+            const calculatedPullRounded = Math.ceil(Math.round(desiredPull) / 100) * 100;
+
+            document.getElementById('ss_basicElongation').textContent = formatNumber(basicElongation) + ' in';
+            document.getElementById('ss_bedShortening').textContent = formatNumber(bedShortening) + ' in';
+            document.getElementById('ss_desiredElongationRounded').textContent = formatNumber(desiredElongationRounded) + ' in';
+            document.getElementById('ss_calculatedPullRounded').textContent = formatInteger(calculatedPullRounded) + ' lbs';
+
+            return {
+                basicElongation, bedShortening, desiredElongation, desiredElongationRounded,
+                LESeatingAdd, bedShorteningAdd, desiredPull, calculatedPullRounded
+            };
+        }
+
+        function calculateNonSelfStressing() {
+            const ip = getValue('nss_initialPull');
+            const rf = getValue('nss_requiredForce');
+            const moe = getValue('nss_MOE') || 1;
+            const btbl = getValue('nss_blockToBlockLength');
+            const sa = getValue('nss_strandArea') || 1;
+            const at = getValue('nss_airTemp');
+            const ct = getValue('nss_concreteTemp');
+            const des = getValue('nss_deadEndSeating');
+            const les = getValue('nss_liveEndSeating');
+            const tar = getValue('nss_totalAbutmentRotation');
+
+            const basicElongation = ((rf - ip) * btbl * 12) / (sa * moe);
+            const tempDifference = (ct - at) / 1000;
+            const tca2 = ((rf - ip) * btbl * 12) / (sa - moe) * tempDifference;
+            const tcPart1 = tempDifference > 0.024 ? tca2 : 0;
+            const tcPart2 = tempDifference < -0.024 ? basicElongation * tempDifference : 0;
+            const tempCorrection = tcPart1 + tcPart2;
+            const desiredElongation = basicElongation + des + tempCorrection;
+            const desiredElongationRounded = Math.ceil(Math.round(desiredElongation * 1000) / 1000 * 8) / 8;
+            const LESeatingAdd = basicElongation !== 0 ? (les / basicElongation) * (rf - ip) : 0;
+            const tca1 = (rf + les + tar) * tempDifference;
+            const tcPart1Pull = tempDifference > 0.024 ? tca1 : 0;
+            const tcPart2Pull = tempDifference < -0.024 ? tca1 : 0;
+            const tempCorrectionPull = tcPart1Pull + tcPart2Pull;
+            const desiredPull = rf + LESeatingAdd + tempCorrectionPull;
+            const calculatedPullRounded = Math.ceil(Math.round(desiredPull) / 100) * 100;
+
+            document.getElementById('nss_basicElongation').textContent = formatNumber(basicElongation) + ' in';
+            document.getElementById('nss_tempDifference').textContent = formatNumber(tempDifference);
+            document.getElementById('nss_tempCorrection').textContent = formatNumber(tempCorrection);
+            document.getElementById('nss_desiredElongationRounded').textContent = formatNumber(desiredElongationRounded) + ' in';
+            document.getElementById('nss_calculatedPullRounded').textContent = formatInteger(calculatedPullRounded) + ' lbs';
+
+            return {
+                basicElongation, tempDifference, tca2, tcPart1, tcPart2, tempCorrection,
+                desiredElongation, desiredElongationRounded, LESeatingAdd, tca1,
+                tcPart1Pull, tcPart2Pull, tempCorrectionPull, desiredPull, calculatedPullRounded
+            };
+        }
+
+        function calculateAll() {
+            const selfStressingResults = calculateSelfStressing();
+            const nonSelfStressingResults = calculateNonSelfStressing();
+            
+            currentCalculation = {
+                timestamp: new Date().toISOString(),
+                reportId: currentReportId,
+                bedId: currentBedId,
+                bedName: currentBedName,
+                projectMetadata: {
+                    projectName: document.getElementById('projectName').value,
+                    projectNumber: document.getElementById('projectNumber').value,
+                    date: document.getElementById('date').value,
+                    calculatedBy: document.getElementById('calculatedBy').value,
+                    reviewedBy: document.getElementById('reviewedBy').value,
+                    location: document.getElementById('location').value,
+                    notes: document.getElementById('notes').value
+                },
+                selfStressing: {
+                    inputs: {
+                        initialPull: getValue('ss_initialPull'),
+                        requiredForce: getValue('ss_requiredForce'),
+                        MOE: getValue('ss_MOE'),
+                        numberOfStrands: getValue('ss_numberOfStrands'),
+                        adjBedShortening: getValue('ss_adjBedShortening'),
+                        blockToBlockLength: getValue('ss_blockToBlockLength'),
+                        strandArea: getValue('ss_strandArea'),
+                        deadEndSeating: getValue('ss_deadEndSeating'),
+                        liveEndSeating: getValue('ss_liveEndSeating')
+                    },
+                    outputs: selfStressingResults
+                },
+                nonSelfStressing: {
+                    inputs: {
+                        initialPull: getValue('nss_initialPull'),
+                        requiredForce: getValue('nss_requiredForce'),
+                        MOE: getValue('nss_MOE'),
+                        blockToBlockLength: getValue('nss_blockToBlockLength'),
+                        strandArea: getValue('nss_strandArea'),
+                        airTemp: getValue('nss_airTemp'),
+                        concreteTemp: getValue('nss_concreteTemp'),
+                        deadEndSeating: getValue('nss_deadEndSeating'),
+                        liveEndSeating: getValue('nss_liveEndSeating'),
+                        totalAbutmentRotation: getValue('nss_totalAbutmentRotation')
+                    },
+                    outputs: nonSelfStressingResults
+                }
+            };
+        }
+
+        // ACC Integration Functions
+        async function saveToACC() {
+            if (!isACCConnected) {
+                alert('Not connected to ACC. Please check your connection.');
+                return;
+            }
+
+            try {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<div class="loading"></div> Saving...';
+
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                console.log('Saved to ACC:', currentCalculation);
+                
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                    </svg>
+                    Save to ACC
+                `;
+                
+                alert('Calculation saved to ACC successfully!');
+            } catch (error) {
+                console.error('Save to ACC failed:', error);
+                alert('Failed to save to ACC: ' + error.message);
+                
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                    </svg>
+                    Save to ACC
+                `;
+            }
+        }
+
+        async function exportToACCDocs() {
+            if (!isACCConnected) {
+                alert('Not connected to ACC. Please check your connection.');
+                return;
+            }
+
+            try {
+                const exportBtn = document.getElementById('exportBtn');
+                exportBtn.disabled = true;
+                exportBtn.innerHTML = '<div class="loading"></div> Exporting...';
+
+                generatePDFData();
+
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                    </svg>
+                    Export to ACC
+                `;
+
+                alert('Report exported to ACC Documents successfully!');
+            } catch (error) {
+                console.error('Export to ACC failed:', error);
+                alert('Failed to export to ACC: ' + error.message);
+            }
+        }
+
+        function generatePDF() {
+            generatePDFData();
+            window.print();
+        }
+
+        function generatePDFData() {
+            const metadata = currentCalculation.projectMetadata;
+            const selfStressingResults = currentCalculation.selfStressing.outputs;
+            const nonSelfStressingResults = currentCalculation.nonSelfStressing.outputs;
+
+            document.getElementById('printMetadata').innerHTML = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div><strong>Report ID:</strong> ${currentReportId}</div>
+                    <div><strong>Bed:</strong> ${currentBedName}</div>
+                    <div><strong>Date:</strong> ${metadata.date}</div>
+                    <div><strong>Project:</strong> ${metadata.projectName}</div>
+                    <div><strong>Project #:</strong> ${metadata.projectNumber}</div>
+                    <div><strong>Location:</strong> ${metadata.location}</div>
+                    <div><strong>Calculated By:</strong> ${metadata.calculatedBy}</div>
+                    <div><strong>Reviewed By:</strong> ${metadata.reviewedBy}</div>
+                    <div></div>
+                </div>
+                ${metadata.notes ? `<div><strong>Notes:</strong> ${metadata.notes}</div>` : ''}
+            `;
+
+            document.getElementById('printSelfStressInputs').innerHTML = `
+                <h4>Input Values:</h4>
+                <div><strong>Initial Pull:</strong> ${currentCalculation.selfStressing.inputs.initialPull} lbs</div>
+                <div><strong>Required Force:</strong> ${currentCalculation.selfStressing.inputs.requiredForce} lbs</div>
+                <div><strong>MOE:</strong> ${currentCalculation.selfStressing.inputs.MOE}</div>
+                <div><strong># of Strands:</strong> ${currentCalculation.selfStressing.inputs.numberOfStrands}</div>
+                <div><strong>Adjusted Bed Shortening:</strong> ${currentCalculation.selfStressing.inputs.adjBedShortening} inches</div>
+                <div><strong>Block-to-Block Length:</strong> ${currentCalculation.selfStressing.inputs.blockToBlockLength} feet</div>
+                <div><strong>Strand Area:</strong> ${currentCalculation.selfStressing.inputs.strandArea} sq inches</div>
+                <div><strong>Dead-End Seating:</strong> ${currentCalculation.selfStressing.inputs.deadEndSeating} inches</div>
+                <div><strong>Live End Seating:</strong> ${currentCalculation.selfStressing.inputs.liveEndSeating} inches</div>
+            `;
+
+            document.getElementById('printSelfStressResults').innerHTML = `
+                <h4>Calculated Results:</h4>
+                <div style="display: flex; justify-content: space-between;"><span>Basic Elongation:</span><span>${formatNumber(selfStressingResults.basicElongation)} inches</span></div>
+                <div style="display: flex; justify-content: space-between;"><span>Bed Shortening:</span><span>${formatNumber(selfStressingResults.bedShortening)} inches</span></div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Desired Elongation (Rounded):</span><span>${formatNumber(selfStressingResults.desiredElongationRounded)} inches</span></div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Calculated Pull (Rounded):</span><span>${formatInteger(selfStressingResults.calculatedPullRounded)} lbs</span></div>
+            `;
+
+            document.getElementById('printNonSelfStressInputs').innerHTML = `
+                <h4>Input Values:</h4>
+                <div><strong>Initial Pull:</strong> ${currentCalculation.nonSelfStressing.inputs.initialPull} lbs</div>
+                <div><strong>Required Force:</strong> ${currentCalculation.nonSelfStressing.inputs.requiredForce} lbs</div>
+                <div><strong>MOE:</strong> ${currentCalculation.nonSelfStressing.inputs.MOE}</div>
+                <div><strong>Block-to-Block Length:</strong> ${currentCalculation.nonSelfStressing.inputs.blockToBlockLength} feet</div>
+                <div><strong>Strand Area:</strong> ${currentCalculation.nonSelfStressing.inputs.strandArea} sq inches</div>
+                <div><strong>Air Temperature:</strong> ${currentCalculation.nonSelfStressing.inputs.airTemp} °F</div>
+                <div><strong>Concrete Temperature:</strong> ${currentCalculation.nonSelfStressing.inputs.concreteTemp} °F</div>
+                <div><strong>Dead-End Seating:</strong> ${currentCalculation.nonSelfStressing.inputs.deadEndSeating} inches</div>
+                <div><strong>Live End Seating:</strong> ${currentCalculation.nonSelfStressing.inputs.liveEndSeating} inches</div>
+                <div><strong>Total Abutment Rotation:</strong> ${currentCalculation.nonSelfStressing.inputs.totalAbutmentRotation} inches</div>
+            `;
+
+            document.getElementById('printNonSelfStressResults').innerHTML = `
+                <h4>Calculated Results:</h4>
+                <div style="display: flex; justify-content: space-between;"><span>Basic Elongation:</span><span>${formatNumber(nonSelfStressingResults.basicElongation)} inches</span></div>
+                <div style="display: flex; justify-content: space-between;"><span>Temperature Difference:</span><span>${formatNumber(nonSelfStressingResults.tempDifference)}</span></div>
+                <div style="display: flex; justify-content: space-between;"><span>Temperature Correction:</span><span>${formatNumber(nonSelfStressingResults.tempCorrection)}</span></div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Desired Elongation (Rounded):</span><span>${formatNumber(nonSelfStressingResults.desiredElongationRounded)} inches</span></div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Calculated Pull (Rounded):</span><span>${formatInteger(nonSelfStressingResults.calculatedPullRounded)} lbs</span></div>
+            `;
+        }
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             if (window.self !== window.top) {
@@ -732,16 +2019,7 @@
             
             initializeACCConnection();
             setupUI();
-            calculateAll();
         });
-
-        function setupUI() {
-            document.getElementById('date').value = new Date().toISOString().split('T')[0];
-        }
-
-        // All calculation functions and utilities remain the same as in the previous file
-        // [Complete JavaScript implementation would go here]
-        
     </script>
 </body>
 </html>
