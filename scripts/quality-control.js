@@ -124,6 +124,9 @@ async function completeAuthentication() {
     try {
         updateAuthStatus('Loading Projects...', 'Connecting to your Autodesk Construction Cloud account...');
 
+        // Check token scopes before proceeding
+        const scopeValidation = await validateTokenScopes();
+
         // Load project data
         await loadRealProjectData();
 
@@ -150,10 +153,16 @@ async function completeAuthentication() {
                 if (testResponse.ok) {
                     const folderData = await testResponse.json();
                     debugLog('✓ ACC folder access confirmed, folders found:', folderData.data?.length || 0);
+                    scopeValidation.folderAccess = true;
                 } else {
                     const errorText = await testResponse.text();
                     debugLog('⚠ Limited ACC folder access - some features may be restricted');
                     debugLog('Status:', testResponse.status, 'Response:', errorText);
+                    scopeValidation.folderAccess = false;
+                    scopeValidation.folderError = {
+                        status: testResponse.status,
+                        response: errorText
+                    };
 
                     // Check if this is a 404 vs 403
                     if (testResponse.status === 404) {
@@ -161,19 +170,26 @@ async function completeAuthentication() {
                         debugLog('Trying alternative folder structure...');
 
                         // Try alternative approach - get project details first
-                        await tryAlternativeFolderAccess(projectId);
+                        const altResult = await tryAlternativeFolderAccess(projectId);
+                        scopeValidation.alternativeAccess = altResult;
                     }
                 }
             } catch (error) {
                 debugLog('⚠ Could not test folder access:', error);
+                scopeValidation.folderAccess = false;
+                scopeValidation.folderError = { error: error.message };
             }
         }
 
         // Authentication complete
         isACCConnected = true;
 
-        // Show success and hide auth overlay
-        updateAuthStatus('Success!', 'Successfully connected to ACC with enhanced permissions');
+        // Show appropriate status based on scope validation
+        if (scopeValidation.hasEnhancedScopes) {
+            updateAuthStatus('Success!', 'Successfully connected to ACC with enhanced permissions');
+        } else {
+            updateAuthStatus('Connected with Limited Permissions', 'Connected to ACC but missing enhanced scopes for file operations');
+        }
 
         // Small delay to show success message
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -184,14 +200,23 @@ async function completeAuthentication() {
         }
         document.body.classList.remove('auth-loading');
 
-        // Show auth status badge
+        // Show auth status badge with appropriate styling
         const authStatusBadge = document.getElementById('authStatusBadge');
         if (authStatusBadge) {
             authStatusBadge.style.display = 'inline-flex';
+            if (!scopeValidation.hasEnhancedScopes) {
+                authStatusBadge.className = 'status-badge status-development';
+                authStatusBadge.innerHTML = `
+                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                    Limited Permissions
+                `;
+            }
         }
 
-        // Enable ACC features
-        enableACCFeatures();
+        // Enable ACC features (with limitations if scopes are missing)
+        enableACCFeatures(scopeValidation);
 
         // Initialize dropdowns
         initializeDropdowns();
@@ -199,7 +224,12 @@ async function completeAuthentication() {
         // Initialize report history
         await initializeReportHistory();
 
-        debugLog('Authentication completed successfully');
+        debugLog('Authentication completed with scope validation:', scopeValidation);
+
+        // Show scope warning if needed
+        if (!scopeValidation.hasEnhancedScopes) {
+            showScopeWarning(scopeValidation);
+        }
 
     } catch (error) {
         console.error('Authentication completion failed:', error);
@@ -546,14 +576,24 @@ function onStrandSizeChange(type) {
 // ENHANCED ACC DATA MANAGEMENT API FUNCTIONS WITH IMPROVED ERROR HANDLING
 // =================================================================
 
-// Enhanced Bed QC Report saving with comprehensive debugging
+// Enhanced Bed QC Report saving with comprehensive debugging and scope awareness
 async function saveBedQCReportToACC(reportData) {
     try {
         debugLog('=== STARTING SAVE TO ACC ===');
-        debugLog('Save attempt with enhanced permissions for project:', projectId);
-        debugLog('Hub ID:', hubId);
-        debugLog('Project Top Folder ID:', projectTopFolderId);
-        debugLog('BedQC Folder ID:', bedQCFolderId);
+        debugLog('Save attempt with current permissions for project:', projectId);
+
+        // First, validate current scopes
+        const scopeValidation = await validateTokenScopes();
+        debugLog('Current scope validation:', scopeValidation);
+
+        debugLog('Current project context:', {
+            projectId: projectId,
+            hubId: hubId,
+            projectTopFolderId: projectTopFolderId,
+            bedQCFolderId: bedQCFolderId,
+            hasEnhancedScopes: scopeValidation.hasEnhancedScopes
+        });
+
         debugLog('Report Data Summary:', {
             reportId: reportData.reportId,
             bedName: reportData.bedName,
@@ -577,8 +617,10 @@ async function saveBedQCReportToACC(reportData) {
                     projectTopFolderId: projectTopFolderId,
                     bedQCFolderId: bedQCFolderId
                 },
+                scopeValidation: scopeValidation,
                 debugInfo: {
-                    tokenScopes: ACC_SCOPES,
+                    tokenScopes: scopeValidation.grantedScopes,
+                    requestedScopes: ACC_SCOPES,
                     apiEndpoints: {
                         dataAPI: ACC_DATA_API_BASE,
                         projectAPI: ACC_PROJECT_API_BASE
@@ -587,22 +629,34 @@ async function saveBedQCReportToACC(reportData) {
             },
             reportData: {
                 ...reportData,
-                savedToACC: true,
+                savedToACC: scopeValidation.hasEnhancedScopes,
                 accProjectId: projectId,
                 accHubId: hubId,
                 permissions: {
-                    scopesUsed: ACC_SCOPES,
-                    dataWriteEnabled: true,
-                    dataCreateEnabled: true
+                    scopesUsed: scopeValidation.grantedScopes,
+                    dataWriteEnabled: scopeValidation.hasDataWrite,
+                    dataCreateEnabled: scopeValidation.hasDataCreate,
+                    enhancedPermissions: scopeValidation.hasEnhancedScopes
                 }
             }
         };
 
         debugLog('Prepared report content for save');
 
-        // Try Method 1: Upload as JSON file to ACC
+        // Check if we have enhanced scopes before attempting ACC upload
+        if (!scopeValidation.hasEnhancedScopes) {
+            debugLog('=== INSUFFICIENT SCOPES - SAVING LOCALLY ===');
+            debugLog('Missing scopes:', scopeValidation.missingScopes);
+            debugLog('Scope issue:', scopeValidation.scopeIssue);
+
+            const localSaveResult = await saveToLocalStorageWithScopeInfo(reportContent, scopeValidation);
+            return localSaveResult;
+        }
+
+        // Try Method 1: Upload as JSON file to ACC (only if we have enhanced scopes)
         try {
             debugLog('=== METHOD 1: ACC FILE UPLOAD ===');
+            debugLog('Enhanced scopes confirmed, attempting ACC upload...');
 
             // Step 1: Ensure we have folder access
             debugLog('Step 1: Checking folder access...');
@@ -613,7 +667,7 @@ async function saveBedQCReportToACC(reportData) {
             }
 
             if (!projectTopFolderId) {
-                throw new Error('Cannot access project folders - check Data Management API permissions');
+                throw new Error('Cannot access project folders - check Data Management API permissions and Custom Integration setup');
             }
 
             debugLog('Project top folder confirmed:', projectTopFolderId);
@@ -627,7 +681,7 @@ async function saveBedQCReportToACC(reportData) {
             }
 
             if (!bedQCFolderId) {
-                throw new Error('Cannot create/access BedQC folder - check data:create permissions');
+                throw new Error('Cannot create/access BedQC folder - check data:create permissions and Custom Integration setup');
             }
 
             debugLog('BedQC folder confirmed:', bedQCFolderId);
@@ -653,6 +707,7 @@ async function saveBedQCReportToACC(reportData) {
                 reportId: reportData.reportId,
                 method: 'acc-file-upload',
                 permissions: 'enhanced',
+                scopeValidation: scopeValidation,
                 debugInfo: {
                     projectId: projectId,
                     hubId: hubId,
@@ -667,24 +722,25 @@ async function saveBedQCReportToACC(reportData) {
             debugLog('Error details:', method1Error);
 
             // Enhanced error analysis
-            let errorAnalysis = 'File upload to ACC failed. ';
+            let errorAnalysis = 'File upload to ACC failed despite having enhanced scopes. ';
             let troubleshootingSteps = [];
 
             if (method1Error.message.includes('404')) {
-                errorAnalysis += 'Project folders not accessible (404 error). This may indicate the project is not configured for Data Management API access or lacks document management.';
+                errorAnalysis += 'Project folders not accessible (404 error). This may indicate project configuration issues.';
                 troubleshootingSteps = [
                     'Verify project has BIM 360 or ACC document management enabled',
                     'Check if project supports Data Management API v1',
                     'Confirm project ID is correct: ' + projectId,
-                    'Try accessing project through ACC web interface first'
+                    'Try accessing project through ACC web interface first',
+                    'Verify Custom Integration has "Document Management" access enabled'
                 ];
             } else if (method1Error.message.includes('403')) {
-                errorAnalysis += 'Insufficient permissions (403 error). Enhanced data:write and data:create scopes may be required.';
+                errorAnalysis += 'Access forbidden (403 error). Custom Integration may need additional configuration.';
                 troubleshootingSteps = [
-                    'Verify OAuth app has data:write and data:create scopes',
-                    'Check if user has admin/contributor access to project',
-                    'Confirm scopes were properly requested: ' + ACC_SCOPES,
-                    'Check project-level permissions in ACC'
+                    'Verify Custom Integration is set to "Active" status in ACC Account Admin',
+                    'Check if Custom Integration has proper access levels configured',
+                    'Confirm user has admin/contributor access to project',
+                    'Try refreshing OAuth token by logging out and back in'
                 ];
             } else if (method1Error.message.includes('429')) {
                 errorAnalysis += 'Rate limit exceeded (429 error). Too many API requests made too quickly.';
@@ -706,69 +762,15 @@ async function saveBedQCReportToACC(reportData) {
             debugLog('Error analysis:', errorAnalysis);
             debugLog('Troubleshooting steps:', troubleshootingSteps);
 
-            // Method 2: Enhanced local storage with comprehensive sync capability
-            debugLog('=== METHOD 2: ENHANCED LOCAL STORAGE ===');
-
-            const storageKey = `bedqc_${projectId}_${reportData.reportId}`;
-            const storageData = {
-                ...reportContent,
-                storedLocally: true,
-                needsACCSync: true,
-                storageMethod: 'local-fallback',
+            // Fallback to local storage even with enhanced scopes
+            debugLog('=== FALLBACK: ENHANCED LOCAL STORAGE ===');
+            const localSaveResult = await saveToLocalStorageWithScopeInfo(reportContent, scopeValidation, {
                 uploadError: method1Error.message,
                 errorAnalysis: errorAnalysis,
-                troubleshootingSteps: troubleshootingSteps,
-                retryCount: 0,
-                lastRetryAttempt: null,
-                projectContext: {
-                    projectId: projectId,
-                    hubId: hubId,
-                    projectHasFileAccess: !!projectTopFolderId,
-                    bedQCFolderExists: !!bedQCFolderId
-                },
-                permissionsRequested: ACC_SCOPES,
-                saveAttemptDetails: {
-                    timestamp: new Date().toISOString(),
-                    projectTopFolderId: projectTopFolderId,
-                    bedQCFolderId: bedQCFolderId,
-                    methodAttempted: 'acc-file-upload'
-                }
-            };
+                troubleshootingSteps: troubleshootingSteps
+            });
 
-            localStorage.setItem(storageKey, JSON.stringify(storageData));
-
-            // Store list of all reports for this project
-            const projectReportsKey = `bedqc_reports_${projectId}`;
-            const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
-
-            if (!existingReports.includes(reportData.reportId)) {
-                existingReports.push(reportData.reportId);
-                localStorage.setItem(projectReportsKey, JSON.stringify(existingReports));
-            }
-
-            debugLog('Saved to local storage with key:', storageKey);
-            debugLog('Updated project reports list:', existingReports);
-
-            let warningMessage = 'Report saved locally with enhanced project sync capability. ';
-            warningMessage += errorAnalysis;
-
-            return {
-                success: true,
-                projectId: projectId,
-                reportId: reportData.reportId,
-                storageKey: storageKey,
-                method: 'local-storage',
-                warning: warningMessage,
-                error: method1Error.message,
-                errorAnalysis: errorAnalysis,
-                troubleshootingSteps: troubleshootingSteps,
-                canRetry: !!projectTopFolderId,
-                permissionsNote: 'Enhanced scopes requested: ' + ACC_SCOPES,
-                debugInfo: {
-                    projectContext: storageData.projectContext,
-                    saveAttemptDetails: storageData.saveAttemptDetails
-                }
-            };
+            return localSaveResult;
         }
 
     } catch (error) {
@@ -777,6 +779,91 @@ async function saveBedQCReportToACC(reportData) {
         console.error('All save methods failed:', error);
         throw new Error(`Failed to save report: ${error.message}`);
     }
+}
+
+// Save to local storage with comprehensive scope information
+async function saveToLocalStorageWithScopeInfo(reportContent, scopeValidation, uploadErrorInfo = null) {
+    debugLog('=== SAVING TO LOCAL STORAGE WITH SCOPE INFO ===');
+
+    const storageKey = `bedqc_${projectId}_${reportContent.reportData.reportId}`;
+
+    let saveReason = '';
+    let userMessage = '';
+
+    if (!scopeValidation.hasEnhancedScopes) {
+        saveReason = 'INSUFFICIENT_OAUTH_SCOPES';
+        userMessage = 'Report saved locally because OAuth token lacks required scopes for ACC file operations.';
+    } else if (uploadErrorInfo) {
+        saveReason = 'ACC_UPLOAD_FAILED';
+        userMessage = 'Report saved locally because ACC upload failed despite having enhanced scopes.';
+    } else {
+        saveReason = 'FALLBACK_STORAGE';
+        userMessage = 'Report saved locally as fallback storage method.';
+    }
+
+    const storageData = {
+        ...reportContent,
+        storedLocally: true,
+        needsACCSync: scopeValidation.hasEnhancedScopes, // Only sync if we have scopes
+        storageMethod: 'local-with-scope-info',
+        saveReason: saveReason,
+        userMessage: userMessage,
+        scopeValidation: scopeValidation,
+        uploadErrorInfo: uploadErrorInfo,
+        retryCount: 0,
+        lastRetryAttempt: null,
+        projectContext: {
+            projectId: projectId,
+            hubId: hubId,
+            projectHasFileAccess: !!projectTopFolderId,
+            bedQCFolderExists: !!bedQCFolderId
+        },
+        customIntegrationRequired: !scopeValidation.hasEnhancedScopes,
+        saveAttemptDetails: {
+            timestamp: new Date().toISOString(),
+            projectTopFolderId: projectTopFolderId,
+            bedQCFolderId: bedQCFolderId,
+            methodAttempted: scopeValidation.hasEnhancedScopes ? 'acc-file-upload' : 'local-only'
+        }
+    };
+
+    localStorage.setItem(storageKey, JSON.stringify(storageData));
+
+    // Store list of all reports for this project
+    const projectReportsKey = `bedqc_reports_${projectId}`;
+    const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
+
+    if (!existingReports.includes(reportContent.reportData.reportId)) {
+        existingReports.push(reportContent.reportData.reportId);
+        localStorage.setItem(projectReportsKey, JSON.stringify(existingReports));
+    }
+
+    debugLog('Saved to local storage with key:', storageKey);
+    debugLog('Save reason:', saveReason);
+    debugLog('Updated project reports list:', existingReports);
+
+    return {
+        success: true,
+        projectId: projectId,
+        reportId: reportContent.reportData.reportId,
+        storageKey: storageKey,
+        method: 'local-storage',
+        saveReason: saveReason,
+        userMessage: userMessage,
+        scopeValidation: scopeValidation,
+        warning: userMessage,
+        error: uploadErrorInfo?.uploadError,
+        errorAnalysis: uploadErrorInfo?.errorAnalysis,
+        troubleshootingSteps: uploadErrorInfo?.troubleshootingSteps,
+        canRetry: scopeValidation.hasEnhancedScopes && !!projectTopFolderId,
+        customIntegrationRequired: !scopeValidation.hasEnhancedScopes,
+        permissionsNote: `Token scopes: ${scopeValidation.grantedScopes || '(none)'}`,
+        debugInfo: {
+            projectContext: storageData.projectContext,
+            saveAttemptDetails: storageData.saveAttemptDetails,
+            scopeValidation: scopeValidation
+        }
+    };
 }
 
 // Get project's top folder with improved error handling and rate limiting
@@ -1765,7 +1852,7 @@ function calculateAll() {
 
 async function loadRealProjectData() {
     try {
-        debugLog('Starting to load real project data with enhanced permissions...');
+        debugLog('Starting to load real project data with scope validation...');
         debugLog('Using Metromont Account ID:', METROMONT_ACCOUNT_ID);
 
         // Skip the hub enumeration - go directly to Metromont hub
@@ -1796,6 +1883,9 @@ async function loadRealProjectData() {
     } catch (error) {
         console.error('Failed to load project data:', error);
 
+        // Get scope validation for error display
+        const scopeValidation = await validateTokenScopes();
+
         // Still enable manual entry mode
         const projectSelect = document.getElementById('projectName');
         if (projectSelect) {
@@ -1813,15 +1903,41 @@ async function loadRealProjectData() {
 
         const accDetails = document.getElementById('accDetails');
         if (accDetails) {
+            let scopeWarningHtml = '';
+
+            if (!scopeValidation.hasEnhancedScopes) {
+                if (scopeValidation.scopeIssue === 'NO_SCOPES_GRANTED') {
+                    scopeWarningHtml = `
+                        <div style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem;">
+                            <strong style="color: #dc2626;">OAuth Scope Issue:</strong><br>
+                            <span style="color: #7f1d1d; font-size: 0.875rem;">
+                                No scopes granted - Custom Integration registration required in ACC Account Admin.
+                            </span>
+                        </div>
+                    `;
+                } else {
+                    scopeWarningHtml = `
+                        <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem;">
+                            <strong style="color: #92400e;">Limited OAuth Scopes:</strong><br>
+                            <span style="color: #78350f; font-size: 0.875rem;">
+                                Missing: ${scopeValidation.missingScopes.join(', ')} - Check Custom Integration setup.
+                            </span>
+                        </div>
+                    `;
+                }
+            }
+
             accDetails.innerHTML = `
                 <div style="color: #dc2626;">
                     <strong>Project Loading Issue:</strong> ${error.message}<br>
                     <small>You can still use the calculator by entering project details manually</small><br>
                     <small><em>Note: Projects must follow format "12345 - Project Name" to appear in dropdown</em></small><br>
-                    <small><em>Reports will be saved locally with enhanced sync capability</em></small><br>
-                    <small><em>Enhanced permissions requested: ${ACC_SCOPES}</em></small><br>
-                    <small><em>Metromont Account ID: ${METROMONT_ACCOUNT_ID}</em></small>
+                    <small><em>Reports will be saved locally ${scopeValidation.hasEnhancedScopes ? 'with enhanced sync capability' : '(limited permissions)'}</em></small><br>
+                    <small><em>Granted scopes: ${scopeValidation.grantedScopes || '(none)'}</em></small><br>
+                    <small><em>Metromont Account ID: ${METROMONT_ACCOUNT_ID}</em></small><br>
+                    <small><em>Client ID: ${ACC_CLIENT_ID}</em></small>
                 </div>
+                ${scopeWarningHtml}
             `;
         }
     }
@@ -2075,23 +2191,64 @@ function populateProjectDropdown(projects) {
 
         projectSelect.disabled = false;
 
-        const accDetails = document.getElementById('accDetails');
-        if (accDetails) {
-            accDetails.innerHTML = `
-                <strong>Status:</strong> Connected to Metromont ACC with enhanced permissions<br>
-                <strong>Account:</strong> ${METROMONT_ACCOUNT_ID}<br>
-                <strong>Projects Found:</strong> ${projects.length} active ACC projects (filtered by format)<br>
-                <strong>Hub:</strong> Metromont ACC Account<br>
-                <strong>Storage:</strong> JSON file upload to ACC with enhanced local fallback<br>
-                <strong>Permissions:</strong> ${ACC_SCOPES}<br>
-                <strong>Project Types:</strong> Active ACC projects only (archived and BIM360 filtered out)
-            `;
-        }
+        // Update ACC details with scope validation information
+        updateACCDetailsDisplay(projects.length);
 
     } catch (error) {
         console.error('Error in populateProjectDropdown:', error);
         throw error;
     }
+}
+
+// Update ACC details display with scope validation information
+async function updateACCDetailsDisplay(projectCount) {
+    const accDetails = document.getElementById('accDetails');
+    if (!accDetails) return;
+
+    // Get current scope validation
+    const scopeValidation = await validateTokenScopes();
+
+    let scopeStatusHtml = '';
+    let scopeWarningHtml = '';
+
+    if (scopeValidation.hasEnhancedScopes) {
+        scopeStatusHtml = '<span style="color: #059669;">✅ Enhanced scopes granted</span>';
+    } else {
+        scopeStatusHtml = '<span style="color: #dc2626;">⚠️ Limited scopes granted</span>';
+
+        if (scopeValidation.scopeIssue === 'NO_SCOPES_GRANTED') {
+            scopeWarningHtml = `
+                <div style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem;">
+                    <strong style="color: #dc2626;">Custom Integration Required:</strong><br>
+                    <span style="color: #7f1d1d; font-size: 0.875rem;">
+                        No OAuth scopes were granted. Register Client ID as Custom Integration in ACC Account Admin to enable file operations.
+                    </span>
+                </div>
+            `;
+        } else if (scopeValidation.missingScopes.length > 0) {
+            scopeWarningHtml = `
+                <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem;">
+                    <strong style="color: #92400e;">Limited Permissions:</strong><br>
+                    <span style="color: #78350f; font-size: 0.875rem;">
+                        Missing scopes: ${scopeValidation.missingScopes.join(', ')}. Verify Custom Integration setup.
+                    </span>
+                </div>
+            `;
+        }
+    }
+
+    accDetails.innerHTML = `
+        <strong>Status:</strong> Connected to Metromont ACC<br>
+        <strong>Account:</strong> ${METROMONT_ACCOUNT_ID}<br>
+        <strong>Projects Found:</strong> ${projectCount} active ACC projects (filtered by format)<br>
+        <strong>Hub:</strong> Metromont ACC Account<br>
+        <strong>OAuth Scopes:</strong> ${scopeStatusHtml}<br>
+        <strong>Granted Scopes:</strong> <code style="font-size: 0.75rem;">${scopeValidation.grantedScopes || '(none)'}</code><br>
+        <strong>Storage Method:</strong> ${scopeValidation.hasEnhancedScopes ? 'ACC JSON file upload with local fallback' : 'Local storage only'}<br>
+        <strong>Project Types:</strong> Active ACC projects only (archived and BIM360 filtered out)<br>
+        <strong>Client ID:</strong> <code style="font-size: 0.75rem;">${ACC_CLIENT_ID}</code>
+        ${scopeWarningHtml}
+    `;
 }
 
 function onProjectSelected() {
@@ -2137,14 +2294,179 @@ function onProjectSelected() {
     }
 }
 
-function enableACCFeatures() {
+// Enhanced token scope validation
+async function validateTokenScopes() {
+    debugLog('=== VALIDATING TOKEN SCOPES ===');
+
+    const storedToken = getStoredToken();
+    const grantedScopes = storedToken?.scope || '';
+    const requestedScopes = ACC_SCOPES.split(' ');
+
+    debugLog('Stored token scopes:', grantedScopes);
+    debugLog('Requested scopes:', requestedScopes);
+
+    const scopeValidation = {
+        grantedScopes: grantedScopes,
+        requestedScopes: requestedScopes,
+        hasDataRead: grantedScopes.includes('data:read'),
+        hasDataWrite: grantedScopes.includes('data:write'),
+        hasDataCreate: grantedScopes.includes('data:create'),
+        hasEnhancedScopes: false,
+        missingScopes: [],
+        scopeIssue: null,
+        recommendation: null
+    };
+
+    // Check for missing critical scopes
+    const criticalScopes = ['data:write', 'data:create'];
+    scopeValidation.missingScopes = criticalScopes.filter(scope => !grantedScopes.includes(scope));
+    scopeValidation.hasEnhancedScopes = scopeValidation.missingScopes.length === 0 && scopeValidation.hasDataRead;
+
+    // Determine the scope issue and recommendation
+    if (grantedScopes === '' || grantedScopes.trim() === '') {
+        scopeValidation.scopeIssue = 'NO_SCOPES_GRANTED';
+        scopeValidation.recommendation = 'CUSTOM_INTEGRATION_REQUIRED';
+    } else if (scopeValidation.missingScopes.length > 0) {
+        scopeValidation.scopeIssue = 'MISSING_ENHANCED_SCOPES';
+        scopeValidation.recommendation = 'CUSTOM_INTEGRATION_REQUIRED';
+    } else {
+        scopeValidation.scopeIssue = null;
+        scopeValidation.recommendation = 'SCOPES_OK';
+    }
+
+    debugLog('Scope validation result:', scopeValidation);
+
+    return scopeValidation;
+}
+
+// Show scope warning modal
+function showScopeWarning(scopeValidation) {
+    debugLog('Showing scope warning for validation:', scopeValidation);
+
+    let warningTitle = '';
+    let warningMessage = '';
+    let actionSteps = [];
+
+    if (scopeValidation.scopeIssue === 'NO_SCOPES_GRANTED') {
+        warningTitle = 'OAuth Scopes Not Granted';
+        warningMessage = 'Your access token did not receive any OAuth scopes, which means enhanced file operations will not work.';
+        actionSteps = [
+            '1. Register your Client ID as a Custom Integration in ACC Account Admin',
+            '2. Navigate to ACC Account Admin → Settings → Custom Integrations',
+            '3. Add Client ID: ' + ACC_CLIENT_ID,
+            '4. Enable "Document Management" access level',
+            '5. Set integration status to "Active"',
+            '6. Log out and log back in to CastLink'
+        ];
+    } else if (scopeValidation.scopeIssue === 'MISSING_ENHANCED_SCOPES') {
+        warningTitle = 'Limited OAuth Permissions';
+        warningMessage = `Missing required scopes: ${scopeValidation.missingScopes.join(', ')}. File save operations may fail.`;
+        actionSteps = [
+            '1. Verify Custom Integration registration in ACC Account Admin',
+            '2. Check that "Document Management" access is enabled',
+            '3. Confirm integration status is "Active"',
+            '4. Log out and log back in to refresh token scopes'
+        ];
+    }
+
+    // Create and show warning modal
+    const warningModal = document.createElement('div');
+    warningModal.className = 'modal-overlay';
+    warningModal.style.zIndex = '3000';
+    warningModal.innerHTML = `
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="color: #dc2626;">
+                    <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24" style="margin-right: 0.5rem;">
+                        <path d="M12 2L1 21h22L12 2zm0 3.5L19.5 19h-15L12 5.5zM11 14v2h2v-2h-2zm0-6v4h2V8h-2z"/>
+                    </svg>
+                    ${warningTitle}
+                </h3>
+                <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+            </div>
+            <div class="modal-content">
+                <p style="margin-bottom: 1rem; color: #374151;">${warningMessage}</p>
+                
+                <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                    <h4 style="margin: 0 0 0.5rem 0; color: #92400e;">Required Action:</h4>
+                    <p style="margin: 0; color: #92400e; font-size: 0.875rem;">
+                        This issue is caused by Autodesk's Custom Integration requirement. 
+                        Even with correct OAuth scopes, enhanced permissions require additional setup.
+                    </p>
+                </div>
+                
+                <h4 style="margin: 1rem 0 0.5rem 0; color: #1e293b;">Steps to Fix:</h4>
+                <ol style="color: #374151; line-height: 1.6;">
+                    ${actionSteps.map(step => `<li style="margin-bottom: 0.5rem;">${step}</li>`).join('')}
+                </ol>
+                
+                <div style="background: #e0f2fe; border: 1px solid #0284c7; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+                    <h4 style="margin: 0 0 0.5rem 0; color: #0c4a6e;">What You Can Do Now:</h4>
+                    <p style="margin: 0; color: #0c4a6e; font-size: 0.875rem;">
+                        • Use the Quality Control calculator normally<br>
+                        • Reports will be saved locally with sync capability<br>
+                        • Once Custom Integration is configured, reports can be uploaded to ACC
+                    </p>
+                </div>
+                
+                <div style="margin-top: 1rem; font-size: 0.875rem; color: #6b7280;">
+                    <strong>Technical Details:</strong><br>
+                    Client ID: ${ACC_CLIENT_ID}<br>
+                    Granted Scopes: ${scopeValidation.grantedScopes || '(none)'}<br>
+                    Missing Scopes: ${scopeValidation.missingScopes.join(', ') || '(none)'}
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                    Continue with Limited Access
+                </button>
+                <button class="btn btn-primary" onclick="window.open('https://docs.autodesk.com/en/docs/acc/v1/tutorials/getting-started/manage-access-to-docs/', '_blank')">
+                    View ACC Setup Guide
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(warningModal);
+    warningModal.classList.add('active');
+
+    // Auto-remove after 30 seconds if user doesn't interact
+    setTimeout(() => {
+        if (document.body.contains(warningModal)) {
+            warningModal.remove();
+        }
+    }, 30000);
+}
+
+function enableACCFeatures(scopeValidation = null) {
     const saveBtn = document.getElementById('saveBtn');
     const exportBtn = document.getElementById('exportBtn');
 
-    if (saveBtn) saveBtn.disabled = false;
-    if (exportBtn) exportBtn.disabled = false;
+    if (saveBtn) {
+        saveBtn.disabled = false;
 
-    debugLog('ACC features enabled');
+        // Update save button based on scope validation
+        if (scopeValidation && !scopeValidation.hasEnhancedScopes) {
+            saveBtn.innerHTML = `
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                </svg>
+                Save Locally
+            `;
+            saveBtn.title = 'Will save to local storage due to limited ACC permissions';
+        }
+    }
+
+    if (exportBtn) {
+        exportBtn.disabled = false;
+
+        if (scopeValidation && !scopeValidation.hasEnhancedScopes) {
+            exportBtn.disabled = true;
+            exportBtn.title = 'Export requires enhanced ACC permissions';
+        }
+    }
+
+    debugLog('ACC features enabled with scope limitations:', scopeValidation?.hasEnhancedScopes);
 }
 
 function setupUI() {
@@ -2158,7 +2480,7 @@ function setupUI() {
 // ENHANCED SAVE FUNCTIONALITY WITH FULL ACC INTEGRATION
 // =================================================================
 
-// Updated saveToACC function with enhanced permissions
+// Updated saveToACC function with enhanced scope awareness
 async function saveToACC() {
     if (!isACCConnected) {
         alert('Not connected to ACC. Please check your connection.');
@@ -2172,19 +2494,30 @@ async function saveToACC() {
 
     try {
         debugLog('=== STARTING SAVE TO ACC PROCESS ===');
+
+        // Validate current scopes before attempting save
+        const scopeValidation = await validateTokenScopes();
+        debugLog('Current scope validation for save:', scopeValidation);
+
         debugLog('Current project context:', {
             projectId: projectId,
             hubId: hubId,
             projectTopFolderId: projectTopFolderId,
             bedQCFolderId: bedQCFolderId,
             reportId: currentCalculation?.reportId,
-            bedName: currentCalculation?.bedName
+            bedName: currentCalculation?.bedName,
+            hasEnhancedScopes: scopeValidation.hasEnhancedScopes
         });
 
         const saveBtn = document.getElementById('saveBtn');
         if (saveBtn) {
             saveBtn.disabled = true;
-            saveBtn.innerHTML = '<div class="loading"></div> Saving to ACC with enhanced permissions...';
+
+            if (scopeValidation.hasEnhancedScopes) {
+                saveBtn.innerHTML = '<div class="loading"></div> Saving to ACC with enhanced permissions...';
+            } else {
+                saveBtn.innerHTML = '<div class="loading"></div> Saving locally (limited permissions)...';
+            }
         }
 
         // Add quality compliance data
@@ -2192,12 +2525,12 @@ async function saveToACC() {
             ...currentCalculation,
             status: 'Completed',
             createdDate: currentCalculation.timestamp,
-            savedToACC: true,
+            savedToACC: scopeValidation.hasEnhancedScopes,
             permissions: {
-                scopesUsed: ACC_SCOPES,
-                enhancedPermissions: true,
-                dataWriteEnabled: true,
-                dataCreateEnabled: true
+                scopesUsed: scopeValidation.grantedScopes,
+                enhancedPermissions: scopeValidation.hasEnhancedScopes,
+                dataWriteEnabled: scopeValidation.hasDataWrite,
+                dataCreateEnabled: scopeValidation.hasDataCreate
             },
             qualityMetrics: {
                 complianceStatus: 'Pass', // Could be calculated based on results
@@ -2212,43 +2545,66 @@ async function saveToACC() {
 
         debugLog('Enhanced calculation prepared for save');
 
-        // Save to ACC Data Management API using enhanced permissions
+        // Save to ACC Data Management API or local storage based on scope validation
         const result = await saveBedQCReportToACC(enhancedCalculation);
 
         debugLog('✓ Save process completed:', result);
 
         if (saveBtn) {
             saveBtn.disabled = false;
-            saveBtn.innerHTML = `
-                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
-                </svg>
-                Saved Successfully
-            `;
+
+            if (result.method === 'acc-file-upload') {
+                saveBtn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                    </svg>
+                    Saved to ACC
+                `;
+            } else {
+                saveBtn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                    </svg>
+                    Saved Locally
+                `;
+            }
         }
 
-        // Show appropriate success message based on storage method
-        let successMessage = `Report saved successfully with enhanced permissions!\nReport ID: ${result.reportId}`;
+        // Show appropriate success message based on storage method and scope validation
+        let successMessage = `Report saved successfully!\nReport ID: ${result.reportId}`;
 
         if (result.method === 'acc-file-upload') {
-            successMessage += `\n\nStorage: ACC JSON File Upload (Enhanced)\nFile Name: ${result.fileName}\nVersion ID: ${result.versionId}\nPermissions: ${result.permissions}`;
+            successMessage += `\n\n✅ Storage: ACC JSON File Upload\nFile Name: ${result.fileName}\nVersion ID: ${result.versionId}\nPermissions: Enhanced scopes confirmed`;
             if (result.debugInfo) {
-                successMessage += `\n\nDebug Info:\nProject ID: ${result.debugInfo.projectId}\nBedQC Folder: ${result.debugInfo.bedQCFolderId}`;
+                successMessage += `\n\nProject Context:\nProject ID: ${result.debugInfo.projectId}\nBedQC Folder: ${result.debugInfo.bedQCFolderId}`;
             }
         } else if (result.method === 'local-storage') {
-            successMessage += `\n\nStorage: Local browser storage with enhanced project sync\nNote: ${result.warning || 'File upload failed - check permissions'}`;
-            if (result.error) {
-                successMessage += `\n\nError Details: ${result.error}`;
+            successMessage += `\n\n💾 Storage: Local browser storage`;
+
+            if (result.customIntegrationRequired) {
+                successMessage += `\n\n⚠️ Scope Issue: ${result.saveReason}`;
+                successMessage += `\nReason: ${result.userMessage}`;
+                successMessage += `\n\nTo enable ACC file uploads:`;
+                successMessage += `\n• Register Client ID as Custom Integration in ACC Account Admin`;
+                successMessage += `\n• Enable "Document Management" access level`;
+                successMessage += `\n• Set integration status to "Active"`;
+                successMessage += `\n• Log out and back in to refresh scopes`;
+                successMessage += `\n\nClient ID: ${ACC_CLIENT_ID}`;
+            } else if (result.error) {
+                successMessage += `\n\nNote: ACC upload failed, saved locally instead`;
+                successMessage += `\nError: ${result.error}`;
+                if (result.troubleshootingSteps && result.troubleshootingSteps.length > 0) {
+                    successMessage += `\n\nTroubleshooting:\n• ${result.troubleshootingSteps.slice(0, 3).join('\n• ')}`;
+                }
             }
-            if (result.troubleshootingSteps) {
-                successMessage += `\n\nTroubleshooting:\n• ${result.troubleshootingSteps.join('\n• ')}`;
-            }
+
             if (result.permissionsNote) {
                 successMessage += `\n\n${result.permissionsNote}`;
             }
         }
 
-        alert(successMessage);
+        // Show success dialog with action buttons
+        showSaveSuccessDialog(result, successMessage);
 
         // Refresh report history to show the new report
         await refreshReportHistory();
@@ -2264,20 +2620,19 @@ async function saveToACC() {
                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
                 </svg>
-                Save to ACC
+                Save Report
             `;
         }
 
         // Provide detailed error information
-        let errorMessage = 'Failed to save report to ACC.\n\n';
+        let errorMessage = 'Failed to save report.\n\n';
         errorMessage += `Error: ${error.message}\n\n`;
         errorMessage += 'This might be due to:\n';
-        errorMessage += '• ACC API permissions need additional configuration\n';
-        errorMessage += '• Project folder access restrictions\n';
         errorMessage += '• Network connectivity issues\n';
-        errorMessage += '• Missing required scopes: data:write, data:create\n';
-        errorMessage += '• Project may not have Data Management API enabled\n\n';
-        errorMessage += `Current scopes requested: ${ACC_SCOPES}\n\n`;
+        errorMessage += '• OAuth scope configuration problems\n';
+        errorMessage += '• Missing Custom Integration setup in ACC\n';
+        errorMessage += '• Project configuration issues\n\n';
+        errorMessage += `Current scopes: Check browser console for detailed scope information\n\n`;
         errorMessage += `Project ID: ${projectId}\n`;
         errorMessage += `Hub ID: ${hubId}\n\n`;
         errorMessage += 'The calculation is still available in your browser session.\n';
@@ -2285,6 +2640,82 @@ async function saveToACC() {
 
         alert(errorMessage);
     }
+}
+
+// Show save success dialog with actionable information
+function showSaveSuccessDialog(result, message) {
+    const successModal = document.createElement('div');
+    successModal.className = 'modal-overlay';
+    successModal.style.zIndex = '3000';
+
+    let actionButtons = '';
+    let statusIcon = '';
+    let statusColor = '';
+
+    if (result.method === 'acc-file-upload') {
+        statusIcon = '☁️';
+        statusColor = '#059669';
+        actionButtons = `
+            <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove()">
+                Continue Working
+            </button>
+            <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove(); refreshReportHistory()">
+                View All Reports
+            </button>
+        `;
+    } else {
+        statusIcon = '💾';
+        statusColor = '#f59e0b';
+
+        if (result.customIntegrationRequired) {
+            actionButtons = `
+                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                    Continue Working
+                </button>
+                <button class="btn btn-primary" onclick="window.open('https://docs.autodesk.com/en/docs/acc/v1/tutorials/getting-started/manage-access-to-docs/', '_blank'); this.closest('.modal-overlay').remove()">
+                    Setup ACC Integration
+                </button>
+            `;
+        } else {
+            actionButtons = `
+                <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove()">
+                    Continue Working
+                </button>
+                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove(); refreshReportHistory()">
+                    View All Reports
+                </button>
+            `;
+        }
+    }
+
+    successModal.innerHTML = `
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="color: ${statusColor};">
+                    ${statusIcon} Report Saved Successfully
+                </h3>
+                <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+            </div>
+            <div class="modal-content">
+                <div style="background: #f8f9fa; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; font-family: monospace; font-size: 0.875rem; white-space: pre-line; line-height: 1.4;">
+${message}
+                </div>
+            </div>
+            <div class="modal-actions">
+                ${actionButtons}
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(successModal);
+    successModal.classList.add('active');
+
+    // Auto-remove after 15 seconds if user doesn't interact
+    setTimeout(() => {
+        if (document.body.contains(successModal)) {
+            successModal.remove();
+        }
+    }, 15000);
 }
 
 async function exportToACCDocs() {
