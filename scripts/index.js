@@ -17,6 +17,8 @@ const ACC_SCOPES = [
 let forgeAccessToken = null;
 let isAuthenticated = false;
 let authCheckComplete = false;
+let hubId = null;
+let projectId = null;
 
 // UI Elements
 const authProcessing = document.getElementById('authProcessing');
@@ -70,25 +72,51 @@ async function initializeApp() {
 async function startAuthFlow() {
     updateAuthStatus('Redirecting to Login...', 'You will be redirected to Autodesk to sign in...');
 
+    // Enhanced scope configuration with explicit formatting
+    const REQUESTED_SCOPES = [
+        'data:read',
+        'data:write',
+        'data:create',
+        'data:search',
+        'account:read',
+        'user:read',
+        'viewables:read'
+    ];
+
+    const scopeString = REQUESTED_SCOPES.join(' ');
+
     // Small delay to show the message
     await new Promise(resolve => setTimeout(resolve, 1500));
 
-    // Updated auth URL with enhanced scopes
-    const authUrl = `https://developer.api.autodesk.com/authentication/v2/authorize?` +
-        `response_type=code&` +
-        `client_id=${ACC_CLIENT_ID}&` +
-        `redirect_uri=${encodeURIComponent(ACC_CALLBACK_URL)}&` +
-        `scope=${encodeURIComponent(ACC_SCOPES)}&` +
-        `state=castlink-auth`;
+    // Build auth URL with explicit debugging
+    const authParams = new URLSearchParams({
+        response_type: 'code',
+        client_id: ACC_CLIENT_ID,
+        redirect_uri: ACC_CALLBACK_URL,
+        scope: scopeString,
+        state: 'castlink-auth-debug'
+    });
 
-    console.log('Redirecting to auth URL with enhanced scopes:', authUrl);
-    console.log('Requesting scopes:', ACC_SCOPES);
+    const authUrl = `https://developer.api.autodesk.com/authentication/v2/authorize?${authParams.toString()}`;
+
+    // Enhanced logging for debugging
+    console.log('=== OAUTH SCOPE DEBUG ===');
+    console.log('Client ID:', ACC_CLIENT_ID);
+    console.log('Requested scopes array:', REQUESTED_SCOPES);
+    console.log('Scope string:', scopeString);
+    console.log('URL-encoded scope:', encodeURIComponent(scopeString));
+    console.log('Full auth URL:', authUrl);
+    console.log('========================');
+
     window.location.href = authUrl;
 }
 
 async function handleOAuthCallback(authCode) {
     try {
         updateAuthStatus('Processing Login...', 'Exchanging authorization code for access token...');
+
+        console.log('=== TOKEN EXCHANGE DEBUG ===');
+        console.log('Auth code received:', authCode);
 
         const tokenResponse = await fetch('/.netlify/functions/auth', {
             method: 'POST',
@@ -103,18 +131,57 @@ async function handleOAuthCallback(authCode) {
 
         if (!tokenResponse.ok) {
             const errorText = await tokenResponse.text();
+            console.error('Token response error:', errorText);
             throw new Error(`Token exchange failed: ${errorText}`);
         }
 
         const tokenData = await tokenResponse.json();
+        console.log('Token response received:', tokenData);
 
         if (tokenData.error) {
+            console.error('Token error:', tokenData.error);
             throw new Error(`Auth error: ${tokenData.error}`);
         }
 
         if (!tokenData.access_token) {
+            console.error('No access token in response');
             throw new Error('No access token received');
         }
+
+        // Enhanced scope validation
+        const grantedScopes = tokenData.scope || '';
+        const requestedScopes = [
+            'data:read',
+            'data:write',
+            'data:create',
+            'data:search',
+            'account:read',
+            'user:read',
+            'viewables:read'
+        ];
+
+        console.log('=== SCOPE VALIDATION ===');
+        console.log('Granted scopes:', grantedScopes);
+        console.log('Requested scopes:', requestedScopes);
+
+        const scopeValidation = requestedScopes.map(scope => ({
+            scope: scope,
+            granted: grantedScopes.includes(scope)
+        }));
+
+        console.log('Scope validation results:', scopeValidation);
+
+        const criticalScopes = ['data:write', 'data:create'];
+        const criticalScopesMissing = criticalScopes.filter(scope => !grantedScopes.includes(scope));
+
+        if (criticalScopesMissing.length > 0) {
+            console.warn('⚠️ CRITICAL SCOPES MISSING:', criticalScopesMissing);
+            console.warn('This will cause folder/file operations to fail');
+        } else {
+            console.log('✅ All critical scopes granted');
+        }
+
+        console.log('========================');
 
         forgeAccessToken = tokenData.access_token;
         storeToken(tokenData);
@@ -154,6 +221,9 @@ async function completeAuthentication() {
             throw new Error('No ACC hubs found in your account');
         }
 
+        // Set hubId for testing
+        hubId = accHubs[0].id;
+
         // Test enhanced permissions
         updateAuthStatus('Verifying Permissions...', 'Checking your ACC permissions for file operations...');
 
@@ -166,7 +236,16 @@ async function completeAuthentication() {
 
         if (!projectsResponse.ok) {
             console.warn('Limited project access - some features may be restricted');
+        } else {
+            const projectsData = await projectsResponse.json();
+            if (projectsData.data && projectsData.data.length > 0) {
+                projectId = projectsData.data[0].id; // Set projectId for testing
+            }
         }
+
+        // Test scope permissions
+        updateAuthStatus('Testing Permissions...', 'Validating OAuth scope permissions...');
+        await testScopePermissions();
 
         isAuthenticated = true;
         authCheckComplete = true;
@@ -192,6 +271,56 @@ async function completeAuthentication() {
         console.error('Authentication completion failed:', error);
         throw error;
     }
+}
+
+// Add a scope testing function
+async function testScopePermissions() {
+    if (!forgeAccessToken) {
+        console.error('No access token available');
+        return;
+    }
+
+    console.log('=== TESTING SCOPE PERMISSIONS ===');
+
+    // Test 1: Basic hub access (should work with data:read)
+    try {
+        const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+        });
+        console.log('✅ Hub access test:', hubsResponse.ok ? 'PASS' : 'FAIL');
+    } catch (error) {
+        console.log('❌ Hub access test: FAIL -', error.message);
+    }
+
+    // Test 2: Project access (should work with data:read)
+    if (hubId) {
+        try {
+            const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
+                headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+            });
+            console.log('✅ Project access test:', projectsResponse.ok ? 'PASS' : 'FAIL');
+        } catch (error) {
+            console.log('❌ Project access test: FAIL -', error.message);
+        }
+    }
+
+    // Test 3: Folder access (requires data:read, enhanced permissions)
+    if (projectId) {
+        try {
+            const foldersResponse = await fetch(`https://developer.api.autodesk.com/data/v1/projects/${projectId}/folders`, {
+                headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+            });
+            console.log('✅ Folder access test:', foldersResponse.ok ? 'PASS' : 'FAIL');
+            if (!foldersResponse.ok) {
+                const errorText = await foldersResponse.text();
+                console.log('Folder access error:', errorText);
+            }
+        } catch (error) {
+            console.log('❌ Folder access test: FAIL -', error.message);
+        }
+    }
+
+    console.log('=========================');
 }
 
 async function verifyToken(token) {
