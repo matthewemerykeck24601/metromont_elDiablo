@@ -545,6 +545,7 @@ function initializeStrandSizeDropdown() {
     }
 }
 
+// FIXED: Initialize project member dropdowns with actual ACC data
 function initializeProjectMemberDropdowns() {
     // Convert Bed Supervisor (calculatedBy) to dropdown
     const calculatedByInput = document.getElementById('calculatedBy');
@@ -596,19 +597,8 @@ function initializeProjectMemberDropdowns() {
     }
 }
 
+// FIXED: Populate dropdown with actual ACC project members
 function populateProjectMemberDropdown(selectElement) {
-    // Default project members (will be enhanced with ACC data later)
-    const defaultMembers = [
-        'John Smith - Bed Supervisor',
-        'Mike Johnson - Senior Supervisor',
-        'Sarah Davis - Lead Supervisor',
-        'Tom Wilson - Inspector',
-        'Lisa Brown - Quality Inspector',
-        'Dave Martinez - Senior Inspector',
-        'Amy Taylor - QC Manager',
-        'Chris Anderson - Production Manager'
-    ];
-
     // Clear existing options except default
     const defaultOption = selectElement.querySelector('option[value=""]');
     selectElement.innerHTML = '';
@@ -616,13 +606,143 @@ function populateProjectMemberDropdown(selectElement) {
         selectElement.appendChild(defaultOption);
     }
 
-    // Add default members
-    defaultMembers.forEach(member => {
-        const option = document.createElement('option');
-        option.value = member;
-        option.textContent = member;
-        selectElement.appendChild(option);
+    // Add project members from ACC (if available)
+    if (projectMembers && projectMembers.length > 0) {
+        debugLog('Populating dropdown with ACC project members:', projectMembers.length);
+        
+        projectMembers.forEach(member => {
+            const option = document.createElement('option');
+            option.value = member.name || member.email;
+            option.textContent = `${member.name || member.email}${member.role ? ' - ' + member.role : ''}`;
+            selectElement.appendChild(option);
+        });
+    } else {
+        // Fallback to default members if ACC data not available
+        const defaultMembers = [
+            'John Smith - Bed Supervisor',
+            'Mike Johnson - Senior Supervisor',
+            'Sarah Davis - Lead Supervisor',
+            'Tom Wilson - Inspector',
+            'Lisa Brown - Quality Inspector',
+            'Dave Martinez - Senior Inspector',
+            'Amy Taylor - QC Manager',
+            'Chris Anderson - Production Manager'
+        ];
+
+        debugLog('Using default project members (ACC data not available)');
+
+        defaultMembers.forEach(member => {
+            const option = document.createElement('option');
+            option.value = member;
+            option.textContent = member;
+            selectElement.appendChild(option);
+        });
+    }
+}
+
+// FIXED: Load project members from ACC API
+async function loadProjectMembers(projectId) {
+    try {
+        debugLog('=== LOADING PROJECT MEMBERS FROM ACC ===');
+        debugLog('Project ID:', projectId);
+
+        if (!projectId || !forgeAccessToken) {
+            debugLog('Missing projectId or token, using default members');
+            return [];
+        }
+
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Try to get project members
+        const membersResponse = await fetch(`${ACC_PROJECT_API_BASE}/projects/${projectId}/users`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        debugLog('Project members API response status:', membersResponse.status);
+
+        if (!membersResponse.ok) {
+            const errorText = await membersResponse.text();
+            debugLog('Failed to load project members:', errorText);
+            
+            // Try alternative endpoint for project users
+            try {
+                const altResponse = await fetch(`${ACC_PROJECT_API_BASE}/hubs/${hubId}/projects/${projectId}/users`, {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+
+                if (altResponse.ok) {
+                    const altData = await altResponse.json();
+                    debugLog('✓ Project members loaded from alternative endpoint:', altData.data?.length || 0);
+                    return parseProjectMembers(altData.data || []);
+                }
+            } catch (altError) {
+                debugLog('Alternative members endpoint also failed:', altError);
+            }
+
+            // Return empty array to use defaults
+            return [];
+        }
+
+        const membersData = await membersResponse.json();
+        debugLog('✓ Project members loaded successfully:', membersData.data?.length || 0);
+
+        return parseProjectMembers(membersData.data || []);
+
+    } catch (error) {
+        debugLog('Error loading project members:', error);
+        console.error('Error loading project members:', error);
+        return [];
+    }
+}
+
+// Parse project members data from ACC API response
+function parseProjectMembers(membersData) {
+    const members = [];
+
+    membersData.forEach(member => {
+        try {
+            const memberInfo = {
+                id: member.id,
+                name: '',
+                email: '',
+                role: '',
+                company: ''
+            };
+
+            // Extract member information from different possible structures
+            if (member.attributes) {
+                memberInfo.name = member.attributes.name || 
+                                 member.attributes.firstName + ' ' + member.attributes.lastName ||
+                                 member.attributes.displayName || '';
+                memberInfo.email = member.attributes.email || '';
+                memberInfo.role = member.attributes.role || member.attributes.roleId || '';
+                memberInfo.company = member.attributes.company || member.attributes.companyName || '';
+            }
+
+            // Clean up name
+            memberInfo.name = memberInfo.name.trim();
+            if (!memberInfo.name && memberInfo.email) {
+                memberInfo.name = memberInfo.email.split('@')[0];
+            }
+
+            // Only add if we have at least a name or email
+            if (memberInfo.name || memberInfo.email) {
+                members.push(memberInfo);
+                debugLog('Added project member:', memberInfo);
+            }
+
+        } catch (memberError) {
+            debugLog('Error parsing member data:', memberError, member);
+        }
     });
+
+    debugLog(`Parsed ${members.length} project members`);
+    return members;
 }
 
 function onStrandSizeChange(type) {
@@ -1936,12 +2056,12 @@ function calculateAll() {
 }
 
 // =================================================================
-// PROJECT DATA LOADING AND MANAGEMENT WITH IMPROVED RATE LIMITING
+// FIXED: PROJECT DATA LOADING WITH MORE FLEXIBLE PROJECT FILTERING
 // =================================================================
 
 async function loadRealProjectData() {
     try {
-        debugLog('Starting to load real project data with scope validation...');
+        debugLog('Starting to load real project data with flexible filtering...');
         debugLog('Using Metromont Account ID:', METROMONT_ACCOUNT_ID);
 
         // Skip the hub enumeration - go directly to Metromont hub
@@ -2020,7 +2140,7 @@ async function loadRealProjectData() {
                 <div style="color: #dc2626;">
                     <strong>Project Loading Issue:</strong> ${error.message}<br>
                     <small>You can still use the calculator by entering project details manually</small><br>
-                    <small><em>Note: Projects must follow format "12345 - Project Name" to appear in dropdown</em></small><br>
+                    <small><em>Note: Projects can have any name format, not just "12345 - Project Name"</em></small><br>
                     <small><em>Reports will be saved locally ${scopeValidation.hasEnhancedScopes ? 'with enhanced sync capability' : '(limited permissions)'}</em></small><br>
                     <small><em>Granted scopes: ${scopeValidation.grantedScopes || '(none)'}</em></small><br>
                     <small><em>Metromont Account ID: ${METROMONT_ACCOUNT_ID}</em></small><br>
@@ -2032,9 +2152,10 @@ async function loadRealProjectData() {
     }
 }
 
+// FIXED: Load projects with more flexible filtering
 async function loadProjectsFromHub(hubId) {
     try {
-        debugLog('Loading projects from Metromont ACC hub:', hubId);
+        debugLog('Loading projects from Metromont ACC hub with flexible filtering:', hubId);
 
         const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
             headers: {
@@ -2049,38 +2170,25 @@ async function loadProjectsFromHub(hubId) {
         const projectsData = await projectsResponse.json();
         debugLog('ACC projects data received:', projectsData);
 
-        // ADVANCED FILTERING: Only active ACC projects with proper naming format
+        // FIXED: More flexible project filtering
         const validProjects = [];
-        const projectNamePattern = /^(\d{5})\s*-\s*(.+)$/;
+        
+        // More flexible project name patterns
+        const strictPattern = /^(\d{5})\s*-\s*(.+)$/;           // "12345 - Project Name"
+        const flexiblePattern = /^(\d{3,6})\s*[-_\s]+(.+)$/;     // "123 - Name" or "12345_Name" or "1234 Name"
+        const numberFirstPattern = /^(\d{3,6})\s+(.+)$/;         // "12345 Project Name"
 
         for (const project of projectsData.data) {
-            // Filter 1: Check project name format
-            const nameMatch = project.attributes.name.match(projectNamePattern);
-            if (!nameMatch) {
-                debugLog('Skipping project (invalid format):', project.attributes.name);
-                continue;
-            }
-
-            // Filter 2: Only active ACC projects (filter out archived and BIM360)
-            const projectType = project.attributes.extension?.type || '';
+            const projectName = project.attributes.name || '';
+            
+            // Filter 1: Check if project is active
             const projectStatus = project.attributes.status || '';
-
-            // Skip archived projects
             if (projectStatus === 'archived' || projectStatus === 'inactive') {
-                debugLog('Skipping archived project:', project.attributes.name);
+                debugLog('Skipping archived project:', projectName);
                 continue;
             }
 
-            // Skip BIM360 projects - only keep ACC projects
-            if (projectType.includes('bim360') && !projectType.includes('acc')) {
-                debugLog('Skipping BIM360 project:', project.attributes.name);
-                continue;
-            }
-
-            // Filter 3: Additional quality checks
-            const projectName = project.attributes.name;
-
-            // Skip test/template projects
+            // Filter 2: Skip obvious test/template projects
             if (projectName.toLowerCase().includes('test') ||
                 projectName.toLowerCase().includes('template') ||
                 projectName.toLowerCase().includes('training') ||
@@ -2091,43 +2199,102 @@ async function loadProjectsFromHub(hubId) {
                 projectName.startsWith('TBD') ||
                 projectName.includes('R&D') ||
                 projectName.includes('R & D')) {
-                debugLog('Skipping test/template project:', project.attributes.name);
+                debugLog('Skipping test/template project:', projectName);
                 continue;
+            }
+
+            // Filter 3: Try to match project name patterns (more flexible)
+            let nameMatch = null;
+            let projectNumber = '';
+            let projectDisplayName = projectName;
+
+            // Try strict pattern first
+            nameMatch = projectName.match(strictPattern);
+            if (nameMatch) {
+                projectNumber = nameMatch[1];
+                projectDisplayName = nameMatch[2].trim();
+                debugLog('✓ Strict pattern match:', projectName);
+            } else {
+                // Try flexible pattern
+                nameMatch = projectName.match(flexiblePattern);
+                if (nameMatch) {
+                    projectNumber = nameMatch[1];
+                    projectDisplayName = nameMatch[2].trim();
+                    debugLog('✓ Flexible pattern match:', projectName);
+                } else {
+                    // Try number-first pattern
+                    nameMatch = projectName.match(numberFirstPattern);
+                    if (nameMatch) {
+                        projectNumber = nameMatch[1];
+                        projectDisplayName = nameMatch[2].trim();
+                        debugLog('✓ Number-first pattern match:', projectName);
+                    } else {
+                        // Accept any project name, extract number if possible
+                        const numberExtract = projectName.match(/(\d{3,6})/);
+                        if (numberExtract) {
+                            projectNumber = numberExtract[1];
+                            projectDisplayName = projectName;
+                            debugLog('✓ Number extracted from:', projectName);
+                        } else {
+                            // Accept project without number
+                            projectNumber = 'N/A';
+                            projectDisplayName = projectName;
+                            debugLog('✓ Accepted without number pattern:', projectName);
+                        }
+                    }
+                }
             }
 
             // This project passed all filters
             validProjects.push({
                 project: project,
-                projectNumberFromName: nameMatch[1],
-                projectDisplayName: nameMatch[2].trim()
+                projectNumber: projectNumber,
+                projectDisplayName: projectDisplayName,
+                fullProjectName: projectName
             });
         }
 
-        debugLog(`✓ Filtered ${validProjects.length} valid ACC projects from ${projectsData.data.length} total projects`);
+        debugLog(`✓ Filtered ${validProjects.length} valid projects from ${projectsData.data.length} total projects`);
 
         if (validProjects.length === 0) {
-            console.warn('No active ACC projects matched the required format "12345 - Project Name"');
-            throw new Error('No active ACC projects found matching required format "12345 - Project Name"');
+            console.warn('No projects found - relaxing all filters to show any available projects');
+            
+            // If no projects match, accept ALL non-archived projects
+            const fallbackProjects = projectsData.data
+                .filter(p => (p.attributes.status || '') !== 'archived')
+                .map(project => ({
+                    project: project,
+                    projectNumber: 'N/A',
+                    projectDisplayName: project.attributes.name || 'Unnamed Project',
+                    fullProjectName: project.attributes.name || 'Unnamed Project'
+                }));
+            
+            if (fallbackProjects.length > 0) {
+                debugLog(`Using ${fallbackProjects.length} fallback projects (no name filtering)`);
+                validProjects.push(...fallbackProjects);
+            } else {
+                throw new Error('No active projects found in ACC account');
+            }
         }
 
-        // OPTIMIZED PROCESSING: Process valid projects with strict rate limiting
+        // OPTIMIZED PROCESSING with project member loading
         const projects = [];
-        const maxConcurrentRequests = 1; // Only 1 request at a time
-        const delayBetweenRequests = 300; // 300ms delay between each request
+        const maxConcurrentRequests = 1;
+        const delayBetweenRequests = 300;
         const maxRetries = 3;
 
-        debugLog('Processing', validProjects.length, 'valid ACC projects');
+        debugLog('Processing', validProjects.length, 'valid projects and loading members');
 
         for (let i = 0; i < validProjects.length; i += maxConcurrentRequests) {
             const batch = validProjects.slice(i, i + maxConcurrentRequests);
 
             const batchPromises = batch.map(async (validProject) => {
-                const { project, projectNumberFromName, projectDisplayName } = validProject;
+                const { project, projectNumber, projectDisplayName, fullProjectName } = validProject;
 
-                debugLog(`Processing ACC project [${i + 1}/${validProjects.length}]:`, project.attributes.name);
+                debugLog(`Processing project [${i + 1}/${validProjects.length}]:`, fullProjectName);
 
-                let projectNumber = projectNumberFromName;
                 let location = '';
+                let actualProjectNumber = projectNumber;
 
                 // Try to get detailed project info with retry logic
                 let retryCount = 0;
@@ -2135,7 +2302,6 @@ async function loadProjectsFromHub(hubId) {
 
                 while (!success && retryCount < maxRetries) {
                     try {
-                        // Add exponential backoff delay
                         const delay = delayBetweenRequests * Math.pow(1.5, retryCount);
                         await new Promise(resolve => setTimeout(resolve, delay));
 
@@ -2161,7 +2327,7 @@ async function loadProjectsFromHub(hubId) {
                                     extData.code || '';
 
                                 if (accProjectNumber && accProjectNumber.trim() !== '') {
-                                    projectNumber = accProjectNumber.trim();
+                                    actualProjectNumber = accProjectNumber.trim();
                                 }
 
                                 // Extract location from various possible fields
@@ -2181,21 +2347,20 @@ async function loadProjectsFromHub(hubId) {
                             }
                             success = true;
                         } else if (projectDetailResponse.status === 429) {
-                            debugLog(`Rate limit hit for project ${project.attributes.name}, retrying... (${retryCount + 1}/${maxRetries})`);
+                            debugLog(`Rate limit hit for project ${fullProjectName}, retrying... (${retryCount + 1}/${maxRetries})`);
                             retryCount++;
 
-                            // If we've hit rate limit, wait much longer before retrying
                             if (retryCount < maxRetries) {
-                                const waitTime = 3000 * retryCount; // Wait 3, 6, 9 seconds
+                                const waitTime = 3000 * retryCount;
                                 debugLog(`Waiting ${waitTime}ms before retry...`);
                                 await new Promise(resolve => setTimeout(resolve, waitTime));
                             }
                         } else {
-                            debugLog(`Failed to get project details for ${project.attributes.name}: ${projectDetailResponse.status}`);
-                            success = true; // Don't retry for non-rate-limit errors
+                            debugLog(`Failed to get project details for ${fullProjectName}: ${projectDetailResponse.status}`);
+                            success = true;
                         }
                     } catch (detailError) {
-                        debugLog('Could not get detailed project info for', project.attributes.name, ':', detailError);
+                        debugLog('Could not get detailed project info for', fullProjectName, ':', detailError);
                         retryCount++;
 
                         if (retryCount < maxRetries) {
@@ -2206,10 +2371,10 @@ async function loadProjectsFromHub(hubId) {
 
                 return {
                     id: project.id,
-                    name: project.attributes.name || 'Unnamed Project',
+                    name: fullProjectName,
                     displayName: projectDisplayName,
-                    number: projectNumber,
-                    numericSort: parseInt(projectNumberFromName, 10),
+                    number: actualProjectNumber,
+                    numericSort: parseInt(actualProjectNumber, 10) || 999999, // Put non-numeric at end
                     location: location || 'Location not specified',
                     fullData: project,
                     permissions: 'enhanced',
@@ -2225,14 +2390,19 @@ async function loadProjectsFromHub(hubId) {
             if (i + maxConcurrentRequests < validProjects.length) {
                 const remaining = validProjects.length - (i + maxConcurrentRequests);
                 debugLog(`✓ Processed ${i + maxConcurrentRequests} of ${validProjects.length} projects, ${remaining} remaining...`);
-                await new Promise(resolve => setTimeout(resolve, 800)); // 800ms between batches
+                await new Promise(resolve => setTimeout(resolve, 800));
             }
         }
 
         debugLog(`✓ Successfully processed ${projects.length} Metromont ACC projects`);
 
-        // Sort projects by project number
-        const sortedProjects = projects.sort((a, b) => a.numericSort - b.numericSort);
+        // Sort projects by project number (numeric sort, then alphabetical)
+        const sortedProjects = projects.sort((a, b) => {
+            if (a.numericSort !== b.numericSort) {
+                return a.numericSort - b.numericSort;
+            }
+            return a.name.localeCompare(b.name);
+        });
 
         populateProjectDropdown(sortedProjects);
 
@@ -2271,7 +2441,7 @@ function populateProjectDropdown(projects) {
         projects.forEach((project) => {
             const option = document.createElement('option');
             option.value = project.id;
-            option.textContent = `${project.name} (${project.number})`;
+            option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ' (' + project.number + ')' : ''}`;
             option.dataset.projectNumber = project.number || '';
             option.dataset.location = project.location || '';
             option.dataset.permissions = project.permissions || 'basic';
@@ -2329,18 +2499,19 @@ async function updateACCDetailsDisplay(projectCount) {
     accDetails.innerHTML = `
         <strong>Status:</strong> Connected to Metromont ACC<br>
         <strong>Account:</strong> ${METROMONT_ACCOUNT_ID}<br>
-        <strong>Projects Found:</strong> ${projectCount} active ACC projects (filtered by format)<br>
+        <strong>Projects Found:</strong> ${projectCount} active ACC projects (flexible name filtering)<br>
         <strong>Hub:</strong> Metromont ACC Account<br>
         <strong>OAuth Scopes:</strong> ${scopeStatusHtml}<br>
         <strong>Granted Scopes:</strong> <code style="font-size: 0.75rem;">${scopeValidation.grantedScopes || '(none)'}</code><br>
         <strong>Storage Method:</strong> ${scopeValidation.hasEnhancedScopes ? 'ACC JSON file upload with local fallback' : 'Local storage only'}<br>
-        <strong>Project Types:</strong> Active ACC projects only (archived and BIM360 filtered out)<br>
+        <strong>Project Types:</strong> Active ACC projects (flexible filtering applied)<br>
         <strong>Client ID:</strong> <code style="font-size: 0.75rem;">${ACC_CLIENT_ID}</code>
         ${scopeWarningHtml}
     `;
 }
 
-function onProjectSelected() {
+// FIXED: Enhanced project selection with member loading
+async function onProjectSelected() {
     const projectSelect = document.getElementById('projectName');
     if (!projectSelect) return;
 
@@ -2377,6 +2548,27 @@ function onProjectSelected() {
         if (projectSource) {
             projectSource.style.display = 'inline-flex';
             projectSource.textContent = `Project Data from ACC (${permissions} permissions)`;
+        }
+
+        // FIXED: Load project members when project is selected
+        debugLog('Loading project members for selected project...');
+        try {
+            projectMembers = await loadProjectMembers(projectId);
+            debugLog('Project members loaded:', projectMembers.length);
+            
+            // Update the member dropdowns
+            const calculatedBySelect = document.getElementById('calculatedBy');
+            const reviewedBySelect = document.getElementById('reviewedBy');
+            
+            if (calculatedBySelect) {
+                populateProjectMemberDropdown(calculatedBySelect);
+            }
+            if (reviewedBySelect) {
+                populateProjectMemberDropdown(reviewedBySelect);
+            }
+        } catch (memberError) {
+            debugLog('Error loading project members:', memberError);
+            // Continue with default members if ACC member loading fails
         }
 
         debugLog('✓ Project selection completed successfully');
