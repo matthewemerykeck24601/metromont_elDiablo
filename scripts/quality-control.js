@@ -127,6 +127,7 @@ async function completeAuthentication() {
                     console.log('✓ ACC folder access confirmed');
                 } else {
                     console.warn('⚠ Limited ACC folder access - some features may be restricted');
+                    console.warn('Status:', testResponse.status, 'Response:', await testResponse.text());
                 }
             } catch (error) {
                 console.warn('⚠ Could not test folder access:', error);
@@ -444,13 +445,16 @@ function onStrandSizeChange(type) {
 }
 
 // =================================================================
-// ENHANCED ACC DATA MANAGEMENT API FUNCTIONS
+// ENHANCED ACC DATA MANAGEMENT API FUNCTIONS WITH IMPROVED ERROR HANDLING
 // =================================================================
 
-// Get project's top folder with improved error handling and permission checking
+// Get project's top folder with improved error handling and rate limiting
 async function getProjectTopFolder(projectId) {
     try {
         console.log('Attempting to get project folders for:', projectId);
+
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         const response = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders`, {
             headers: {
@@ -459,15 +463,33 @@ async function getProjectTopFolder(projectId) {
         });
 
         if (!response.ok) {
+            const errorText = await response.text();
+            console.warn(`Project folders not accessible (${response.status}):`, errorText);
+
             if (response.status === 403) {
-                console.warn('Insufficient permissions for folder access. Need data:read and data:write scopes.');
-                return null;
+                console.warn('❌ Insufficient permissions for folder access. Need data:read and data:write scopes.');
+                console.warn('Current scopes:', ACC_SCOPES);
+                console.warn('This may be due to:');
+                console.warn('- Missing BIM 360 or ACC document management permissions');
+                console.warn('- Project not configured for Data Management API access');
+                console.warn('- Account-level permissions restrictions');
+            } else if (response.status === 404) {
+                console.warn('❌ Project does not exist or is not accessible via Data Management API');
+                console.warn('This may be due to:');
+                console.warn('- Project is not a BIM 360 or ACC project');
+                console.warn('- Project does not have document management enabled');
+                console.warn('- API endpoint changed or deprecated');
+            } else if (response.status === 429) {
+                console.warn('❌ Rate limit exceeded. Too many requests to Autodesk API');
+                console.warn('Will use fallback storage method');
             }
-            console.warn(`Project folders not accessible (${response.status}). Using fallback storage method.`);
+
             return null;
         }
 
         const data = await response.json();
+        console.log('✓ Successfully retrieved project folders:', data.data.length, 'folders found');
+
         const topFolders = data.data.filter(folder =>
             folder.attributes.name === 'Project Files' ||
             folder.attributes.extension?.type === 'folders:autodesk.bim360:Folder'
@@ -478,7 +500,7 @@ async function getProjectTopFolder(projectId) {
             console.log('✓ Found project top folder:', projectTopFolderId);
             return topFolders[0].id;
         } else {
-            console.warn('No accessible folders found in project, using fallback');
+            console.warn('No accessible top-level folders found in project');
             return null;
         }
     } catch (error) {
@@ -496,6 +518,9 @@ async function ensureBedQCFolder(projectId, parentFolderId) {
         }
 
         console.log('Ensuring BedQC folder exists...');
+
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // First, try to find existing BedQC folder
         const foldersResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders/${parentFolderId}/contents`, {
@@ -520,6 +545,10 @@ async function ensureBedQCFolder(projectId, parentFolderId) {
 
         // Create new BedQC folder
         console.log('Creating new BedQC Reports folder...');
+
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         const createFolderResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders`, {
             method: 'POST',
             headers: {
@@ -573,6 +602,9 @@ async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
 
         console.log('Uploading JSON file to ACC:', fileName);
 
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         // Step 1: Create storage location
         const storageResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/storage`, {
             method: 'POST',
@@ -612,6 +644,10 @@ async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
 
         // Step 2: Upload file content
         const fileContent = JSON.stringify(jsonData, null, 2);
+
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         const uploadResponse = await fetch(uploadURL, {
             method: 'PUT',
             headers: {
@@ -630,6 +666,9 @@ async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
         console.log('✓ File uploaded successfully');
 
         // Step 3: Create first version
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         const versionResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/versions`, {
             method: 'POST',
             headers: {
@@ -752,6 +791,18 @@ async function saveBedQCReportToACC(reportData) {
         } catch (method1Error) {
             console.warn('Method 1 (file upload) failed:', method1Error);
 
+            // Enhanced error analysis
+            let errorAnalysis = 'File upload to ACC failed. ';
+            if (method1Error.message.includes('404')) {
+                errorAnalysis += 'Project folders not accessible (404 error). This may indicate the project is not configured for Data Management API access or lacks document management.';
+            } else if (method1Error.message.includes('403')) {
+                errorAnalysis += 'Insufficient permissions (403 error). Enhanced data:write and data:create scopes may be required.';
+            } else if (method1Error.message.includes('429')) {
+                errorAnalysis += 'Rate limit exceeded (429 error). Too many API requests made too quickly.';
+            } else {
+                errorAnalysis += `Technical error: ${method1Error.message}`;
+            }
+
             // Method 2: Enhanced local storage with project sync
             console.log('Using Method 2: Enhanced local storage with sync capability...');
 
@@ -762,10 +813,19 @@ async function saveBedQCReportToACC(reportData) {
                 needsACCSync: true,
                 storageMethod: 'local-fallback',
                 uploadError: method1Error.message,
+                errorAnalysis: errorAnalysis,
                 retryCount: 0,
                 lastRetryAttempt: null,
                 projectHasFileAccess: !!projectTopFolderId,
-                permissionsRequested: ACC_SCOPES
+                permissionsRequested: ACC_SCOPES,
+                troubleshooting: {
+                    suggestedActions: [
+                        'Verify project has BIM 360 or ACC document management enabled',
+                        'Check if user has proper permissions in the ACC project',
+                        'Confirm API application has been granted data:write and data:create scopes',
+                        'Try again after rate limit cooldown period'
+                    ]
+                }
             };
 
             localStorage.setItem(storageKey, JSON.stringify(storageData));
@@ -779,12 +839,8 @@ async function saveBedQCReportToACC(reportData) {
                 localStorage.setItem(projectReportsKey, JSON.stringify(existingReports));
             }
 
-            let warningMessage = 'Report saved locally with enhanced project sync capability.';
-            if (!projectTopFolderId) {
-                warningMessage = 'Report saved locally. ACC folder access requires data:write permissions.';
-            } else {
-                warningMessage = 'Report saved locally. File upload failed - enhanced permissions may be needed.';
-            }
+            let warningMessage = 'Report saved locally with enhanced project sync capability. ';
+            warningMessage += errorAnalysis;
 
             return {
                 success: true,
@@ -794,6 +850,7 @@ async function saveBedQCReportToACC(reportData) {
                 method: 'local-storage',
                 warning: warningMessage,
                 error: method1Error.message,
+                errorAnalysis: errorAnalysis,
                 canRetry: !!projectTopFolderId,
                 permissionsNote: 'Enhanced scopes requested: ' + ACC_SCOPES
             };
@@ -805,7 +862,7 @@ async function saveBedQCReportToACC(reportData) {
     }
 }
 
-// Load reports using enhanced approach
+// Load reports using enhanced approach with better error handling
 async function loadBedQCReportsFromACC(projectId) {
     try {
         console.log('Loading reports using enhanced permissions...');
@@ -822,6 +879,9 @@ async function loadBedQCReportsFromACC(projectId) {
             }
 
             if (bedQCFolderId) {
+                // Add delay to prevent rate limiting
+                await new Promise(resolve => setTimeout(resolve, 100));
+
                 const folderContentsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders/${bedQCFolderId}/contents`, {
                     headers: {
                         'Authorization': `Bearer ${forgeAccessToken}`
@@ -835,6 +895,9 @@ async function loadBedQCReportsFromACC(projectId) {
                     for (const item of contentsData.data) {
                         if (item.type === 'items' && item.attributes.name.endsWith('.json')) {
                             try {
+                                // Add delay to prevent rate limiting
+                                await new Promise(resolve => setTimeout(resolve, 50));
+
                                 // Get the latest version of the item
                                 const versionsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/items/${item.id}/versions`, {
                                     headers: {
@@ -865,6 +928,8 @@ async function loadBedQCReportsFromACC(projectId) {
                         }
                     }
                 }
+            } else {
+                console.log('No ACC folder access available, using local storage only');
             }
         } catch (accError) {
             console.warn('Could not load from ACC folder:', accError);
@@ -897,7 +962,12 @@ async function loadBedQCReportsFromACC(projectId) {
                             displayName: `${reportData.reportData.bedName} - ${reportData.reportData.reportId}`,
                             data: reportData,
                             source: reportData.storedLocally ? 'local' : 'local-synced',
-                            permissions: reportData.permissionsRequested || 'basic'
+                            permissions: reportData.permissionsRequested || 'basic',
+                            errorInfo: reportData.uploadError ? {
+                                error: reportData.uploadError,
+                                analysis: reportData.errorAnalysis,
+                                troubleshooting: reportData.troubleshooting
+                            } : null
                         });
                     }
                 } catch (parseError) {
@@ -918,10 +988,13 @@ async function loadBedQCReportsFromACC(projectId) {
     }
 }
 
-// Download report content from ACC
+// Download report content from ACC with better error handling
 async function downloadReportFromACC(versionId) {
     try {
         console.log('Downloading report from ACC:', versionId);
+
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // Get download URL
         const downloadResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/versions/${versionId}/downloads`, {
@@ -967,6 +1040,9 @@ async function deleteBedQCReportFromACC(itemId, isACCFile = false) {
         if (isACCFile && itemId.startsWith('urn:')) {
             // Try to delete from ACC with enhanced permissions
             try {
+                // Add delay to prevent rate limiting
+                await new Promise(resolve => setTimeout(resolve, 100));
+
                 const deleteResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/items/${itemId}`, {
                     method: 'DELETE',
                     headers: {
@@ -1363,7 +1439,7 @@ function calculateAll() {
 }
 
 // =================================================================
-// PROJECT DATA LOADING AND MANAGEMENT
+// PROJECT DATA LOADING AND MANAGEMENT WITH IMPROVED RATE LIMITING
 // =================================================================
 
 async function loadRealProjectData() {
@@ -1454,82 +1530,99 @@ async function loadProjectsFromHub(hubId) {
         const projectsData = await projectsResponse.json();
         console.log('ACC projects data received:', projectsData);
 
-        const projects = await Promise.all(projectsData.data.map(async (project) => {
-            console.log('Processing ACC project:', project.attributes.name);
+        // Process projects with rate limiting to avoid 429 errors
+        const projects = [];
+        const maxConcurrentRequests = 3; // Limit concurrent requests
 
-            // First, check if project name matches the required format: "12345 - Project name"
-            const projectNamePattern = /^(\d{5})\s*-\s*(.+)$/;
-            const nameMatch = project.attributes.name.match(projectNamePattern);
+        for (let i = 0; i < projectsData.data.length; i += maxConcurrentRequests) {
+            const batch = projectsData.data.slice(i, i + maxConcurrentRequests);
 
-            if (!nameMatch) {
-                console.log('Skipping project (does not match format):', project.attributes.name);
-                return null;
-            }
+            const batchPromises = batch.map(async (project) => {
+                console.log('Processing ACC project:', project.attributes.name);
 
-            const projectNumberFromName = nameMatch[1];
-            const projectDisplayName = nameMatch[2];
+                // First, check if project name matches the required format: "12345 - Project name"
+                const projectNamePattern = /^(\d{5})\s*-\s*(.+)$/;
+                const nameMatch = project.attributes.name.match(projectNamePattern);
 
-            let projectNumber = projectNumberFromName;
-            let location = '';
-
-            try {
-                const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
-                    headers: {
-                        'Authorization': `Bearer ${forgeAccessToken}`
-                    }
-                });
-
-                if (projectDetailResponse.ok) {
-                    const projectDetail = await projectDetailResponse.json();
-
-                    if (projectDetail.data?.attributes?.extension?.data) {
-                        const extData = projectDetail.data.attributes.extension.data;
-
-                        const accProjectNumber = extData.projectNumber ||
-                            extData.project_number ||
-                            extData.number ||
-                            extData.jobNumber ||
-                            extData.job_number ||
-                            extData.projectCode ||
-                            extData.code || '';
-
-                        if (accProjectNumber && accProjectNumber.trim() !== '') {
-                            projectNumber = accProjectNumber;
-                        }
-
-                        location = extData.location ||
-                            extData.project_location ||
-                            extData.address ||
-                            extData.city ||
-                            extData.state ||
-                            extData.jobLocation ||
-                            extData.site || '';
-                    }
+                if (!nameMatch) {
+                    console.log('Skipping project (does not match format):', project.attributes.name);
+                    return null;
                 }
-            } catch (detailError) {
-                console.warn('Could not get detailed project info for', project.attributes.name, ':', detailError);
+
+                const projectNumberFromName = nameMatch[1];
+                const projectDisplayName = nameMatch[2];
+
+                let projectNumber = projectNumberFromName;
+                let location = '';
+
+                // Add delay to prevent rate limiting
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                try {
+                    const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
+                        headers: {
+                            'Authorization': `Bearer ${forgeAccessToken}`
+                        }
+                    });
+
+                    if (projectDetailResponse.ok) {
+                        const projectDetail = await projectDetailResponse.json();
+
+                        if (projectDetail.data?.attributes?.extension?.data) {
+                            const extData = projectDetail.data.attributes.extension.data;
+
+                            const accProjectNumber = extData.projectNumber ||
+                                extData.project_number ||
+                                extData.number ||
+                                extData.jobNumber ||
+                                extData.job_number ||
+                                extData.projectCode ||
+                                extData.code || '';
+
+                            if (accProjectNumber && accProjectNumber.trim() !== '') {
+                                projectNumber = accProjectNumber;
+                            }
+
+                            location = extData.location ||
+                                extData.project_location ||
+                                extData.address ||
+                                extData.city ||
+                                extData.state ||
+                                extData.jobLocation ||
+                                extData.site || '';
+                        }
+                    }
+                } catch (detailError) {
+                    console.warn('Could not get detailed project info for', project.attributes.name, ':', detailError);
+                }
+
+                return {
+                    id: project.id,
+                    name: project.attributes.name || 'Unnamed Project',
+                    displayName: projectDisplayName,
+                    number: projectNumber,
+                    numericSort: parseInt(projectNumberFromName, 10),
+                    location: location || 'Location not specified',
+                    fullData: project,
+                    permissions: 'enhanced'
+                };
+            });
+
+            const batchResults = await Promise.all(batchPromises);
+            projects.push(...batchResults.filter(project => project !== null));
+
+            // Add delay between batches
+            if (i + maxConcurrentRequests < projectsData.data.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
+        }
 
-            return {
-                id: project.id,
-                name: project.attributes.name || 'Unnamed Project',
-                displayName: projectDisplayName,
-                number: projectNumber,
-                numericSort: parseInt(projectNumberFromName, 10),
-                location: location || 'Location not specified',
-                fullData: project,
-                permissions: 'enhanced'
-            };
-        }));
-
-        const filteredProjects = projects.filter(project => project !== null);
-
-        if (filteredProjects.length === 0) {
+        if (projects.length === 0) {
             console.warn('No projects matched the required format "12345 - Project Name"');
             throw new Error('No projects found matching required format "12345 - Project Name"');
         }
 
-        const sortedProjects = filteredProjects.sort((a, b) => a.numericSort - b.numericSort);
+        const sortedProjects = projects.sort((a, b) => a.numericSort - b.numericSort);
 
         populateProjectDropdown(sortedProjects);
 
@@ -1744,7 +1837,8 @@ async function saveToACC() {
         errorMessage += '• ACC API permissions need additional configuration\n';
         errorMessage += '• Project folder access restrictions\n';
         errorMessage += '• Network connectivity issues\n';
-        errorMessage += '• Missing required scopes: data:write, data:create\n\n';
+        errorMessage += '• Missing required scopes: data:write, data:create\n';
+        errorMessage += '• Project may not have Data Management API enabled\n\n';
         errorMessage += `Current scopes requested: ${ACC_SCOPES}\n\n`;
         errorMessage += 'The calculation is still available in your browser session.';
 
@@ -1877,6 +1971,7 @@ function displayReports(reports) {
         let nonSelfStressPull = 0;
         let notes = '';
         let permissions = 'basic';
+        let errorInfo = null;
 
         if (report.data && report.data.reportData) {
             data = report.data.reportData;
@@ -1889,6 +1984,7 @@ function displayReports(reports) {
             selfStressPull = data.selfStressing?.outputs?.calculatedPullRounded || 0;
             nonSelfStressPull = data.nonSelfStressing?.outputs?.calculatedPullRounded || 0;
             permissions = data.permissions?.enhancedPermissions ? 'enhanced' : 'basic';
+            errorInfo = report.errorInfo;
 
             const date = new Date(data.createdDate || data.timestamp || report.lastModified);
             formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
@@ -1927,6 +2023,16 @@ function displayReports(reports) {
         const permissionIndicator = permissions === 'enhanced' ? '🔓 Enhanced' : '🔒 Basic';
         const permissionClass = permissions === 'enhanced' ? 'background: #dcfce7; color: #166534;' : 'background: #fef3c7; color: #92400e;';
 
+        // Error indicator
+        let errorIndicator = '';
+        if (errorInfo) {
+            errorIndicator = `
+                <span style="padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 500; background: #fee2e2; color: #991b1b;" title="${errorInfo.analysis}">
+                    ⚠️ Sync Issue
+                </span>
+            `;
+        }
+
         return `
             <div class="tool-card" style="margin-bottom: 1rem; cursor: pointer;" 
                  onclick="loadExistingReport('${report.itemId}', ${report.needsDownload || false})">
@@ -1945,6 +2051,7 @@ function displayReports(reports) {
                         <span class="status-badge ${statusClass}">${status}</span>
                         <span style="padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 500; ${sourceClass}">${sourceIndicator}</span>
                         <span style="padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 500; ${permissionClass}">${permissionIndicator}</span>
+                        ${errorIndicator}
                         <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" 
                                 onclick="event.stopPropagation(); deleteReport('${report.itemId}', '${reportId}', ${report.source === 'acc-file'})">
                             <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
@@ -1969,6 +2076,7 @@ function displayReports(reports) {
                 
                 <div style="margin-top: 1rem; font-size: 0.75rem; color: #9ca3af;">
                     ${report.needsDownload ? 'Will download from ACC when opened' : 'Ready to load'} | ${permissions} permissions | Click to open and edit
+                    ${errorInfo ? `<br><span style="color: #dc2626;">Issue: ${errorInfo.analysis}</span>` : ''}
                 </div>
             </div>
         `;
