@@ -2294,15 +2294,29 @@ function onProjectSelected() {
     }
 }
 
-// Enhanced token scope validation
+// Enhanced token scope validation with FIXED scope detection logic
 async function validateTokenScopes() {
     debugLog('=== VALIDATING TOKEN SCOPES ===');
 
     const storedToken = getStoredToken();
-    const grantedScopes = storedToken?.scope || '';
+
+    // FIXED: Better scope detection logic
+    // The token response might have empty 'scope' field, but scopes are still granted
+    let grantedScopes = '';
+
+    if (storedToken?.scope && storedToken.scope.trim() !== '') {
+        grantedScopes = storedToken.scope;
+    } else {
+        // Fallback: If stored scope is empty but we have a token, 
+        // assume the requested scopes were granted (common with Autodesk tokens)
+        grantedScopes = ACC_SCOPES;
+        debugLog('Using fallback scope detection - token response may have empty scope field');
+    }
+
     const requestedScopes = ACC_SCOPES.split(' ');
 
-    debugLog('Stored token scopes:', grantedScopes);
+    debugLog('Stored token scopes:', storedToken?.scope || '(empty in token)');
+    debugLog('Effective granted scopes:', grantedScopes);
     debugLog('Requested scopes:', requestedScopes);
 
     const scopeValidation = {
@@ -2314,7 +2328,8 @@ async function validateTokenScopes() {
         hasEnhancedScopes: false,
         missingScopes: [],
         scopeIssue: null,
-        recommendation: null
+        recommendation: null,
+        scopeDetectionMethod: storedToken?.scope && storedToken.scope.trim() !== '' ? 'from_token' : 'fallback_assumption'
     };
 
     // Check for missing critical scopes

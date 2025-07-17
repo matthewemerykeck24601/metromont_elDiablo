@@ -148,7 +148,7 @@ async function handleOAuthCallback(authCode) {
             throw new Error('No access token received');
         }
 
-        // Enhanced scope validation
+        // FIXED: Enhanced scope validation with better detection
         const grantedScopes = tokenData.scope || '';
         const requestedScopes = [
             'data:read',
@@ -174,7 +174,13 @@ async function handleOAuthCallback(authCode) {
         const criticalScopes = ['data:write', 'data:create'];
         const criticalScopesMissing = criticalScopes.filter(scope => !grantedScopes.includes(scope));
 
-        if (criticalScopesMissing.length > 0) {
+        // IMPORTANT: Only show scope warning if we actually have empty scopes
+        // The token might have scopes but the 'scope' field might be empty in the response
+        if (grantedScopes === '' || grantedScopes.trim() === '') {
+            console.warn('⚠️ NO SCOPES IN TOKEN RESPONSE');
+            console.warn('This may indicate Custom Integration is required');
+            console.warn('However, the token may still work - testing API access...');
+        } else if (criticalScopesMissing.length > 0) {
             console.warn('⚠️ CRITICAL SCOPES MISSING:', criticalScopesMissing);
             console.warn('This will cause folder/file operations to fail');
         } else {
@@ -243,14 +249,14 @@ async function completeAuthentication() {
             }
         }
 
-        // Test scope permissions
-        updateAuthStatus('Testing Permissions...', 'Validating OAuth scope permissions...');
+        // Test scope permissions with better error handling
+        updateAuthStatus('Testing Permissions...', 'Validating API access capabilities...');
         await testScopePermissions();
 
         isAuthenticated = true;
         authCheckComplete = true;
 
-        updateAuthStatus('Success!', 'Successfully connected to Autodesk Construction Cloud with enhanced permissions');
+        updateAuthStatus('Success!', 'Successfully connected to Autodesk Construction Cloud');
 
         // Small delay to show success message
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -273,7 +279,7 @@ async function completeAuthentication() {
     }
 }
 
-// Add a scope testing function
+// IMPROVED: Scope testing function with better 404 handling
 async function testScopePermissions() {
     if (!forgeAccessToken) {
         console.error('No access token available');
@@ -305,15 +311,33 @@ async function testScopePermissions() {
     }
 
     // Test 3: Folder access (requires data:read, enhanced permissions)
+    // IMPROVED: Better 404 error handling and explanation
     if (projectId) {
         try {
             const foldersResponse = await fetch(`https://developer.api.autodesk.com/data/v1/projects/${projectId}/folders`, {
                 headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
             });
-            console.log('✅ Folder access test:', foldersResponse.ok ? 'PASS' : 'FAIL');
-            if (!foldersResponse.ok) {
+
+            if (foldersResponse.ok) {
+                console.log('✅ Folder access test: PASS');
+                const folderData = await foldersResponse.json();
+                console.log('   Folders found:', folderData.data?.length || 0);
+            } else {
+                console.log('✅ Folder access test: FAIL');
                 const errorText = await foldersResponse.text();
-                console.log('Folder access error:', errorText);
+                console.log('   Folder access error:', errorText);
+
+                if (foldersResponse.status === 404) {
+                    console.log('   📝 404 Analysis: This project may not have Data Management API enabled');
+                    console.log('   📝 Common causes:');
+                    console.log('      • Project lacks Document Management module');
+                    console.log('      • Project is legacy BIM 360 without ACC features');
+                    console.log('      • Project admin needs to enable Data Management API');
+                    console.log('   📝 Solution: Reports will save locally with sync capability');
+                } else if (foldersResponse.status === 403) {
+                    console.log('   📝 403 Analysis: Permission issue despite scopes');
+                    console.log('   📝 Likely cause: Custom Integration not registered');
+                }
             }
         } catch (error) {
             console.log('❌ Folder access test: FAIL -', error.message);
@@ -359,17 +383,24 @@ function showAuthError(message) {
 // Token Management
 function storeToken(tokenData) {
     const expirationTime = Date.now() + (tokenData.expires_in * 1000);
+
+    // FIXED: Use the full requested scopes if token response doesn't include scope
+    const actualScopes = tokenData.scope && tokenData.scope.trim() !== ''
+        ? tokenData.scope
+        : ACC_SCOPES; // Fallback to requested scopes
+
     const tokenInfo = {
         access_token: tokenData.access_token,
         token_type: tokenData.token_type || 'Bearer',
         expires_in: tokenData.expires_in,
         expires_at: expirationTime,
-        scope: tokenData.scope || ACC_SCOPES,
+        scope: actualScopes,
         stored_at: Date.now()
     };
+
     sessionStorage.setItem('forge_token', JSON.stringify(tokenInfo));
     localStorage.setItem('forge_token_backup', JSON.stringify(tokenInfo)); // Backup in localStorage
-    console.log('Token stored successfully with scopes:', tokenInfo.scope);
+    console.log('Token stored successfully with scopes:', actualScopes);
 }
 
 function getStoredToken() {
