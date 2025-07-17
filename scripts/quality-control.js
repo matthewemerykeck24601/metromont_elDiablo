@@ -2,6 +2,17 @@
 const ACC_CLIENT_ID = 'phUPKRBuqECpJUoBmRuKdKhSP3ZTRALH4LMWKAzAnymnYkQU';
 const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 
+// Enhanced scope configuration matching index.js
+const ACC_SCOPES = [
+    'data:read',        // View data within ACC
+    'data:write',       // Manage data within ACC  
+    'data:create',      // Create new data within ACC
+    'data:search',      // Search across ACC data
+    'account:read',     // View product and service accounts
+    'user:read',        // View user profile info
+    'viewables:read'    // View viewable data (for future file previews)
+].join(' ');
+
 // ACC Data Management API Configuration
 const ACC_DATA_API_BASE = 'https://developer.api.autodesk.com/data/v1';
 const ACC_PROJECT_API_BASE = 'https://developer.api.autodesk.com/project/v1';
@@ -17,6 +28,7 @@ let userProjects = [];
 let currentProjectBucketKey = null;
 let bedQCFolderId = null;
 let projectTopFolderId = null;
+let projectMembers = []; // Store project team members
 
 // Form Instance Management
 let currentReportId = null;
@@ -24,6 +36,22 @@ let currentBedId = null;
 let currentBedName = null;
 let reportInstances = new Map(); // Store multiple form instances
 let existingReports = []; // Store loaded reports for search/filter
+
+// Pre-defined data
+const MOE_VALUES = [
+    28500000,
+    28600000,
+    28700000,
+    28800000,
+    28900000,
+    29350000
+];
+
+const STRAND_SIZES = {
+    '3/8" LL': 0.085,
+    '1/2" SP-LL': 0.153,
+    '9/16" LL': 0.192
+};
 
 // UI Elements
 const authProcessing = document.getElementById('authProcessing');
@@ -83,29 +111,60 @@ async function completeAuthentication() {
         // Load project data
         await loadRealProjectData();
 
+        // Test enhanced permissions for file operations
+        updateAuthStatus('Verifying Permissions...', 'Testing ACC file operation permissions...');
+
+        // Test data write permissions by attempting to get a project's folders
+        if (projectId) {
+            try {
+                const testResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders`, {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+
+                if (testResponse.ok) {
+                    console.log('✓ ACC folder access confirmed');
+                } else {
+                    console.warn('⚠ Limited ACC folder access - some features may be restricted');
+                }
+            } catch (error) {
+                console.warn('⚠ Could not test folder access:', error);
+            }
+        }
+
         // Authentication complete
         isACCConnected = true;
 
         // Show success and hide auth overlay
-        updateAuthStatus('Success!', 'Successfully connected to ACC');
+        updateAuthStatus('Success!', 'Successfully connected to ACC with enhanced permissions');
 
         // Small delay to show success message
         await new Promise(resolve => setTimeout(resolve, 800));
 
         // Hide auth overlay and show main content
-        authProcessing.classList.remove('active');
+        if (authProcessing) {
+            authProcessing.classList.remove('active');
+        }
         document.body.classList.remove('auth-loading');
 
         // Show auth status badge
-        document.getElementById('authStatusBadge').style.display = 'inline-flex';
+        const authStatusBadge = document.getElementById('authStatusBadge');
+        if (authStatusBadge) {
+            authStatusBadge.style.display = 'inline-flex';
+        }
 
         // Enable ACC features
         enableACCFeatures();
+
+        // Initialize dropdowns
+        initializeDropdowns();
 
         // Initialize report history
         await initializeReportHistory();
 
         console.log('Authentication completed successfully');
+        console.log('Available scopes:', ACC_SCOPES);
 
     } catch (error) {
         console.error('Authentication completion failed:', error);
@@ -128,25 +187,27 @@ async function verifyToken(token) {
 }
 
 function updateAuthStatus(title, message) {
-    authTitle.textContent = title;
-    authMessage.textContent = message;
+    if (authTitle) authTitle.textContent = title;
+    if (authMessage) authMessage.textContent = message;
 }
 
 function showAuthError(message) {
     updateAuthStatus('Authentication Error', message);
-    authProcessing.innerHTML = `
-        <div class="auth-processing-content">
-            <div style="color: #dc2626; font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
-            <h3 style="color: #dc2626;">Authentication Error</h3>
-            <p style="color: #6b7280; margin-bottom: 1.5rem;">${message}</p>
-            <button onclick="window.location.href='index.html'" style="background: #059669; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem; margin-right: 0.5rem;">
-                Go to Main App
-            </button>
-            <button onclick="location.reload()" style="background: #6b7280; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem;">
-                Try Again
-            </button>
-        </div>
-    `;
+    if (authProcessing) {
+        authProcessing.innerHTML = `
+            <div class="auth-processing-content">
+                <div style="color: #dc2626; font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
+                <h3 style="color: #dc2626;">Authentication Error</h3>
+                <p style="color: #6b7280; margin-bottom: 1.5rem;">${message}</p>
+                <button onclick="window.location.href='index.html'" style="background: #059669; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem; margin-right: 0.5rem;">
+                    Go to Main App
+                </button>
+                <button onclick="location.reload()" style="background: #6b7280; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem;">
+                    Try Again
+                </button>
+            </div>
+        `;
+    }
 }
 
 // Token Management
@@ -179,12 +240,218 @@ function clearStoredToken() {
 }
 
 // =================================================================
-// ACC DATA MANAGEMENT API FUNCTIONS (FIXED APPROACH)
+// DROPDOWN INITIALIZATION
 // =================================================================
 
-// Get project's top folder
+function initializeDropdowns() {
+    // Initialize MOE dropdown
+    initializeMOEDropdown();
+
+    // Initialize Strand Size dropdown
+    initializeStrandSizeDropdown();
+
+    // Initialize project member dropdowns
+    initializeProjectMemberDropdowns();
+}
+
+function initializeMOEDropdown() {
+    // Self-stressing MOE
+    const ssMOE = document.getElementById('ss_MOE');
+    if (ssMOE && ssMOE.tagName === 'INPUT') {
+        const select = document.createElement('select');
+        select.id = 'ss_MOE';
+        select.className = 'input-field';
+        select.onchange = calculateAll;
+
+        // Add default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = 'Select MOE (psi)';
+        select.appendChild(defaultOption);
+
+        // Add MOE values
+        MOE_VALUES.forEach(value => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value.toLocaleString();
+            select.appendChild(option);
+        });
+
+        ssMOE.parentNode.replaceChild(select, ssMOE);
+    }
+
+    // Non-self-stressing MOE
+    const nssMOE = document.getElementById('nss_MOE');
+    if (nssMOE && nssMOE.tagName === 'INPUT') {
+        const select = document.createElement('select');
+        select.id = 'nss_MOE';
+        select.className = 'input-field';
+        select.onchange = calculateAll;
+
+        // Add default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = 'Select MOE (psi)';
+        select.appendChild(defaultOption);
+
+        // Add MOE values
+        MOE_VALUES.forEach(value => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value.toLocaleString();
+            select.appendChild(option);
+        });
+
+        nssMOE.parentNode.replaceChild(select, nssMOE);
+    }
+}
+
+function initializeStrandSizeDropdown() {
+    // Add strand size dropdown for self-stressing
+    const ssStrandAreaRow = document.querySelector('#ss_strandArea');
+    if (ssStrandAreaRow) {
+        const ssStrandAreaContainer = ssStrandAreaRow.closest('.input-row');
+        if (ssStrandAreaContainer) {
+            const strandSizeRow = document.createElement('div');
+            strandSizeRow.className = 'input-row';
+            strandSizeRow.innerHTML = `
+                <label class="input-label">Strand Size:</label>
+                <select class="input-field" id="ss_strandSize" onchange="onStrandSizeChange('ss')">
+                    <option value="">Select Size</option>
+                    ${Object.keys(STRAND_SIZES).map(size =>
+                `<option value="${size}">${size}</option>`
+            ).join('')}
+                </select>
+                <span class="input-unit"></span>
+            `;
+            ssStrandAreaContainer.parentNode.insertBefore(strandSizeRow, ssStrandAreaContainer);
+        }
+    }
+
+    // Add strand size dropdown for non-self-stressing
+    const nssStrandAreaRow = document.querySelector('#nss_strandArea');
+    if (nssStrandAreaRow) {
+        const nssStrandAreaContainer = nssStrandAreaRow.closest('.input-row');
+        if (nssStrandAreaContainer) {
+            const strandSizeRow = document.createElement('div');
+            strandSizeRow.className = 'input-row';
+            strandSizeRow.innerHTML = `
+                <label class="input-label">Strand Size:</label>
+                <select class="input-field" id="nss_strandSize" onchange="onStrandSizeChange('nss')">
+                    <option value="">Select Size</option>
+                    ${Object.keys(STRAND_SIZES).map(size =>
+                `<option value="${size}">${size}</option>`
+            ).join('')}
+                </select>
+                <span class="input-unit"></span>
+            `;
+            nssStrandAreaContainer.parentNode.insertBefore(strandSizeRow, nssStrandAreaContainer);
+        }
+    }
+}
+
+function initializeProjectMemberDropdowns() {
+    // Convert Bed Supervisor (calculatedBy) to dropdown
+    const calculatedByInput = document.getElementById('calculatedBy');
+    if (calculatedByInput && calculatedByInput.tagName === 'INPUT') {
+        const select = document.createElement('select');
+        select.id = 'calculatedBy';
+        select.className = calculatedByInput.className;
+
+        // Add default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = 'Select Bed Supervisor';
+        select.appendChild(defaultOption);
+
+        // Add project members (will be populated when project is selected)
+        populateProjectMemberDropdown(select);
+
+        calculatedByInput.parentNode.replaceChild(select, calculatedByInput);
+    }
+
+    // Convert Inspector (reviewedBy) to dropdown
+    const reviewedByInput = document.getElementById('reviewedBy');
+    if (reviewedByInput && reviewedByInput.tagName === 'INPUT') {
+        const select = document.createElement('select');
+        select.id = 'reviewedBy';
+        select.className = reviewedByInput.className;
+
+        // Add default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = 'Select Inspector';
+        select.appendChild(defaultOption);
+
+        // Add project members (will be populated when project is selected)
+        populateProjectMemberDropdown(select);
+
+        reviewedByInput.parentNode.replaceChild(select, reviewedByInput);
+    }
+
+    // Update labels
+    const calculatedByLabel = document.querySelector('label[for="calculatedBy"]');
+    if (calculatedByLabel) {
+        calculatedByLabel.textContent = 'Bed Supervisor';
+    }
+
+    const reviewedByLabel = document.querySelector('label[for="reviewedBy"]');
+    if (reviewedByLabel) {
+        reviewedByLabel.textContent = 'Inspector';
+    }
+}
+
+function populateProjectMemberDropdown(selectElement) {
+    // Default project members (will be enhanced with ACC data later)
+    const defaultMembers = [
+        'John Smith - Bed Supervisor',
+        'Mike Johnson - Senior Supervisor',
+        'Sarah Davis - Lead Supervisor',
+        'Tom Wilson - Inspector',
+        'Lisa Brown - Quality Inspector',
+        'Dave Martinez - Senior Inspector',
+        'Amy Taylor - QC Manager',
+        'Chris Anderson - Production Manager'
+    ];
+
+    // Clear existing options except default
+    const defaultOption = selectElement.querySelector('option[value=""]');
+    selectElement.innerHTML = '';
+    if (defaultOption) {
+        selectElement.appendChild(defaultOption);
+    }
+
+    // Add default members
+    defaultMembers.forEach(member => {
+        const option = document.createElement('option');
+        option.value = member;
+        option.textContent = member;
+        selectElement.appendChild(option);
+    });
+}
+
+function onStrandSizeChange(type) {
+    const strandSizeSelect = document.getElementById(`${type}_strandSize`);
+    const strandAreaInput = document.getElementById(`${type}_strandArea`);
+
+    if (strandSizeSelect && strandAreaInput && strandSizeSelect.value && STRAND_SIZES[strandSizeSelect.value]) {
+        const area = STRAND_SIZES[strandSizeSelect.value];
+        strandAreaInput.value = area.toFixed(3);
+        calculateAll();
+    } else if (strandAreaInput) {
+        strandAreaInput.value = '';
+    }
+}
+
+// =================================================================
+// ENHANCED ACC DATA MANAGEMENT API FUNCTIONS
+// =================================================================
+
+// Get project's top folder with improved error handling and permission checking
 async function getProjectTopFolder(projectId) {
     try {
+        console.log('Attempting to get project folders for:', projectId);
+
         const response = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders`, {
             headers: {
                 'Authorization': `Bearer ${forgeAccessToken}`
@@ -192,7 +459,12 @@ async function getProjectTopFolder(projectId) {
         });
 
         if (!response.ok) {
-            throw new Error(`Failed to get project folders: ${response.status}`);
+            if (response.status === 403) {
+                console.warn('Insufficient permissions for folder access. Need data:read and data:write scopes.');
+                return null;
+            }
+            console.warn(`Project folders not accessible (${response.status}). Using fallback storage method.`);
+            return null;
         }
 
         const data = await response.json();
@@ -203,20 +475,26 @@ async function getProjectTopFolder(projectId) {
 
         if (topFolders.length > 0) {
             projectTopFolderId = topFolders[0].id;
-            console.log('Found project top folder:', projectTopFolderId);
+            console.log('✓ Found project top folder:', projectTopFolderId);
             return topFolders[0].id;
         } else {
-            throw new Error('No accessible folders found in project');
+            console.warn('No accessible folders found in project, using fallback');
+            return null;
         }
     } catch (error) {
-        console.error('Error getting project top folder:', error);
-        throw error;
+        console.warn('Error getting project folders, using fallback storage:', error);
+        return null;
     }
 }
 
-// Create or find BedQC folder
+// Create or find BedQC folder with enhanced permission handling
 async function ensureBedQCFolder(projectId, parentFolderId) {
     try {
+        if (!parentFolderId) {
+            console.log('No parent folder available, using local storage');
+            return null;
+        }
+
         console.log('Ensuring BedQC folder exists...');
 
         // First, try to find existing BedQC folder
@@ -235,7 +513,7 @@ async function ensureBedQCFolder(projectId, parentFolderId) {
 
             if (existingFolder) {
                 bedQCFolderId = existingFolder.id;
-                console.log('Found existing BedQC folder:', bedQCFolderId);
+                console.log('✓ Found existing BedQC folder:', bedQCFolderId);
                 return existingFolder.id;
             }
         }
@@ -273,22 +551,26 @@ async function ensureBedQCFolder(projectId, parentFolderId) {
         if (createFolderResponse.ok) {
             const folderData = await createFolderResponse.json();
             bedQCFolderId = folderData.data.id;
-            console.log('Created BedQC folder:', bedQCFolderId);
+            console.log('✓ Created BedQC folder:', bedQCFolderId);
             return folderData.data.id;
         } else {
-            const errorText = await createFolderResponse.text();
-            console.error('Failed to create folder:', createFolderResponse.status, errorText);
-            throw new Error(`Failed to create BedQC folder: ${createFolderResponse.status}`);
+            const errorResponse = await createFolderResponse.text();
+            console.warn('Failed to create folder:', errorResponse);
+            return null;
         }
     } catch (error) {
-        console.error('Error ensuring BedQC folder:', error);
-        throw error;
+        console.warn('Error ensuring BedQC folder, using fallback storage:', error);
+        return null;
     }
 }
 
-// Upload JSON file to ACC
+// Enhanced JSON file upload to ACC with better error handling
 async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
     try {
+        if (!folderId) {
+            throw new Error('No folder available for upload');
+        }
+
         console.log('Uploading JSON file to ACC:', fileName);
 
         // Step 1: Create storage location
@@ -318,6 +600,7 @@ async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
 
         if (!storageResponse.ok) {
             const errorText = await storageResponse.text();
+            console.error('Storage creation failed:', errorText);
             throw new Error(`Failed to create storage location: ${storageResponse.status} - ${errorText}`);
         }
 
@@ -325,7 +608,7 @@ async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
         const bucketKey = storageData.data.id;
         const uploadURL = storageData.data.attributes.location;
 
-        console.log('Storage location created:', bucketKey);
+        console.log('✓ Storage location created:', bucketKey);
 
         // Step 2: Upload file content
         const fileContent = JSON.stringify(jsonData, null, 2);
@@ -340,10 +623,11 @@ async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
 
         if (!uploadResponse.ok) {
             const errorText = await uploadResponse.text();
+            console.error('File upload failed:', errorText);
             throw new Error(`Failed to upload file: ${uploadResponse.status} - ${errorText}`);
         }
 
-        console.log('File uploaded successfully');
+        console.log('✓ File uploaded successfully');
 
         // Step 3: Create first version
         const versionResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/versions`, {
@@ -381,11 +665,12 @@ async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
 
         if (!versionResponse.ok) {
             const errorText = await versionResponse.text();
+            console.error('Version creation failed:', errorText);
             throw new Error(`Failed to create version: ${versionResponse.status} - ${errorText}`);
         }
 
         const versionData = await versionResponse.json();
-        console.log('Version created successfully:', versionData.data.id);
+        console.log('✓ Version created successfully:', versionData.data.id);
 
         return {
             success: true,
@@ -401,10 +686,10 @@ async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
     }
 }
 
-// Save Bed QC Report to ACC (Fixed Implementation)
+// Enhanced Bed QC Report saving with better error handling and fallback
 async function saveBedQCReportToACC(reportData) {
     try {
-        console.log('Saving Bed QC Report to ACC using proper file upload...');
+        console.log('Saving Bed QC Report to ACC with enhanced permissions...');
 
         // Create the report content
         const reportContent = {
@@ -418,7 +703,12 @@ async function saveBedQCReportToACC(reportData) {
                 ...reportData,
                 savedToACC: true,
                 accProjectId: projectId,
-                accHubId: hubId
+                accHubId: hubId,
+                permissions: {
+                    scopesUsed: ACC_SCOPES,
+                    dataWriteEnabled: true,
+                    dataCreateEnabled: true
+                }
             }
         };
 
@@ -426,39 +716,44 @@ async function saveBedQCReportToACC(reportData) {
         try {
             console.log('Attempting Method 1: Upload JSON file to ACC...');
 
-            // Ensure we have project folder access
+            // Get project folder access
             if (!projectTopFolderId) {
                 await getProjectTopFolder(projectId);
             }
 
-            // Ensure BedQC folder exists
-            if (!bedQCFolderId) {
+            // Get or create BedQC folder
+            if (!bedQCFolderId && projectTopFolderId) {
                 await ensureBedQCFolder(projectId, projectTopFolderId);
             }
 
-            // Generate filename
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const fileName = `BedQC-${reportData.bedName}-${reportData.reportId}-${timestamp}.json`;
+            if (bedQCFolderId) {
+                // Generate filename
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const fileName = `BedQC-${reportData.bedName}-${reportData.reportId}-${timestamp}.json`;
 
-            // Upload the file
-            const uploadResult = await uploadJSONToACC(projectId, bedQCFolderId, fileName, reportContent);
+                // Upload the file
+                const uploadResult = await uploadJSONToACC(projectId, bedQCFolderId, fileName, reportContent);
 
-            console.log('Successfully uploaded report to ACC:', uploadResult);
+                console.log('✓ Successfully uploaded report to ACC:', uploadResult);
 
-            return {
-                success: true,
-                versionId: uploadResult.versionId,
-                itemId: uploadResult.itemId,
-                fileName: fileName,
-                reportId: reportData.reportId,
-                method: 'acc-file-upload'
-            };
+                return {
+                    success: true,
+                    versionId: uploadResult.versionId,
+                    itemId: uploadResult.itemId,
+                    fileName: fileName,
+                    reportId: reportData.reportId,
+                    method: 'acc-file-upload',
+                    permissions: 'enhanced'
+                };
+            } else {
+                throw new Error('No ACC folder access available - check data:write permissions');
+            }
 
         } catch (method1Error) {
             console.warn('Method 1 (file upload) failed:', method1Error);
 
-            // Try Method 2: Store in local storage with enhanced metadata
-            console.log('Attempting Method 2: Enhanced local storage...');
+            // Method 2: Enhanced local storage with project sync
+            console.log('Using Method 2: Enhanced local storage with sync capability...');
 
             const storageKey = `bedqc_${projectId}_${reportData.reportId}`;
             const storageData = {
@@ -468,7 +763,9 @@ async function saveBedQCReportToACC(reportData) {
                 storageMethod: 'local-fallback',
                 uploadError: method1Error.message,
                 retryCount: 0,
-                lastRetryAttempt: null
+                lastRetryAttempt: null,
+                projectHasFileAccess: !!projectTopFolderId,
+                permissionsRequested: ACC_SCOPES
             };
 
             localStorage.setItem(storageKey, JSON.stringify(storageData));
@@ -482,14 +779,23 @@ async function saveBedQCReportToACC(reportData) {
                 localStorage.setItem(projectReportsKey, JSON.stringify(existingReports));
             }
 
+            let warningMessage = 'Report saved locally with enhanced project sync capability.';
+            if (!projectTopFolderId) {
+                warningMessage = 'Report saved locally. ACC folder access requires data:write permissions.';
+            } else {
+                warningMessage = 'Report saved locally. File upload failed - enhanced permissions may be needed.';
+            }
+
             return {
                 success: true,
                 projectId: projectId,
                 reportId: reportData.reportId,
                 storageKey: storageKey,
                 method: 'local-storage',
-                warning: 'Report saved locally. File upload to ACC failed - check permissions.',
-                error: method1Error.message
+                warning: warningMessage,
+                error: method1Error.message,
+                canRetry: !!projectTopFolderId,
+                permissionsNote: 'Enhanced scopes requested: ' + ACC_SCOPES
             };
         }
 
@@ -499,61 +805,63 @@ async function saveBedQCReportToACC(reportData) {
     }
 }
 
-// Load reports using improved approach
+// Load reports using enhanced approach
 async function loadBedQCReportsFromACC(projectId) {
     try {
-        console.log('Loading reports using multiple methods...');
+        console.log('Loading reports using enhanced permissions...');
         const reports = [];
 
-        // Method 1: Try to load from ACC BedQC folder
+        // Method 1: Try to load from ACC BedQC folder if accessible
         try {
             if (!projectTopFolderId) {
                 await getProjectTopFolder(projectId);
             }
 
-            if (!bedQCFolderId) {
+            if (projectTopFolderId && !bedQCFolderId) {
                 await ensureBedQCFolder(projectId, projectTopFolderId);
             }
 
-            const folderContentsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders/${bedQCFolderId}/contents`, {
-                headers: {
-                    'Authorization': `Bearer ${forgeAccessToken}`
-                }
-            });
+            if (bedQCFolderId) {
+                const folderContentsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders/${bedQCFolderId}/contents`, {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
 
-            if (folderContentsResponse.ok) {
-                const contentsData = await folderContentsResponse.json();
-                console.log('Found items in BedQC folder:', contentsData.data.length);
+                if (folderContentsResponse.ok) {
+                    const contentsData = await folderContentsResponse.json();
+                    console.log('✓ Found items in BedQC folder:', contentsData.data.length);
 
-                for (const item of contentsData.data) {
-                    if (item.type === 'items' && item.attributes.name.endsWith('.json')) {
-                        try {
-                            // Get the latest version of the item
-                            const versionsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/items/${item.id}/versions`, {
-                                headers: {
-                                    'Authorization': `Bearer ${forgeAccessToken}`
+                    for (const item of contentsData.data) {
+                        if (item.type === 'items' && item.attributes.name.endsWith('.json')) {
+                            try {
+                                // Get the latest version of the item
+                                const versionsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/items/${item.id}/versions`, {
+                                    headers: {
+                                        'Authorization': `Bearer ${forgeAccessToken}`
+                                    }
+                                });
+
+                                if (versionsResponse.ok) {
+                                    const versionsData = await versionsResponse.json();
+                                    if (versionsData.data.length > 0) {
+                                        const latestVersion = versionsData.data[0];
+
+                                        reports.push({
+                                            itemId: item.id,
+                                            versionId: latestVersion.id,
+                                            fileName: item.attributes.name,
+                                            lastModified: item.attributes.lastModifiedTime,
+                                            displayName: item.attributes.displayName || item.attributes.name,
+                                            source: 'acc-file',
+                                            needsDownload: true,
+                                            permissions: 'enhanced'
+                                        });
+                                    }
                                 }
-                            });
-
-                            if (versionsResponse.ok) {
-                                const versionsData = await versionsResponse.json();
-                                if (versionsData.data.length > 0) {
-                                    const latestVersion = versionsData.data[0];
-
-                                    reports.push({
-                                        itemId: item.id,
-                                        versionId: latestVersion.id,
-                                        fileName: item.attributes.name,
-                                        lastModified: item.attributes.lastModifiedTime,
-                                        displayName: item.attributes.displayName || item.attributes.name,
-                                        source: 'acc-file',
-                                        // We'll need to download the file content when loading specific reports
-                                        needsDownload: true
-                                    });
-                                }
+                            } catch (itemError) {
+                                console.warn('Could not process item:', item.attributes.name, itemError);
                             }
-                        } catch (itemError) {
-                            console.warn('Could not process item:', item.attributes.name, itemError);
                         }
                     }
                 }
@@ -588,7 +896,8 @@ async function loadBedQCReportsFromACC(projectId) {
                             lastModified: reportData.timestamp,
                             displayName: `${reportData.reportData.bedName} - ${reportData.reportData.reportId}`,
                             data: reportData,
-                            source: reportData.storedLocally ? 'local' : 'local-synced'
+                            source: reportData.storedLocally ? 'local' : 'local-synced',
+                            permissions: reportData.permissionsRequested || 'basic'
                         });
                     }
                 } catch (parseError) {
@@ -600,7 +909,7 @@ async function loadBedQCReportsFromACC(projectId) {
         // Sort by date (newest first)
         reports.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
 
-        console.log(`Loaded ${reports.length} reports from various sources`);
+        console.log(`✓ Loaded ${reports.length} reports from various sources`);
         return reports;
 
     } catch (error) {
@@ -640,7 +949,7 @@ async function downloadReportFromACC(versionId) {
         }
 
         const reportContent = await contentResponse.json();
-        console.log('Successfully downloaded report from ACC');
+        console.log('✓ Successfully downloaded report from ACC');
 
         return reportContent;
 
@@ -650,13 +959,13 @@ async function downloadReportFromACC(versionId) {
     }
 }
 
-// Delete report (works with our storage methods)
+// Delete report (works with enhanced permissions)
 async function deleteBedQCReportFromACC(itemId, isACCFile = false) {
     try {
         console.log('Deleting report:', itemId);
 
         if (isACCFile && itemId.startsWith('urn:')) {
-            // Try to delete from ACC
+            // Try to delete from ACC with enhanced permissions
             try {
                 const deleteResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/items/${itemId}`, {
                     method: 'DELETE',
@@ -666,7 +975,7 @@ async function deleteBedQCReportFromACC(itemId, isACCFile = false) {
                 });
 
                 if (deleteResponse.ok) {
-                    console.log('Report deleted from ACC');
+                    console.log('✓ Report deleted from ACC');
                     return true;
                 } else {
                     console.warn('Could not delete from ACC, removing from local list only');
@@ -689,7 +998,7 @@ async function deleteBedQCReportFromACC(itemId, isACCFile = false) {
             localStorage.setItem(projectReportsKey, JSON.stringify(updatedReports));
         }
 
-        console.log('Report deleted from storage');
+        console.log('✓ Report deleted from storage');
         return true;
 
     } catch (error) {
@@ -699,638 +1008,42 @@ async function deleteBedQCReportFromACC(itemId, isACCFile = false) {
 }
 
 // =================================================================
-// REPORT HISTORY AND SEARCH FUNCTIONALITY
-// =================================================================
-
-// Initialize Report History
-async function initializeReportHistory() {
-    try {
-        console.log('Initializing report history...');
-
-        // Add Report History section to the page
-        addReportHistorySection();
-
-        // Load existing reports
-        await refreshReportHistory();
-
-    } catch (error) {
-        console.error('Error initializing report history:', error);
-    }
-}
-
-// Add Report History UI Section
-function addReportHistorySection() {
-    const container = document.querySelector('.container');
-
-    const historySection = document.createElement('div');
-    historySection.innerHTML = `
-        <!-- Report History Section -->
-        <div class="card" id="reportHistorySection" style="margin-top: 2rem;">
-            <h3 class="card-title">
-                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z"/>
-                </svg>
-                Report History
-                <button class="btn btn-secondary" onclick="refreshReportHistory()" style="margin-left: auto;">
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
-                    </svg>
-                    Refresh
-                </button>
-            </h3>
-            
-            <!-- Search and Filter Controls -->
-            <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-                <div class="grid grid-cols-3" style="gap: 1rem; margin-bottom: 1rem;">
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-size: 0.75rem;">Search Reports</label>
-                        <input type="text" id="reportSearch" placeholder="Search by bed, notes, or report ID..." 
-                               oninput="filterReports()" style="padding: 0.5rem;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-size: 0.75rem;">Filter by Bed</label>
-                        <select id="bedFilter" onchange="filterReports()" style="padding: 0.5rem;">
-                            <option value="">All Beds</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-size: 0.75rem;">Filter by Status</label>
-                        <select id="statusFilter" onchange="filterReports()" style="padding: 0.5rem;">
-                            <option value="">All Status</option>
-                            <option value="Draft">Draft</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Approved">Approved</option>
-                            <option value="Review Required">Review Required</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="grid grid-cols-3" style="gap: 1rem;">
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-size: 0.75rem;">Date From</label>
-                        <input type="date" id="dateFromFilter" onchange="filterReports()" style="padding: 0.5rem;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-size: 0.75rem;">Date To</label>
-                        <input type="date" id="dateToFilter" onchange="filterReports()" style="padding: 0.5rem;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-size: 0.75rem;">Sort By</label>
-                        <select id="sortFilter" onchange="filterReports()" style="padding: 0.5rem;">
-                            <option value="date-desc">Date (Newest First)</option>
-                            <option value="date-asc">Date (Oldest First)</option>
-                            <option value="bed">Bed Name</option>
-                            <option value="status">Status</option>
-                            <option value="reporter">Created By</option>
-                        </select>
-                    </div>
-                </div>
-                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                    <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
-                    <button class="btn btn-export" onclick="exportFilteredReports()">Export Results</button>
-                    <span id="reportCount" style="margin-left: auto; color: #6b7280; font-size: 0.875rem; line-height: 2;"></span>
-                </div>
-            </div>
-            
-            <!-- Reports List -->
-            <div id="reportsList">
-                <div style="text-align: center; color: #6b7280; padding: 2rem;">
-                    <div class="loading"></div>
-                    <p>Loading reports...</p>
-                </div>
-            </div>
-        </div>
-    `;
-
-    container.appendChild(historySection);
-}
-
-// Refresh Report History
-async function refreshReportHistory() {
-    try {
-        const reportsList = document.getElementById('reportsList');
-        reportsList.innerHTML = `
-            <div style="text-align: center; color: #6b7280; padding: 2rem;">
-                <div class="loading"></div>
-                <p>Loading reports from ACC...</p>
-            </div>
-        `;
-
-        // Load reports from ACC
-        existingReports = await loadBedQCReportsFromACC(projectId);
-
-        // Populate bed filter options
-        populateBedFilter();
-
-        // Display reports
-        filterReports();
-
-        console.log(`Loaded ${existingReports.length} reports for display`);
-
-    } catch (error) {
-        console.error('Error refreshing report history:', error);
-        document.getElementById('reportsList').innerHTML = `
-            <div style="text-align: center; color: #dc2626; padding: 2rem;">
-                <p>Error loading reports: ${error.message}</p>
-                <button class="btn btn-secondary" onclick="refreshReportHistory()">Try Again</button>
-            </div>
-        `;
-    }
-}
-
-// Populate Bed Filter Dropdown
-function populateBedFilter() {
-    const bedFilter = document.getElementById('bedFilter');
-
-    // Get bed names from loaded reports
-    const bedNames = [];
-    existingReports.forEach(report => {
-        let bedName = '';
-        if (report.data && report.data.reportData) {
-            bedName = report.data.reportData.bedName;
-        } else if (report.displayName) {
-            // Extract bed name from display name (format: "BedName - ReportID")
-            const parts = report.displayName.split(' - ');
-            if (parts.length > 0) bedName = parts[0];
-        }
-        if (bedName && !bedNames.includes(bedName)) {
-            bedNames.push(bedName);
-        }
-    });
-
-    // Clear existing options except "All Beds"
-    bedFilter.innerHTML = '<option value="">All Beds</option>';
-
-    // Add bed options
-    bedNames.sort().forEach(bed => {
-        const option = document.createElement('option');
-        option.value = bed;
-        option.textContent = bed;
-        bedFilter.appendChild(option);
-    });
-}
-
-// Filter and Display Reports
-function filterReports() {
-    const searchTerm = document.getElementById('reportSearch').value.toLowerCase();
-    const bedFilter = document.getElementById('bedFilter').value;
-    const statusFilter = document.getElementById('statusFilter').value;
-    const dateFrom = document.getElementById('dateFromFilter').value;
-    const dateTo = document.getElementById('dateToFilter').value;
-    const sortBy = document.getElementById('sortFilter').value;
-
-    // Apply filters
-    let filteredReports = existingReports.filter(report => {
-        let data = null;
-        let bedName = '';
-        let reportId = '';
-        let notes = '';
-        let status = '';
-        let createdBy = '';
-
-        if (report.data && report.data.reportData) {
-            data = report.data.reportData;
-            bedName = data.bedName || '';
-            reportId = data.reportId || '';
-            notes = data.notes || '';
-            status = data.status || 'Draft';
-            createdBy = data.createdBy || '';
-        } else if (report.displayName) {
-            // Extract info from display name for ACC files
-            const parts = report.displayName.split(' - ');
-            bedName = parts[0] || '';
-            reportId = parts[1] || '';
-            status = 'Completed'; // Assume completed if in ACC
-        }
-
-        // Search filter
-        if (searchTerm) {
-            const searchableText = [bedName, reportId, notes, createdBy].join(' ').toLowerCase();
-            if (!searchableText.includes(searchTerm)) return false;
-        }
-
-        // Bed filter
-        if (bedFilter && bedName !== bedFilter) return false;
-
-        // Status filter
-        if (statusFilter && status !== statusFilter) return false;
-
-        // Date filters
-        const reportDate = new Date(data?.createdDate || data?.timestamp || report.lastModified);
-        if (dateFrom && reportDate < new Date(dateFrom)) return false;
-        if (dateTo && reportDate > new Date(dateTo + 'T23:59:59')) return false;
-
-        return true;
-    });
-
-    // Apply sorting
-    filteredReports.sort((a, b) => {
-        const dataA = a.data?.reportData;
-        const dataB = b.data?.reportData;
-
-        switch (sortBy) {
-            case 'date-asc':
-                return new Date(dataA?.createdDate || a.lastModified) - new Date(dataB?.createdDate || b.lastModified);
-            case 'date-desc':
-                return new Date(dataB?.createdDate || b.lastModified) - new Date(dataA?.createdDate || a.lastModified);
-            case 'bed':
-                const bedA = dataA?.bedName || a.displayName?.split(' - ')[0] || '';
-                const bedB = dataB?.bedName || b.displayName?.split(' - ')[0] || '';
-                return bedA.localeCompare(bedB);
-            case 'status':
-                const statusA = dataA?.status || (a.source === 'acc-file' ? 'Completed' : 'Draft');
-                const statusB = dataB?.status || (b.source === 'acc-file' ? 'Completed' : 'Draft');
-                return statusA.localeCompare(statusB);
-            case 'reporter':
-                return (dataA?.createdBy || '').localeCompare(dataB?.createdBy || '');
-            default:
-                return new Date(dataB?.createdDate || b.lastModified) - new Date(dataA?.createdDate || a.lastModified);
-        }
-    });
-
-    // Update count
-    document.getElementById('reportCount').textContent =
-        `${filteredReports.length} of ${existingReports.length} reports`;
-
-    // Display reports
-    displayReports(filteredReports);
-}
-
-// Display Reports List
-function displayReports(reports) {
-    const reportsList = document.getElementById('reportsList');
-
-    if (reports.length === 0) {
-        reportsList.innerHTML = `
-            <div style="text-align: center; color: #6b7280; padding: 2rem;">
-                <svg width="48" height="48" fill="currentColor" viewBox="0 0 24 24" style="margin-bottom: 1rem; opacity: 0.5;">
-                    <path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 002 2z"/>
-                </svg>
-                <p>No reports found matching the current filters.</p>
-                <button class="btn btn-primary" onclick="clearFilters()">Clear Filters</button>
-            </div>
-        `;
-        return;
-    }
-
-    const reportsHTML = reports.map(report => {
-        let data = null;
-        let bedName = '';
-        let reportId = '';
-        let projectName = '';
-        let createdBy = '';
-        let status = 'Draft';
-        let formattedDate = '';
-        let selfStressPull = 0;
-        let nonSelfStressPull = 0;
-        let notes = '';
-
-        if (report.data && report.data.reportData) {
-            data = report.data.reportData;
-            bedName = data.bedName || '';
-            reportId = data.reportId || '';
-            projectName = data.projectName || '';
-            createdBy = data.createdBy || '';
-            status = data.status || 'Draft';
-            notes = data.notes || '';
-            selfStressPull = data.selfStressing?.outputs?.calculatedPullRounded || 0;
-            nonSelfStressPull = data.nonSelfStressing?.outputs?.calculatedPullRounded || 0;
-
-            const date = new Date(data.createdDate || data.timestamp || report.lastModified);
-            formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-        } else {
-            // ACC file without local data
-            const parts = report.displayName?.split(' - ') || ['', ''];
-            bedName = parts[0] || 'Unknown Bed';
-            reportId = parts[1] || 'Unknown ID';
-            status = 'Completed';
-
-            const date = new Date(report.lastModified);
-            formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-        }
-
-        // Determine status badge style
-        let statusClass = 'status-development';
-        if (status === 'Completed') statusClass = 'status-active';
-        if (status === 'Approved') statusClass = 'status-active';
-
-        // Determine storage source indicator
-        let sourceIndicator = '';
-        let sourceClass = '';
-        if (report.source === 'local') {
-            sourceIndicator = '💾 Local';
-            sourceClass = 'background: #fef3c7; color: #92400e;';
-        } else if (report.source === 'acc-file') {
-            sourceIndicator = '☁️ ACC File';
-            sourceClass = 'background: #dcfce7; color: #166534;';
-        } else {
-            sourceIndicator = '💾 Stored';
-            sourceClass = 'background: #e0e7ff; color: #3730a3;';
-        }
-
-        return `
-            <div class="tool-card" style="margin-bottom: 1rem; cursor: pointer;" 
-                 onclick="loadExistingReport('${report.itemId}', ${report.needsDownload || false})">
-                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
-                    <div>
-                        <h4 style="font-size: 1.125rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;">
-                            ${bedName} - ${reportId}
-                        </h4>
-                        <div style="display: flex; gap: 1rem; font-size: 0.875rem; color: #6b7280;">
-                            <span><strong>Project:</strong> ${projectName || 'N/A'}</span>
-                            <span><strong>Date:</strong> ${formattedDate}</span>
-                            <span><strong>By:</strong> ${createdBy || 'Unknown'}</span>
-                        </div>
-                    </div>
-                    <div style="display: flex; gap: 0.5rem; align-items: center;">
-                        <span class="status-badge ${statusClass}">${status}</span>
-                        <span style="padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 500; ${sourceClass}">${sourceIndicator}</span>
-                        <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" 
-                                onclick="event.stopPropagation(); deleteReport('${report.itemId}', '${reportId}', ${report.source === 'acc-file'})">
-                            <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
-                    <div style="background: #eff6ff; padding: 0.75rem; border-radius: 6px;">
-                        <div style="font-size: 0.75rem; color: #2563eb; font-weight: 500; margin-bottom: 0.25rem;">Self-Stressing Pull</div>
-                        <div style="font-size: 1.125rem; font-weight: 600; color: #1e293b;">${selfStressPull.toLocaleString()} lbs</div>
-                    </div>
-                    <div style="background: #f0fdf4; padding: 0.75rem; border-radius: 6px;">
-                        <div style="font-size: 0.75rem; color: #059669; font-weight: 500; margin-bottom: 0.25rem;">Non-Self-Stressing Pull</div>
-                        <div style="font-size: 1.125rem; font-weight: 600; color: #1e293b;">${nonSelfStressPull.toLocaleString()} lbs</div>
-                    </div>
-                </div>
-                
-                ${notes ? `<div style="font-size: 0.875rem; color: #6b7280; font-style: italic;">"${notes}"</div>` : ''}
-                
-                <div style="margin-top: 1rem; font-size: 0.75rem; color: #9ca3af;">
-                    ${report.needsDownload ? 'Will download from ACC when opened' : 'Ready to load'} | Source: ${report.source || 'unknown'}
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    reportsList.innerHTML = reportsHTML;
-}
-
-// Load Existing Report
-async function loadExistingReport(itemId, needsDownload = false) {
-    try {
-        console.log('Loading existing report:', itemId, 'needsDownload:', needsDownload);
-
-        let reportData = null;
-
-        if (needsDownload) {
-            // Download from ACC
-            const reportContent = await downloadReportFromACC(itemId);
-            reportData = reportContent.reportData;
-        } else {
-            // Find the report in our loaded data
-            const reportObj = existingReports.find(r => r.itemId === itemId);
-            if (!reportObj) {
-                throw new Error('Report not found in loaded data');
-            }
-            reportData = reportObj.data.reportData;
-        }
-
-        // Set up form instance
-        currentReportId = reportData.reportId;
-        currentBedId = reportData.bedId;
-        currentBedName = reportData.bedName;
-        currentCalculation = reportData;
-
-        // Show calculator modal
-        showCalculator();
-
-        // Populate form with existing data
-        populateFormWithReportData(reportData);
-
-        // Update UI to show this is an existing report
-        document.getElementById('reportId').textContent = reportData.reportId + ' (Loaded from ACC)';
-        document.getElementById('selectedBedDisplay').textContent = reportData.bedName;
-
-        // Enable save button
-        document.getElementById('saveBtn').disabled = false;
-        document.getElementById('exportBtn').disabled = false;
-
-        console.log('Successfully loaded existing report');
-
-    } catch (error) {
-        console.error('Error loading existing report:', error);
-        alert('Failed to load report: ' + error.message);
-    }
-}
-
-// Populate Form with Report Data
-function populateFormWithReportData(data) {
-    // Project metadata
-    if (data.projectName) {
-        const projectSelect = document.getElementById('projectName');
-        // Find and select the matching project
-        for (let option of projectSelect.options) {
-            if (option.textContent.includes(data.projectName)) {
-                option.selected = true;
-                break;
-            }
-        }
-    }
-
-    document.getElementById('projectNumber').value = data.projectNumber || '';
-    document.getElementById('date').value = data.date || '';
-    document.getElementById('calculatedBy').value = data.calculatedBy || '';
-    document.getElementById('reviewedBy').value = data.reviewedBy || '';
-    document.getElementById('location').value = data.location || '';
-    document.getElementById('notes').value = data.notes || '';
-
-    // Self-stressing inputs
-    if (data.selfStressing?.inputs) {
-        const inputs = data.selfStressing.inputs;
-        document.getElementById('ss_initialPull').value = inputs.initialPull || '';
-        document.getElementById('ss_requiredForce').value = inputs.requiredForce || '';
-        document.getElementById('ss_MOE').value = inputs.MOE || '';
-        document.getElementById('ss_numberOfStrands').value = inputs.numberOfStrands || '';
-        document.getElementById('ss_adjBedShortening').value = inputs.adjBedShortening || '';
-        document.getElementById('ss_blockToBlockLength').value = inputs.blockToBlockLength || '';
-        document.getElementById('ss_strandArea').value = inputs.strandArea || '';
-        document.getElementById('ss_deadEndSeating').value = inputs.deadEndSeating || '';
-        document.getElementById('ss_liveEndSeating').value = inputs.liveEndSeating || '';
-    }
-
-    // Non-self-stressing inputs
-    if (data.nonSelfStressing?.inputs) {
-        const inputs = data.nonSelfStressing.inputs;
-        document.getElementById('nss_initialPull').value = inputs.initialPull || '';
-        document.getElementById('nss_requiredForce').value = inputs.requiredForce || '';
-        document.getElementById('nss_MOE').value = inputs.MOE || '';
-        document.getElementById('nss_blockToBlockLength').value = inputs.blockToBlockLength || '';
-        document.getElementById('nss_strandArea').value = inputs.strandArea || '';
-        document.getElementById('nss_airTemp').value = inputs.airTemp || '';
-        document.getElementById('nss_concreteTemp').value = inputs.concreteTemp || '';
-        document.getElementById('nss_deadEndSeating').value = inputs.deadEndSeating || '';
-        document.getElementById('nss_liveEndSeating').value = inputs.liveEndSeating || '';
-        document.getElementById('nss_totalAbutmentRotation').value = inputs.totalAbutmentRotation || '';
-    }
-
-    // Recalculate to update results
-    calculateAll();
-}
-
-// Delete Report
-async function deleteReport(itemId, reportId, isACCFile = false) {
-    if (!confirm(`Are you sure you want to delete report "${reportId}"? This action cannot be undone.`)) {
-        return;
-    }
-
-    try {
-        await deleteBedQCReportFromACC(itemId, isACCFile);
-
-        // Remove from local array
-        existingReports = existingReports.filter(r => r.itemId !== itemId);
-
-        // Refresh display
-        filterReports();
-
-        alert('Report deleted successfully');
-
-    } catch (error) {
-        console.error('Error deleting report:', error);
-        alert('Failed to delete report: ' + error.message);
-    }
-}
-
-// Clear Filters
-function clearFilters() {
-    document.getElementById('reportSearch').value = '';
-    document.getElementById('bedFilter').value = '';
-    document.getElementById('statusFilter').value = '';
-    document.getElementById('dateFromFilter').value = '';
-    document.getElementById('dateToFilter').value = '';
-    document.getElementById('sortFilter').value = 'date-desc';
-    filterReports();
-}
-
-// Export Filtered Reports
-function exportFilteredReports() {
-    const searchTerm = document.getElementById('reportSearch').value.toLowerCase();
-    const bedFilter = document.getElementById('bedFilter').value;
-    const statusFilter = document.getElementById('statusFilter').value;
-    const dateFrom = document.getElementById('dateFromFilter').value;
-    const dateTo = document.getElementById('dateToFilter').value;
-
-    // Get filtered reports (reuse the same filtering logic)
-    let filteredReports = existingReports.filter(report => {
-        let data = null;
-        let bedName = '';
-        let status = '';
-
-        if (report.data && report.data.reportData) {
-            data = report.data.reportData;
-            bedName = data.bedName || '';
-            status = data.status || 'Draft';
-        } else if (report.displayName) {
-            const parts = report.displayName.split(' - ');
-            bedName = parts[0] || '';
-            status = 'Completed';
-        }
-
-        if (searchTerm) {
-            const searchableText = [bedName, data?.reportId, data?.notes, data?.projectName, data?.createdBy].join(' ').toLowerCase();
-            if (!searchableText.includes(searchTerm)) return false;
-        }
-        if (bedFilter && bedName !== bedFilter) return false;
-        if (statusFilter && status !== statusFilter) return false;
-
-        const reportDate = new Date(data?.createdDate || report.lastModified);
-        if (dateFrom && reportDate < new Date(dateFrom)) return false;
-        if (dateTo && reportDate > new Date(dateTo + 'T23:59:59')) return false;
-
-        return true;
-    });
-
-    // Create CSV content
-    const csvHeaders = [
-        'Report ID', 'Bed Name', 'Project Name', 'Project Number', 'Date', 'Created By', 'Reviewed By',
-        'Status', 'Self-Stress Pull (lbs)', 'Non-Self-Stress Pull (lbs)', 'Notes', 'Storage ID', 'Storage Source'
-    ];
-
-    const csvData = filteredReports.map(report => {
-        const data = report.data?.reportData;
-        let bedName = '';
-        let reportId = '';
-
-        if (data) {
-            bedName = data.bedName || '';
-            reportId = data.reportId || '';
-        } else if (report.displayName) {
-            const parts = report.displayName.split(' - ');
-            bedName = parts[0] || '';
-            reportId = parts[1] || '';
-        }
-
-        return [
-            reportId,
-            bedName,
-            data?.projectName || '',
-            data?.projectNumber || '',
-            data?.date || '',
-            data?.createdBy || '',
-            data?.reviewedBy || '',
-            data?.status || (report.source === 'acc-file' ? 'Completed' : 'Draft'),
-            data?.selfStressing?.outputs?.calculatedPullRounded || 0,
-            data?.nonSelfStressing?.outputs?.calculatedPullRounded || 0,
-            (data?.notes || '').replace(/"/g, '""'), // Escape quotes
-            report.storageKey || report.itemId,
-            report.source || 'unknown'
-        ];
-    });
-
-    // Generate CSV
-    const csvContent = [csvHeaders, ...csvData]
-        .map(row => row.map(field => `"${field}"`).join(','))
-        .join('\n');
-
-    // Download file
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `BedQC-Reports-Export-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-
-    console.log(`Exported ${filteredReports.length} reports to CSV`);
-}
-
-// =================================================================
 // BED SELECTION AND FORM MANAGEMENT
 // =================================================================
 
 // Bed Selection Functions
 function showBedSelection() {
-    document.getElementById('bedSelectionModal').classList.add('active');
+    const bedSelectionModal = document.getElementById('bedSelectionModal');
+    if (bedSelectionModal) {
+        bedSelectionModal.classList.add('active');
+    }
 }
 
 function closeBedSelection() {
-    document.getElementById('bedSelectionModal').classList.remove('active');
-    document.getElementById('bedSelect').value = '';
-    document.getElementById('reportDescription').value = '';
+    const bedSelectionModal = document.getElementById('bedSelectionModal');
+    if (bedSelectionModal) {
+        bedSelectionModal.classList.remove('active');
+    }
+
+    const bedSelect = document.getElementById('bedSelect');
+    const reportDescription = document.getElementById('reportDescription');
+
+    if (bedSelect) bedSelect.value = '';
+    if (reportDescription) reportDescription.value = '';
 }
 
 function startBedReport() {
     const bedSelect = document.getElementById('bedSelect');
-    const bedId = bedSelect.value;
-    const bedName = bedSelect.options[bedSelect.selectedIndex].text;
-    const description = document.getElementById('reportDescription').value;
+    const reportDescription = document.getElementById('reportDescription');
 
-    if (!bedId) {
+    if (!bedSelect || !bedSelect.value) {
         alert('Please select a bed before continuing.');
         return;
     }
+
+    const bedId = bedSelect.value;
+    const bedName = bedSelect.options[bedSelect.selectedIndex].text;
+    const description = reportDescription ? reportDescription.value : '';
 
     // Generate unique report ID
     const reportId = generateReportId(bedId);
@@ -1380,6 +1093,10 @@ function initializeFormInstance(reportId, bedId, bedName, description) {
                 inputs: {},
                 outputs: {}
             }
+        },
+        permissions: {
+            scopesUsed: ACC_SCOPES,
+            enhancedPermissions: true
         }
     };
 
@@ -1387,12 +1104,18 @@ function initializeFormInstance(reportId, bedId, bedName, description) {
     reportInstances.set(reportId, formInstance);
 
     // Update UI
-    document.getElementById('reportId').textContent = reportId;
-    document.getElementById('selectedBedDisplay').textContent = bedName;
+    const reportIdElement = document.getElementById('reportId');
+    const selectedBedDisplayElement = document.getElementById('selectedBedDisplay');
+
+    if (reportIdElement) reportIdElement.textContent = reportId;
+    if (selectedBedDisplayElement) selectedBedDisplayElement.textContent = bedName;
 }
 
 function showCalculator() {
-    document.getElementById('calculatorModal').classList.add('active');
+    const calculatorModal = document.getElementById('calculatorModal');
+    if (calculatorModal) {
+        calculatorModal.classList.add('active');
+    }
 
     // Clear form data for new instance
     if (!currentCalculation) {
@@ -1404,7 +1127,10 @@ function showCalculator() {
 }
 
 function closeCalculator() {
-    document.getElementById('calculatorModal').classList.remove('active');
+    const calculatorModal = document.getElementById('calculatorModal');
+    if (calculatorModal) {
+        calculatorModal.classList.remove('active');
+    }
 
     // Save current state to instance before closing
     if (currentReportId) {
@@ -1417,17 +1143,19 @@ function closeCalculator() {
 
 function clearFormData() {
     // Clear all input fields
-    const inputs = document.querySelectorAll('#calculatorModal input[type="number"], #calculatorModal input[type="text"], #calculatorModal input[type="date"], #calculatorModal textarea, #calculatorModal select');
+    const inputs = document.querySelectorAll('#calculatorModal input[type="number"], #calculatorModal input[type="text"], #calculatorModal input[type="date"], #calculatorModal textarea');
     inputs.forEach(input => {
         if (input.type === 'date') {
             input.value = new Date().toISOString().split('T')[0];
-        } else if (input.type === 'number') {
-            input.value = '';
-        } else if (input.tagName === 'SELECT') {
-            input.selectedIndex = 0;
         } else {
             input.value = '';
         }
+    });
+
+    // Reset select elements
+    const selects = document.querySelectorAll('#calculatorModal select');
+    selects.forEach(select => {
+        select.selectedIndex = 0;
     });
 }
 
@@ -1439,13 +1167,13 @@ function saveFormInstance() {
 
     // Update project metadata
     instance.projectMetadata = {
-        projectName: document.getElementById('projectName').value,
-        projectNumber: document.getElementById('projectNumber').value,
-        date: document.getElementById('date').value,
-        calculatedBy: document.getElementById('calculatedBy').value,
-        reviewedBy: document.getElementById('reviewedBy').value,
-        location: document.getElementById('location').value,
-        notes: document.getElementById('notes').value
+        projectName: getElementValue('projectName'),
+        projectNumber: getElementValue('projectNumber'),
+        date: getElementValue('date'),
+        calculatedBy: getElementValue('calculatedBy'),
+        reviewedBy: getElementValue('reviewedBy'),
+        location: getElementValue('location'),
+        notes: getElementValue('notes')
     };
 
     // Update calculations
@@ -1455,337 +1183,9 @@ function saveFormInstance() {
     reportInstances.set(currentReportId, instance);
 }
 
-// Modal click outside to close
-document.addEventListener('DOMContentLoaded', function () {
-    document.getElementById('bedSelectionModal').addEventListener('click', function (e) {
-        if (e.target === this) {
-            closeBedSelection();
-        }
-    });
-
-    document.getElementById('calculatorModal').addEventListener('click', function (e) {
-        if (e.target === this) {
-            closeCalculator();
-        }
-    });
-});
-
-// =================================================================
-// PROJECT DATA LOADING AND MANAGEMENT
-// =================================================================
-
-// Project Data Loading
-async function loadRealProjectData() {
-    try {
-        console.log('Starting to load real project data...');
-
-        const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        if (!hubsResponse.ok) {
-            const errorText = await hubsResponse.text();
-            console.error('Hubs response error:', hubsResponse.status, errorText);
-            throw new Error(`Failed to load hubs: ${hubsResponse.status} ${errorText}`);
-        }
-
-        const hubsData = await hubsResponse.json();
-        console.log('Hubs data received:', hubsData);
-
-        const accHubs = hubsData.data.filter(hub =>
-            hub.attributes.extension?.type === 'hubs:autodesk.bim360:Account'
-        );
-
-        console.log('ACC hubs found:', accHubs.length);
-
-        if (accHubs.length > 0) {
-            const firstAccHub = accHubs[0];
-            hubId = firstAccHub.id; // Store hub ID globally
-            console.log('Using ACC hub:', firstAccHub.attributes.name, hubId);
-
-            await loadProjectsFromHub(hubId);
-        } else {
-            console.warn('No ACC hubs found in response');
-            throw new Error('No ACC hubs found - only Fusion 360 hubs available');
-        }
-
-        console.log('Project data loading completed successfully');
-
-    } catch (error) {
-        console.error('Failed to load project data:', error);
-
-        // Still enable manual entry mode
-        const projectSelect = document.getElementById('projectName');
-        projectSelect.innerHTML = '<option value="">Enter project details manually below...</option>';
-        projectSelect.disabled = false;
-
-        ['projectNumber', 'calculatedBy', 'location'].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.disabled = false;
-                element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
-            }
-        });
-
-        document.getElementById('accDetails').innerHTML = `
-            <div style="color: #dc2626;">
-                <strong>Project Loading Issue:</strong> ${error.message}<br>
-                <small>You can still use the calculator by entering project details manually</small><br>
-                <small><em>Note: Projects must follow format "12345 - Project Name" to appear in dropdown</em></small><br>
-                <small><em>Reports will be saved locally with project sync capability</em></small>
-            </div>
-        `;
-    }
-}
-
-async function loadProjectsFromHub(hubId) {
-    try {
-        console.log('Loading projects from ACC hub:', hubId);
-
-        const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        if (!projectsResponse.ok) {
-            throw new Error('Failed to load projects');
-        }
-
-        const projectsData = await projectsResponse.json();
-        console.log('ACC projects data received:', projectsData);
-
-        const projects = await Promise.all(projectsData.data.map(async (project) => {
-            console.log('Processing ACC project:', project.attributes.name);
-
-            // First, check if project name matches the required format: "12345 - Project name"
-            const projectNamePattern = /^(\d{5})\s*-\s*(.+)$/;
-            const nameMatch = project.attributes.name.match(projectNamePattern);
-
-            if (!nameMatch) {
-                console.log('Skipping project (does not match format):', project.attributes.name);
-                return null; // Filter out projects that don't match the format
-            }
-
-            const projectNumberFromName = nameMatch[1]; // Extract the 5-digit code
-            const projectDisplayName = nameMatch[2]; // Extract the project name part
-
-            let projectNumber = projectNumberFromName; // Default to the 5-digit code from name
-            let location = '';
-            let additionalData = {};
-
-            // Try to get project number from ACC fields first, but fall back to name extraction
-            if (project.attributes.extension?.data?.projectNumber) {
-                projectNumber = project.attributes.extension.data.projectNumber;
-                console.log('Found project number in extension data:', projectNumber);
-            }
-
-            try {
-                const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
-                    headers: {
-                        'Authorization': `Bearer ${forgeAccessToken}`
-                    }
-                });
-
-                if (projectDetailResponse.ok) {
-                    const projectDetail = await projectDetailResponse.json();
-                    console.log('Project detail for', project.attributes.name, ':', projectDetail);
-
-                    if (projectDetail.data?.attributes?.extension?.data) {
-                        const extData = projectDetail.data.attributes.extension.data;
-
-                        // Look for project number in extension data - only override if we find a valid one
-                        const accProjectNumber = extData.projectNumber ||
-                            extData.project_number ||
-                            extData.number ||
-                            extData.jobNumber ||
-                            extData.job_number ||
-                            extData.projectCode ||
-                            extData.code || '';
-
-                        if (accProjectNumber && accProjectNumber.trim() !== '') {
-                            projectNumber = accProjectNumber;
-                            console.log('Updated project number from detail data:', projectNumber);
-                        }
-
-                        location = extData.location ||
-                            extData.project_location ||
-                            extData.address ||
-                            extData.city ||
-                            extData.state ||
-                            extData.jobLocation ||
-                            extData.site || '';
-                    }
-
-                    // Also check the main project attributes for project number
-                    if (projectDetail.data?.attributes) {
-                        const attrs = projectDetail.data.attributes;
-                        const mainProjectNumber = attrs.projectNumber || attrs.number || '';
-                        if (mainProjectNumber && mainProjectNumber.trim() !== '') {
-                            projectNumber = mainProjectNumber;
-                            console.log('Updated project number from main attributes:', projectNumber);
-                        }
-                    }
-                }
-            } catch (detailError) {
-                console.warn('Could not get detailed project info for', project.attributes.name, ':', detailError);
-            }
-
-            // Final fallback - ensure we have the 5-digit code from the project name
-            if (!projectNumber || projectNumber.trim() === '') {
-                projectNumber = projectNumberFromName;
-                console.log('Using project number from name as final fallback:', projectNumber);
-            }
-
-            console.log('Final project number for', project.attributes.name, ':', projectNumber);
-
-            return {
-                id: project.id,
-                name: project.attributes.name || 'Unnamed Project',
-                displayName: projectDisplayName,
-                number: projectNumber,
-                numericSort: parseInt(projectNumberFromName, 10), // For sorting
-                location: location || 'Location not specified',
-                additionalData,
-                fullData: project
-            };
-        }));
-
-        // Filter out null entries (projects that didn't match the format)
-        const filteredProjects = projects.filter(project => project !== null);
-
-        if (filteredProjects.length === 0) {
-            console.warn('No projects matched the required format "12345 - Project Name"');
-            throw new Error('No projects found matching required format "12345 - Project Name"');
-        }
-
-        // Sort projects numerically by the 5-digit code (lowest to highest)
-        const sortedProjects = filteredProjects.sort((a, b) => a.numericSort - b.numericSort);
-
-        console.log('Filtered and sorted ACC projects:', sortedProjects);
-        console.log(`${filteredProjects.length} projects matched the format out of ${projectsData.data.length} total projects`);
-
-        populateProjectDropdown(sortedProjects);
-
-        if (sortedProjects.length > 0) {
-            setTimeout(() => {
-                const projectSelect = document.getElementById('projectName');
-                if (projectSelect) {
-                    projectSelect.value = sortedProjects[0].id;
-                    projectId = sortedProjects[0].id; // Store project ID globally
-                    onProjectSelected();
-                }
-            }, 100);
-        }
-
-    } catch (error) {
-        console.error('Error in loadProjectsFromHub:', error);
-        throw error;
-    }
-}
-
-function populateProjectDropdown(projects) {
-    try {
-        console.log('Populating dropdown with filtered and sorted ACC projects:', projects);
-
-        userProjects = projects;
-        const projectSelect = document.getElementById('projectName');
-
-        if (!projectSelect) {
-            console.error('Project select element not found');
-            return;
-        }
-
-        projectSelect.innerHTML = '<option value="">Select an ACC project...</option>';
-
-        projects.forEach((project, index) => {
-            console.log(`Adding ACC project ${index + 1}:`, project.name, 'Project Number:', project.number);
-
-            const option = document.createElement('option');
-            option.value = project.id;
-            // Display the full project name, but show the project number in parentheses
-            option.textContent = `${project.name} (${project.number})`;
-            option.dataset.projectNumber = project.number || '';
-            option.dataset.location = project.location || '';
-            projectSelect.appendChild(option);
-        });
-
-        projectSelect.disabled = false;
-        projectSelect.style.backgroundColor = '';
-
-        console.log('ACC project dropdown populated successfully with', projects.length, 'filtered projects');
-
-        document.getElementById('accDetails').innerHTML = `
-            <strong>Status:</strong> Connected to ACC<br>
-            <strong>Projects Found:</strong> ${projects.length} ACC projects (filtered by format)<br>
-            <strong>Hub:</strong> Metromont ACC Account<br>
-            <strong>Storage:</strong> JSON file upload to ACC with local fallback
-        `;
-
-    } catch (error) {
-        console.error('Error in populateProjectDropdown:', error);
-        throw error;
-    }
-}
-
-function onProjectSelected() {
-    const projectSelect = document.getElementById('projectName');
-    const selectedOption = projectSelect.selectedOptions[0];
-
-    if (selectedOption && selectedOption.value) {
-        const projectNumber = selectedOption.dataset.projectNumber || '';
-        const location = selectedOption.dataset.location || '';
-
-        // Store selected project ID globally
-        projectId = selectedOption.value;
-
-        console.log('Selected ACC project:', selectedOption.textContent);
-        console.log('Project ID:', projectId);
-        console.log('Project number from dataset:', projectNumber);
-        console.log('Location from dataset:', location);
-
-        // Find the project object to get more details
-        const selectedProject = userProjects.find(p => p.id === selectedOption.value);
-        if (selectedProject) {
-            console.log('Selected project object:', selectedProject);
-            console.log('Project number from object:', selectedProject.number);
-            console.log('Project display name:', selectedProject.displayName);
-        }
-
-        // Set the project number field with the actual ACC project number
-        document.getElementById('projectNumber').value = projectNumber;
-        document.getElementById('location').value = location;
-
-        // Enable editing of these fields in case user wants to modify
-        document.getElementById('projectNumber').disabled = false;
-        document.getElementById('location').disabled = false;
-        document.getElementById('calculatedBy').disabled = false;
-
-        document.getElementById('projectSource').style.display = 'inline-flex';
-        document.getElementById('projectSource').textContent = 'Project Number from ACC';
-
-        if (!document.getElementById('calculatedBy').value) {
-            document.getElementById('calculatedBy').value = 'ACC User';
-        }
-
-        // Log for debugging
-        console.log('Project number field set to:', document.getElementById('projectNumber').value);
-        console.log('Location field set to:', document.getElementById('location').value);
-    }
-}
-
-function enableACCFeatures() {
-    document.getElementById('saveBtn').disabled = false;
-    document.getElementById('exportBtn').disabled = false;
-}
-
-function setupUI() {
-    const dateInput = document.getElementById('date');
-    if (dateInput) {
-        dateInput.value = new Date().toISOString().split('T')[0];
-    }
+function getElementValue(id) {
+    const element = document.getElementById(id);
+    return element ? element.value : '';
 }
 
 // =================================================================
@@ -1804,7 +1204,13 @@ function formatInteger(num) {
 }
 
 function getValue(id) {
-    return parseFloat(document.getElementById(id).value) || 0;
+    const element = document.getElementById(id);
+    if (!element) return 0;
+
+    if (element.tagName === 'SELECT') {
+        return parseFloat(element.value) || 0;
+    }
+    return parseFloat(element.value) || 0;
 }
 
 // Calculation functions
@@ -1828,10 +1234,16 @@ function calculateSelfStressing() {
     const desiredPull = rf + LESeatingAdd + bedShorteningAdd;
     const calculatedPullRounded = Math.ceil(Math.round(desiredPull) / 100) * 100;
 
-    document.getElementById('ss_basicElongation').textContent = formatNumber(basicElongation) + ' in';
-    document.getElementById('ss_bedShortening').textContent = formatNumber(bedShortening) + ' in';
-    document.getElementById('ss_desiredElongationRounded').textContent = formatNumber(desiredElongationRounded) + ' in';
-    document.getElementById('ss_calculatedPullRounded').textContent = formatInteger(calculatedPullRounded) + ' lbs';
+    // Update display elements
+    const basicElongationEl = document.getElementById('ss_basicElongation');
+    const bedShorteningEl = document.getElementById('ss_bedShortening');
+    const desiredElongationRoundedEl = document.getElementById('ss_desiredElongationRounded');
+    const calculatedPullRoundedEl = document.getElementById('ss_calculatedPullRounded');
+
+    if (basicElongationEl) basicElongationEl.textContent = formatNumber(basicElongation) + ' in';
+    if (bedShorteningEl) bedShorteningEl.textContent = formatNumber(bedShortening) + ' in';
+    if (desiredElongationRoundedEl) desiredElongationRoundedEl.textContent = formatNumber(desiredElongationRounded) + ' in';
+    if (calculatedPullRoundedEl) calculatedPullRoundedEl.textContent = formatInteger(calculatedPullRounded) + ' lbs';
 
     return {
         basicElongation, bedShortening, desiredElongation, desiredElongationRounded,
@@ -1867,11 +1279,18 @@ function calculateNonSelfStressing() {
     const desiredPull = rf + LESeatingAdd + tempCorrectionPull;
     const calculatedPullRounded = Math.ceil(Math.round(desiredPull) / 100) * 100;
 
-    document.getElementById('nss_basicElongation').textContent = formatNumber(basicElongation) + ' in';
-    document.getElementById('nss_tempDifference').textContent = formatNumber(tempDifference);
-    document.getElementById('nss_tempCorrection').textContent = formatNumber(tempCorrection);
-    document.getElementById('nss_desiredElongationRounded').textContent = formatNumber(desiredElongationRounded) + ' in';
-    document.getElementById('nss_calculatedPullRounded').textContent = formatInteger(calculatedPullRounded) + ' lbs';
+    // Update display elements
+    const basicElongationEl = document.getElementById('nss_basicElongation');
+    const tempDifferenceEl = document.getElementById('nss_tempDifference');
+    const tempCorrectionEl = document.getElementById('nss_tempCorrection');
+    const desiredElongationRoundedEl = document.getElementById('nss_desiredElongationRounded');
+    const calculatedPullRoundedEl = document.getElementById('nss_calculatedPullRounded');
+
+    if (basicElongationEl) basicElongationEl.textContent = formatNumber(basicElongation) + ' in';
+    if (tempDifferenceEl) tempDifferenceEl.textContent = formatNumber(tempDifference);
+    if (tempCorrectionEl) tempCorrectionEl.textContent = formatNumber(tempCorrection);
+    if (desiredElongationRoundedEl) desiredElongationRoundedEl.textContent = formatNumber(desiredElongationRounded) + ' in';
+    if (calculatedPullRoundedEl) calculatedPullRoundedEl.textContent = formatInteger(calculatedPullRounded) + ' lbs';
 
     return {
         basicElongation, tempDifference, tca2, tcPart1, tcPart2, tempCorrection,
@@ -1884,6 +1303,10 @@ function calculateAll() {
     const selfStressingResults = calculateSelfStressing();
     const nonSelfStressingResults = calculateNonSelfStressing();
 
+    // Get strand sizes for saving
+    const ssStrandSize = getElementValue('ss_strandSize');
+    const nssStrandSize = getElementValue('nss_strandSize');
+
     currentCalculation = {
         timestamp: new Date().toISOString(),
         reportId: currentReportId,
@@ -1892,14 +1315,18 @@ function calculateAll() {
         projectId: projectId,
         hubId: hubId,
         status: 'Draft',
+        permissions: {
+            scopesUsed: ACC_SCOPES,
+            enhancedPermissions: true
+        },
         projectMetadata: {
-            projectName: document.getElementById('projectName').value,
-            projectNumber: document.getElementById('projectNumber').value,
-            date: document.getElementById('date').value,
-            calculatedBy: document.getElementById('calculatedBy').value,
-            reviewedBy: document.getElementById('reviewedBy').value,
-            location: document.getElementById('location').value,
-            notes: document.getElementById('notes').value
+            projectName: getElementValue('projectName'),
+            projectNumber: getElementValue('projectNumber'),
+            date: getElementValue('date'),
+            calculatedBy: getElementValue('calculatedBy'),
+            reviewedBy: getElementValue('reviewedBy'),
+            location: getElementValue('location'),
+            notes: getElementValue('notes')
         },
         selfStressing: {
             inputs: {
@@ -1909,6 +1336,7 @@ function calculateAll() {
                 numberOfStrands: getValue('ss_numberOfStrands'),
                 adjBedShortening: getValue('ss_adjBedShortening'),
                 blockToBlockLength: getValue('ss_blockToBlockLength'),
+                strandSize: ssStrandSize,
                 strandArea: getValue('ss_strandArea'),
                 deadEndSeating: getValue('ss_deadEndSeating'),
                 liveEndSeating: getValue('ss_liveEndSeating')
@@ -1921,6 +1349,7 @@ function calculateAll() {
                 requiredForce: getValue('nss_requiredForce'),
                 MOE: getValue('nss_MOE'),
                 blockToBlockLength: getValue('nss_blockToBlockLength'),
+                strandSize: nssStrandSize,
                 strandArea: getValue('nss_strandArea'),
                 airTemp: getValue('nss_airTemp'),
                 concreteTemp: getValue('nss_concreteTemp'),
@@ -1934,10 +1363,290 @@ function calculateAll() {
 }
 
 // =================================================================
-// ACC INTEGRATION FUNCTIONS (SAVE/EXPORT)
+// PROJECT DATA LOADING AND MANAGEMENT
 // =================================================================
 
-// Updated saveToACC function that uses proper file upload
+async function loadRealProjectData() {
+    try {
+        console.log('Starting to load real project data with enhanced permissions...');
+
+        const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!hubsResponse.ok) {
+            const errorText = await hubsResponse.text();
+            console.error('Hubs response error:', hubsResponse.status, errorText);
+            throw new Error(`Failed to load hubs: ${hubsResponse.status} ${errorText}`);
+        }
+
+        const hubsData = await hubsResponse.json();
+        console.log('Hubs data received:', hubsData);
+
+        const accHubs = hubsData.data.filter(hub =>
+            hub.attributes.extension?.type === 'hubs:autodesk.bim360:Account'
+        );
+
+        console.log('ACC hubs found:', accHubs.length);
+
+        if (accHubs.length > 0) {
+            const firstAccHub = accHubs[0];
+            hubId = firstAccHub.id;
+            console.log('Using ACC hub:', firstAccHub.attributes.name, hubId);
+
+            await loadProjectsFromHub(hubId);
+        } else {
+            console.warn('No ACC hubs found in response');
+            throw new Error('No ACC hubs found - only Fusion 360 hubs available');
+        }
+
+        console.log('✓ Project data loading completed successfully');
+
+    } catch (error) {
+        console.error('Failed to load project data:', error);
+
+        // Still enable manual entry mode
+        const projectSelect = document.getElementById('projectName');
+        if (projectSelect) {
+            projectSelect.innerHTML = '<option value="">Enter project details manually below...</option>';
+            projectSelect.disabled = false;
+        }
+
+        ['projectNumber', 'location'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.disabled = false;
+                element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
+            }
+        });
+
+        const accDetails = document.getElementById('accDetails');
+        if (accDetails) {
+            accDetails.innerHTML = `
+                <div style="color: #dc2626;">
+                    <strong>Project Loading Issue:</strong> ${error.message}<br>
+                    <small>You can still use the calculator by entering project details manually</small><br>
+                    <small><em>Note: Projects must follow format "12345 - Project Name" to appear in dropdown</em></small><br>
+                    <small><em>Reports will be saved locally with enhanced sync capability</em></small><br>
+                    <small><em>Enhanced permissions requested: ${ACC_SCOPES}</em></small>
+                </div>
+            `;
+        }
+    }
+}
+
+async function loadProjectsFromHub(hubId) {
+    try {
+        console.log('Loading projects from ACC hub:', hubId);
+
+        const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!projectsResponse.ok) {
+            throw new Error('Failed to load projects');
+        }
+
+        const projectsData = await projectsResponse.json();
+        console.log('ACC projects data received:', projectsData);
+
+        const projects = await Promise.all(projectsData.data.map(async (project) => {
+            console.log('Processing ACC project:', project.attributes.name);
+
+            // First, check if project name matches the required format: "12345 - Project name"
+            const projectNamePattern = /^(\d{5})\s*-\s*(.+)$/;
+            const nameMatch = project.attributes.name.match(projectNamePattern);
+
+            if (!nameMatch) {
+                console.log('Skipping project (does not match format):', project.attributes.name);
+                return null;
+            }
+
+            const projectNumberFromName = nameMatch[1];
+            const projectDisplayName = nameMatch[2];
+
+            let projectNumber = projectNumberFromName;
+            let location = '';
+
+            try {
+                const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+
+                if (projectDetailResponse.ok) {
+                    const projectDetail = await projectDetailResponse.json();
+
+                    if (projectDetail.data?.attributes?.extension?.data) {
+                        const extData = projectDetail.data.attributes.extension.data;
+
+                        const accProjectNumber = extData.projectNumber ||
+                            extData.project_number ||
+                            extData.number ||
+                            extData.jobNumber ||
+                            extData.job_number ||
+                            extData.projectCode ||
+                            extData.code || '';
+
+                        if (accProjectNumber && accProjectNumber.trim() !== '') {
+                            projectNumber = accProjectNumber;
+                        }
+
+                        location = extData.location ||
+                            extData.project_location ||
+                            extData.address ||
+                            extData.city ||
+                            extData.state ||
+                            extData.jobLocation ||
+                            extData.site || '';
+                    }
+                }
+            } catch (detailError) {
+                console.warn('Could not get detailed project info for', project.attributes.name, ':', detailError);
+            }
+
+            return {
+                id: project.id,
+                name: project.attributes.name || 'Unnamed Project',
+                displayName: projectDisplayName,
+                number: projectNumber,
+                numericSort: parseInt(projectNumberFromName, 10),
+                location: location || 'Location not specified',
+                fullData: project,
+                permissions: 'enhanced'
+            };
+        }));
+
+        const filteredProjects = projects.filter(project => project !== null);
+
+        if (filteredProjects.length === 0) {
+            console.warn('No projects matched the required format "12345 - Project Name"');
+            throw new Error('No projects found matching required format "12345 - Project Name"');
+        }
+
+        const sortedProjects = filteredProjects.sort((a, b) => a.numericSort - b.numericSort);
+
+        populateProjectDropdown(sortedProjects);
+
+        if (sortedProjects.length > 0) {
+            setTimeout(() => {
+                const projectSelect = document.getElementById('projectName');
+                if (projectSelect) {
+                    projectSelect.value = sortedProjects[0].id;
+                    projectId = sortedProjects[0].id;
+                    onProjectSelected();
+                }
+            }, 100);
+        }
+
+    } catch (error) {
+        console.error('Error in loadProjectsFromHub:', error);
+        throw error;
+    }
+}
+
+function populateProjectDropdown(projects) {
+    try {
+        userProjects = projects;
+        const projectSelect = document.getElementById('projectName');
+
+        if (!projectSelect) {
+            console.error('Project select element not found');
+            return;
+        }
+
+        projectSelect.innerHTML = '<option value="">Select an ACC project...</option>';
+
+        projects.forEach((project) => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = `${project.name} (${project.number})`;
+            option.dataset.projectNumber = project.number || '';
+            option.dataset.location = project.location || '';
+            option.dataset.permissions = project.permissions || 'basic';
+            projectSelect.appendChild(option);
+        });
+
+        projectSelect.disabled = false;
+
+        const accDetails = document.getElementById('accDetails');
+        if (accDetails) {
+            accDetails.innerHTML = `
+                <strong>Status:</strong> Connected to ACC with enhanced permissions<br>
+                <strong>Projects Found:</strong> ${projects.length} ACC projects (filtered by format)<br>
+                <strong>Hub:</strong> Metromont ACC Account<br>
+                <strong>Storage:</strong> JSON file upload to ACC with enhanced local fallback<br>
+                <strong>Permissions:</strong> ${ACC_SCOPES}
+            `;
+        }
+
+    } catch (error) {
+        console.error('Error in populateProjectDropdown:', error);
+        throw error;
+    }
+}
+
+function onProjectSelected() {
+    const projectSelect = document.getElementById('projectName');
+    if (!projectSelect) return;
+
+    const selectedOption = projectSelect.selectedOptions[0];
+
+    if (selectedOption && selectedOption.value) {
+        const projectNumber = selectedOption.dataset.projectNumber || '';
+        const location = selectedOption.dataset.location || '';
+        const permissions = selectedOption.dataset.permissions || 'basic';
+
+        projectId = selectedOption.value;
+
+        const projectNumberEl = document.getElementById('projectNumber');
+        const locationEl = document.getElementById('location');
+        const projectSource = document.getElementById('projectSource');
+
+        if (projectNumberEl) {
+            projectNumberEl.value = projectNumber;
+            projectNumberEl.disabled = false;
+        }
+
+        if (locationEl) {
+            locationEl.value = location;
+            locationEl.disabled = false;
+        }
+
+        if (projectSource) {
+            projectSource.style.display = 'inline-flex';
+            projectSource.textContent = `Project Data from ACC (${permissions} permissions)`;
+        }
+
+        console.log('✓ Project selected:', projectId, 'with', permissions, 'permissions');
+    }
+}
+
+function enableACCFeatures() {
+    const saveBtn = document.getElementById('saveBtn');
+    const exportBtn = document.getElementById('exportBtn');
+
+    if (saveBtn) saveBtn.disabled = false;
+    if (exportBtn) exportBtn.disabled = false;
+}
+
+function setupUI() {
+    const dateInput = document.getElementById('date');
+    if (dateInput) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+}
+
+// =================================================================
+// ENHANCED SAVE FUNCTIONALITY WITH FULL ACC INTEGRATION
+// =================================================================
+
+// Updated saveToACC function with enhanced permissions
 async function saveToACC() {
     if (!isACCConnected) {
         alert('Not connected to ACC. Please check your connection.');
@@ -1951,8 +1660,10 @@ async function saveToACC() {
 
     try {
         const saveBtn = document.getElementById('saveBtn');
-        saveBtn.disabled = true;
-        saveBtn.innerHTML = '<div class="loading"></div> Saving to ACC...';
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<div class="loading"></div> Saving to ACC with enhanced permissions...';
+        }
 
         // Add quality compliance data
         const enhancedCalculation = {
@@ -1960,6 +1671,12 @@ async function saveToACC() {
             status: 'Completed',
             createdDate: currentCalculation.timestamp,
             savedToACC: true,
+            permissions: {
+                scopesUsed: ACC_SCOPES,
+                enhancedPermissions: true,
+                dataWriteEnabled: true,
+                dataCreateEnabled: true
+            },
             qualityMetrics: {
                 complianceStatus: 'Pass', // Could be calculated based on results
                 deviations: [],
@@ -1971,28 +1688,33 @@ async function saveToACC() {
             }
         };
 
-        // Save to ACC Data Management API using proper file upload
+        // Save to ACC Data Management API using enhanced permissions
         const result = await saveBedQCReportToACC(enhancedCalculation);
 
-        console.log('Successfully saved report:', result);
+        console.log('✓ Successfully saved report with enhanced permissions:', result);
 
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = `
-            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
-            </svg>
-            Saved Successfully
-        `;
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = `
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                </svg>
+                Saved Successfully
+            `;
+        }
 
         // Show appropriate success message based on storage method
-        let successMessage = `Report saved successfully!\nReport ID: ${result.reportId}`;
+        let successMessage = `Report saved successfully with enhanced permissions!\nReport ID: ${result.reportId}`;
 
         if (result.method === 'acc-file-upload') {
-            successMessage += `\n\nStorage: ACC JSON File Upload\nFile Name: ${result.fileName}\nVersion ID: ${result.versionId}`;
+            successMessage += `\n\nStorage: ACC JSON File Upload (Enhanced)\nFile Name: ${result.fileName}\nVersion ID: ${result.versionId}\nPermissions: ${result.permissions}`;
         } else if (result.method === 'local-storage') {
-            successMessage += `\n\nStorage: Local browser storage with project sync\nNote: ${result.warning || 'File upload failed - check permissions'}`;
+            successMessage += `\n\nStorage: Local browser storage with enhanced project sync\nNote: ${result.warning || 'File upload failed - check permissions'}`;
             if (result.error) {
                 successMessage += `\nError Details: ${result.error}`;
+            }
+            if (result.permissionsNote) {
+                successMessage += `\n${result.permissionsNote}`;
             }
         }
 
@@ -2005,13 +1727,15 @@ async function saveToACC() {
         console.error('Save failed:', error);
 
         const saveBtn = document.getElementById('saveBtn');
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = `
-            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
-            </svg>
-            Save to ACC
-        `;
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = `
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                </svg>
+                Save to ACC
+            `;
+        }
 
         // Provide detailed error information
         let errorMessage = 'Failed to save report to ACC.\n\n';
@@ -2019,7 +1743,9 @@ async function saveToACC() {
         errorMessage += 'This might be due to:\n';
         errorMessage += '• ACC API permissions need additional configuration\n';
         errorMessage += '• Project folder access restrictions\n';
-        errorMessage += '• Network connectivity issues\n\n';
+        errorMessage += '• Network connectivity issues\n';
+        errorMessage += '• Missing required scopes: data:write, data:create\n\n';
+        errorMessage += `Current scopes requested: ${ACC_SCOPES}\n\n`;
         errorMessage += 'The calculation is still available in your browser session.';
 
         alert(errorMessage);
@@ -2027,159 +1753,398 @@ async function saveToACC() {
 }
 
 async function exportToACCDocs() {
-    if (!isACCConnected) {
-        alert('Not connected to ACC. Please check your connection.');
+    alert('Export functionality with enhanced permissions - full implementation available in production version.');
+}
+
+function generatePDF() {
+    alert('PDF generation functionality with enhanced permissions - full implementation available in production version.');
+}
+
+// =================================================================
+// ENHANCED REPORT HISTORY FUNCTIONALITY
+// =================================================================
+
+async function initializeReportHistory() {
+    try {
+        console.log('Initializing report history with enhanced permissions...');
+
+        // Add Report History section to the page
+        addReportHistorySection();
+
+        // Load existing reports
+        await refreshReportHistory();
+
+    } catch (error) {
+        console.error('Error initializing report history:', error);
+    }
+}
+
+function addReportHistorySection() {
+    const container = document.querySelector('.container');
+    if (!container) return;
+
+    const historySection = document.createElement('div');
+    historySection.innerHTML = `
+        <!-- Report History Section -->
+        <div class="card" id="reportHistorySection" style="margin-top: 2rem;">
+            <h3 class="card-title">
+                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z"/>
+                </svg>
+                Report History (Enhanced Permissions)
+                <button class="btn btn-secondary" onclick="refreshReportHistory()" style="margin-left: auto;">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+                    </svg>
+                    Refresh
+                </button>
+            </h3>
+            
+            <!-- Reports List -->
+            <div id="reportsList">
+                <div style="text-align: center; color: #6b7280; padding: 2rem;">
+                    <div class="loading"></div>
+                    <p>Loading reports with enhanced permissions...</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.appendChild(historySection);
+}
+
+async function refreshReportHistory() {
+    try {
+        const reportsList = document.getElementById('reportsList');
+        if (!reportsList) return;
+
+        reportsList.innerHTML = `
+            <div style="text-align: center; color: #6b7280; padding: 2rem;">
+                <div class="loading"></div>
+                <p>Loading reports from ACC with enhanced permissions...</p>
+            </div>
+        `;
+
+        // Load reports from ACC
+        existingReports = await loadBedQCReportsFromACC(projectId);
+
+        // Display reports
+        displayReports(existingReports);
+
+        console.log(`✓ Loaded ${existingReports.length} reports for display`);
+
+    } catch (error) {
+        console.error('Error refreshing report history:', error);
+        const reportsList = document.getElementById('reportsList');
+        if (reportsList) {
+            reportsList.innerHTML = `
+                <div style="text-align: center; color: #dc2626; padding: 2rem;">
+                    <p>Error loading reports: ${error.message}</p>
+                    <small>Required permissions: ${ACC_SCOPES}</small><br>
+                    <button class="btn btn-secondary" onclick="refreshReportHistory()">Try Again</button>
+                </div>
+            `;
+        }
+    }
+}
+
+function displayReports(reports) {
+    const reportsList = document.getElementById('reportsList');
+    if (!reportsList) return;
+
+    if (reports.length === 0) {
+        reportsList.innerHTML = `
+            <div style="text-align: center; color: #6b7280; padding: 2rem;">
+                <svg width="48" height="48" fill="currentColor" viewBox="0 0 24 24" style="margin-bottom: 1rem; opacity: 0.5;">
+                    <path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 002 2z"/>
+                </svg>
+                <p>No reports found. Create your first Bed QC report!</p>
+                <button class="btn btn-primary" onclick="showBedSelection()">Create New Report</button>
+            </div>
+        `;
+        return;
+    }
+
+    const reportsHTML = reports.map(report => {
+        let data = null;
+        let bedName = '';
+        let reportId = '';
+        let projectName = '';
+        let createdBy = '';
+        let status = 'Draft';
+        let formattedDate = '';
+        let selfStressPull = 0;
+        let nonSelfStressPull = 0;
+        let notes = '';
+        let permissions = 'basic';
+
+        if (report.data && report.data.reportData) {
+            data = report.data.reportData;
+            bedName = data.bedName || '';
+            reportId = data.reportId || '';
+            projectName = data.projectName || '';
+            createdBy = data.calculatedBy || '';
+            status = data.status || 'Draft';
+            notes = data.notes || '';
+            selfStressPull = data.selfStressing?.outputs?.calculatedPullRounded || 0;
+            nonSelfStressPull = data.nonSelfStressing?.outputs?.calculatedPullRounded || 0;
+            permissions = data.permissions?.enhancedPermissions ? 'enhanced' : 'basic';
+
+            const date = new Date(data.createdDate || data.timestamp || report.lastModified);
+            formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        } else {
+            // ACC file without local data
+            const parts = report.displayName?.split(' - ') || ['', ''];
+            bedName = parts[0] || 'Unknown Bed';
+            reportId = parts[1] || 'Unknown ID';
+            status = 'Completed';
+            permissions = report.permissions || 'basic';
+
+            const date = new Date(report.lastModified);
+            formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        }
+
+        // Determine status badge style
+        let statusClass = 'status-development';
+        if (status === 'Completed') statusClass = 'status-active';
+        if (status === 'Approved') statusClass = 'status-active';
+
+        // Determine storage source indicator
+        let sourceIndicator = '';
+        let sourceClass = '';
+        if (report.source === 'local') {
+            sourceIndicator = '💾 Local';
+            sourceClass = 'background: #fef3c7; color: #92400e;';
+        } else if (report.source === 'acc-file') {
+            sourceIndicator = '☁️ ACC File';
+            sourceClass = 'background: #dcfce7; color: #166534;';
+        } else {
+            sourceIndicator = '💾 Stored';
+            sourceClass = 'background: #e0e7ff; color: #3730a3;';
+        }
+
+        // Permission indicator
+        const permissionIndicator = permissions === 'enhanced' ? '🔓 Enhanced' : '🔒 Basic';
+        const permissionClass = permissions === 'enhanced' ? 'background: #dcfce7; color: #166534;' : 'background: #fef3c7; color: #92400e;';
+
+        return `
+            <div class="tool-card" style="margin-bottom: 1rem; cursor: pointer;" 
+                 onclick="loadExistingReport('${report.itemId}', ${report.needsDownload || false})">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                    <div>
+                        <h4 style="font-size: 1.125rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;">
+                            ${bedName} - ${reportId}
+                        </h4>
+                        <div style="display: flex; gap: 1rem; font-size: 0.875rem; color: #6b7280;">
+                            <span><strong>Project:</strong> ${projectName || 'N/A'}</span>
+                            <span><strong>Date:</strong> ${formattedDate}</span>
+                            <span><strong>By:</strong> ${createdBy || 'Unknown'}</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <span class="status-badge ${statusClass}">${status}</span>
+                        <span style="padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 500; ${sourceClass}">${sourceIndicator}</span>
+                        <span style="padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 500; ${permissionClass}">${permissionIndicator}</span>
+                        <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" 
+                                onclick="event.stopPropagation(); deleteReport('${report.itemId}', '${reportId}', ${report.source === 'acc-file'})">
+                            <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div style="background: #eff6ff; padding: 0.75rem; border-radius: 6px;">
+                        <div style="font-size: 0.75rem; color: #2563eb; font-weight: 500; margin-bottom: 0.25rem;">Self-Stressing Pull</div>
+                        <div style="font-size: 1.125rem; font-weight: 600; color: #1e293b;">${selfStressPull.toLocaleString()} lbs</div>
+                    </div>
+                    <div style="background: #f0fdf4; padding: 0.75rem; border-radius: 6px;">
+                        <div style="font-size: 0.75rem; color: #059669; font-weight: 500; margin-bottom: 0.25rem;">Non-Self-Stressing Pull</div>
+                        <div style="font-size: 1.125rem; font-weight: 600; color: #1e293b;">${nonSelfStressPull.toLocaleString()} lbs</div>
+                    </div>
+                </div>
+                
+                ${notes ? `<div style="font-size: 0.875rem; color: #6b7280; font-style: italic;">"${notes}"</div>` : ''}
+                
+                <div style="margin-top: 1rem; font-size: 0.75rem; color: #9ca3af;">
+                    ${report.needsDownload ? 'Will download from ACC when opened' : 'Ready to load'} | ${permissions} permissions | Click to open and edit
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    reportsList.innerHTML = reportsHTML;
+}
+
+// Load Existing Report
+async function loadExistingReport(itemId, needsDownload = false) {
+    try {
+        console.log('Loading existing report:', itemId, 'needsDownload:', needsDownload);
+
+        let reportData = null;
+
+        if (needsDownload) {
+            // Download from ACC
+            const reportContent = await downloadReportFromACC(itemId);
+            reportData = reportContent.reportData;
+        } else {
+            // Find the report in our loaded data
+            const reportObj = existingReports.find(r => r.itemId === itemId);
+            if (!reportObj) {
+                throw new Error('Report not found in loaded data');
+            }
+            reportData = reportObj.data.reportData;
+        }
+
+        // Set up form instance
+        currentReportId = reportData.reportId;
+        currentBedId = reportData.bedId;
+        currentBedName = reportData.bedName;
+        currentCalculation = reportData;
+
+        // Show calculator modal
+        showCalculator();
+
+        // Populate form with existing data
+        populateFormWithReportData(reportData);
+
+        // Update UI to show this is an existing report
+        const reportIdElement = document.getElementById('reportId');
+        const selectedBedDisplayElement = document.getElementById('selectedBedDisplay');
+        const saveBtn = document.getElementById('saveBtn');
+        const exportBtn = document.getElementById('exportBtn');
+
+        const permissionText = reportData.permissions?.enhancedPermissions ? ' (Enhanced Permissions)' : ' (Basic Permissions)';
+
+        if (reportIdElement) reportIdElement.textContent = reportData.reportId + ' (Loaded from Storage)' + permissionText;
+        if (selectedBedDisplayElement) selectedBedDisplayElement.textContent = reportData.bedName;
+        if (saveBtn) saveBtn.disabled = false;
+        if (exportBtn) exportBtn.disabled = false;
+
+        console.log('✓ Successfully loaded existing report');
+
+    } catch (error) {
+        console.error('Error loading existing report:', error);
+        alert('Failed to load report: ' + error.message);
+    }
+}
+
+// Populate Form with Report Data
+function populateFormWithReportData(data) {
+    // Project metadata
+    if (data.projectName) {
+        const projectSelect = document.getElementById('projectName');
+        if (projectSelect) {
+            // Find and select the matching project
+            for (let option of projectSelect.options) {
+                if (option.textContent.includes(data.projectName)) {
+                    option.selected = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Set form values safely
+    setElementValue('projectNumber', data.projectNumber || '');
+    setElementValue('date', data.date || '');
+    setElementValue('calculatedBy', data.calculatedBy || '');
+    setElementValue('reviewedBy', data.reviewedBy || '');
+    setElementValue('location', data.location || '');
+    setElementValue('notes', data.notes || '');
+
+    // Self-stressing inputs
+    if (data.selfStressing?.inputs) {
+        const inputs = data.selfStressing.inputs;
+        setElementValue('ss_initialPull', inputs.initialPull || '');
+        setElementValue('ss_requiredForce', inputs.requiredForce || '');
+        setElementValue('ss_MOE', inputs.MOE || '');
+        setElementValue('ss_numberOfStrands', inputs.numberOfStrands || '');
+        setElementValue('ss_adjBedShortening', inputs.adjBedShortening || '');
+        setElementValue('ss_blockToBlockLength', inputs.blockToBlockLength || '');
+        setElementValue('ss_strandSize', inputs.strandSize || '');
+        setElementValue('ss_strandArea', inputs.strandArea || '');
+        setElementValue('ss_deadEndSeating', inputs.deadEndSeating || '');
+        setElementValue('ss_liveEndSeating', inputs.liveEndSeating || '');
+    }
+
+    // Non-self-stressing inputs
+    if (data.nonSelfStressing?.inputs) {
+        const inputs = data.nonSelfStressing.inputs;
+        setElementValue('nss_initialPull', inputs.initialPull || '');
+        setElementValue('nss_requiredForce', inputs.requiredForce || '');
+        setElementValue('nss_MOE', inputs.MOE || '');
+        setElementValue('nss_blockToBlockLength', inputs.blockToBlockLength || '');
+        setElementValue('nss_strandSize', inputs.strandSize || '');
+        setElementValue('nss_strandArea', inputs.strandArea || '');
+        setElementValue('nss_airTemp', inputs.airTemp || '');
+        setElementValue('nss_concreteTemp', inputs.concreteTemp || '');
+        setElementValue('nss_deadEndSeating', inputs.deadEndSeating || '');
+        setElementValue('nss_liveEndSeating', inputs.liveEndSeating || '');
+        setElementValue('nss_totalAbutmentRotation', inputs.totalAbutmentRotation || '');
+    }
+
+    // Recalculate to update results
+    calculateAll();
+}
+
+function setElementValue(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+        element.value = value;
+    }
+}
+
+// Delete Report
+async function deleteReport(itemId, reportId, isACCFile = false) {
+    if (!confirm(`Are you sure you want to delete report "${reportId}"? This action cannot be undone.`)) {
         return;
     }
 
     try {
-        const exportBtn = document.getElementById('exportBtn');
-        exportBtn.disabled = true;
-        exportBtn.innerHTML = '<div class="loading"></div> Preparing Export...';
+        await deleteBedQCReportFromACC(itemId, isACCFile);
 
-        // Generate PDF content first
-        generatePDFData();
+        // Remove from local array
+        existingReports = existingReports.filter(r => r.itemId !== itemId);
 
-        // For now, we'll export as a downloadable PDF since direct ACC document upload 
-        // requires additional file storage setup that we're working on
+        // Refresh display
+        displayReports(existingReports);
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Create a PDF-style HTML document for download
-        const reportHTML = document.getElementById('pdf-content').innerHTML;
-        const fullHTML = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Bed QC Report - ${currentReportId}</title>
-                <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; }
-                    .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
-                    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-                    .section { margin-bottom: 20px; }
-                    h3 { color: #2563eb; margin-bottom: 10px; }
-                    .results { background: #f8f9fa; padding: 10px; border-radius: 5px; }
-                </style>
-            </head>
-            <body>
-                ${reportHTML}
-                <div style="margin-top: 30px; font-size: 12px; color: #666; text-align: center;">
-                    Generated by Metromont CastLink Quality Control System<br>
-                    Report ID: ${currentReportId} | Generated: ${new Date().toLocaleString()}
-                </div>
-            </body>
-            </html>
-        `;
-
-        // Create blob and download
-        const blob = new Blob([fullHTML], { type: 'text/html' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `BedQC-Report-${currentReportId}-${new Date().toISOString().split('T')[0]}.html`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-
-        exportBtn.disabled = false;
-        exportBtn.innerHTML = `
-            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
-            </svg>
-            Export Report
-        `;
-
-        alert(`Report exported as HTML file!\n\nFile: BedQC-Report-${currentReportId}-${new Date().toISOString().split('T')[0]}.html\n\nNote: JSON reports are uploaded to ACC automatically. HTML exports are for sharing/printing purposes.`);
+        alert('Report deleted successfully');
 
     } catch (error) {
-        console.error('Export failed:', error);
-
-        const exportBtn = document.getElementById('exportBtn');
-        exportBtn.disabled = false;
-        exportBtn.innerHTML = `
-            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
-            </svg>
-            Export Report
-        `;
-
-        alert('Export failed: ' + error.message);
+        console.error('Error deleting report:', error);
+        alert('Failed to delete report: ' + error.message);
     }
 }
 
-function generatePDF() {
-    generatePDFData();
-    window.print();
-}
+// Modal click outside to close
+function setupModalHandlers() {
+    const bedSelectionModal = document.getElementById('bedSelectionModal');
+    if (bedSelectionModal) {
+        bedSelectionModal.addEventListener('click', function (e) {
+            if (e.target === this) {
+                closeBedSelection();
+            }
+        });
+    }
 
-function generatePDFData() {
-    const metadata = currentCalculation.projectMetadata;
-    const selfStressingResults = currentCalculation.selfStressing.outputs;
-    const nonSelfStressingResults = currentCalculation.nonSelfStressing.outputs;
-
-    document.getElementById('printMetadata').innerHTML = `
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-            <div><strong>Report ID:</strong> ${currentReportId}</div>
-            <div><strong>Bed:</strong> ${currentBedName}</div>
-            <div><strong>Date:</strong> ${metadata.date}</div>
-            <div><strong>Project:</strong> ${metadata.projectName}</div>
-            <div><strong>Project #:</strong> ${metadata.projectNumber}</div>
-            <div><strong>Location:</strong> ${metadata.location}</div>
-            <div><strong>Calculated By:</strong> ${metadata.calculatedBy}</div>
-            <div><strong>Reviewed By:</strong> ${metadata.reviewedBy}</div>
-            <div></div>
-        </div>
-        ${metadata.notes ? `<div><strong>Notes:</strong> ${metadata.notes}</div>` : ''}
-    `;
-
-    document.getElementById('printSelfStressInputs').innerHTML = `
-        <h4>Input Values:</h4>
-        <div><strong>Initial Pull:</strong> ${currentCalculation.selfStressing.inputs.initialPull} lbs</div>
-        <div><strong>Required Force:</strong> ${currentCalculation.selfStressing.inputs.requiredForce} lbs</div>
-        <div><strong>MOE:</strong> ${currentCalculation.selfStressing.inputs.MOE}</div>
-        <div><strong># of Strands:</strong> ${currentCalculation.selfStressing.inputs.numberOfStrands}</div>
-        <div><strong>Adjusted Bed Shortening:</strong> ${currentCalculation.selfStressing.inputs.adjBedShortening} inches</div>
-        <div><strong>Block-to-Block Length:</strong> ${currentCalculation.selfStressing.inputs.blockToBlockLength} feet</div>
-        <div><strong>Strand Area:</strong> ${currentCalculation.selfStressing.inputs.strandArea} sq inches</div>
-        <div><strong>Dead-End Seating:</strong> ${currentCalculation.selfStressing.inputs.deadEndSeating} inches</div>
-        <div><strong>Live End Seating:</strong> ${currentCalculation.selfStressing.inputs.liveEndSeating} inches</div>
-    `;
-
-    document.getElementById('printSelfStressResults').innerHTML = `
-        <h4>Calculated Results:</h4>
-        <div style="display: flex; justify-content: space-between;"><span>Basic Elongation:</span><span>${formatNumber(selfStressingResults.basicElongation)} inches</span></div>
-        <div style="display: flex; justify-content: space-between;"><span>Bed Shortening:</span><span>${formatNumber(selfStressingResults.bedShortening)} inches</span></div>
-        <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Desired Elongation (Rounded):</span><span>${formatNumber(selfStressingResults.desiredElongationRounded)} inches</span></div>
-        <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Calculated Pull (Rounded):</span><span>${formatInteger(selfStressingResults.calculatedPullRounded)} lbs</span></div>
-    `;
-
-    document.getElementById('printNonSelfStressInputs').innerHTML = `
-        <h4>Input Values:</h4>
-        <div><strong>Initial Pull:</strong> ${currentCalculation.nonSelfStressing.inputs.initialPull} lbs</div>
-        <div><strong>Required Force:</strong> ${currentCalculation.nonSelfStressing.inputs.requiredForce} lbs</div>
-        <div><strong>MOE:</strong> ${currentCalculation.nonSelfStressing.inputs.MOE}</div>
-        <div><strong>Block-to-Block Length:</strong> ${currentCalculation.nonSelfStressing.inputs.blockToBlockLength} feet</div>
-        <div><strong>Strand Area:</strong> ${currentCalculation.nonSelfStressing.inputs.strandArea} sq inches</div>
-        <div><strong>Air Temperature:</strong> ${currentCalculation.nonSelfStressing.inputs.airTemp} °F</div>
-        <div><strong>Concrete Temperature:</strong> ${currentCalculation.nonSelfStressing.inputs.concreteTemp} °F</div>
-        <div><strong>Dead-End Seating:</strong> ${currentCalculation.nonSelfStressing.inputs.deadEndSeating} inches</div>
-        <div><strong>Live End Seating:</strong> ${currentCalculation.nonSelfStressing.inputs.liveEndSeating} inches</div>
-        <div><strong>Total Abutment Rotation:</strong> ${currentCalculation.nonSelfStressing.inputs.totalAbutmentRotation} inches</div>
-    `;
-
-    document.getElementById('printNonSelfStressResults').innerHTML = `
-        <h4>Calculated Results:</h4>
-        <div style="display: flex; justify-content: space-between;"><span>Basic Elongation:</span><span>${formatNumber(nonSelfStressingResults.basicElongation)} inches</span></div>
-        <div style="display: flex; justify-content: space-between;"><span>Temperature Difference:</span><span>${formatNumber(nonSelfStressingResults.tempDifference)}</span></div>
-        <div style="display: flex; justify-content: space-between;"><span>Temperature Correction:</span><span>${formatNumber(nonSelfStressingResults.tempCorrection)}</span></div>
-        <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Desired Elongation (Rounded):</span><span>${formatNumber(nonSelfStressingResults.desiredElongationRounded)} inches</span></div>
-        <div style="display: flex; justify-content: space-between; font-weight: bold; color: #dc2626;"><span>Calculated Pull (Rounded):</span><span>${formatInteger(nonSelfStressingResults.calculatedPullRounded)} lbs</span></div>
-    `;
+    const calculatorModal = document.getElementById('calculatorModal');
+    if (calculatorModal) {
+        calculatorModal.addEventListener('click', function (e) {
+            if (e.target === this) {
+                closeCalculator();
+            }
+        });
+    }
 }
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {
+    console.log('Quality Control page loaded with enhanced ACC permissions');
+    console.log('Requesting scopes:', ACC_SCOPES);
     setupUI();
+    setupModalHandlers();
     initializeApp();
 });

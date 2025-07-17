@@ -1,4 +1,4 @@
-exports.handler = async (event, context) => {
+﻿exports.handler = async (event, context) => {
     // Handle CORS preflight
     if (event.httpMethod === 'OPTIONS') {
         return {
@@ -13,8 +13,8 @@ exports.handler = async (event, context) => {
     }
 
     if (event.httpMethod !== 'POST') {
-        return { 
-            statusCode: 405, 
+        return {
+            statusCode: 405,
             headers: {
                 'Access-Control-Allow-Origin': '*',
             },
@@ -24,7 +24,7 @@ exports.handler = async (event, context) => {
 
     try {
         const { code, redirect_uri } = JSON.parse(event.body);
-        
+
         // Check for required environment variables
         if (!process.env.ACC_CLIENT_ID || !process.env.ACC_CLIENT_SECRET) {
             console.error('Missing environment variables');
@@ -33,16 +33,29 @@ exports.handler = async (event, context) => {
                 headers: {
                     'Access-Control-Allow-Origin': '*',
                 },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     error: 'Server configuration error',
                     details: 'Missing CLIENT_ID or CLIENT_SECRET'
                 })
             };
         }
 
-        console.log('Exchanging code for token...');
+        console.log('Exchanging code for token with enhanced scopes...');
         console.log('Client ID:', process.env.ACC_CLIENT_ID);
         console.log('Redirect URI:', redirect_uri);
+
+        // Enhanced scopes that match the frontend
+        const enhancedScopes = [
+            'data:read',
+            'data:write',
+            'data:create',
+            'data:search',
+            'account:read',
+            'user:read',
+            'viewables:read'
+        ].join(' ');
+
+        console.log('Enhanced scopes requested:', enhancedScopes);
 
         const tokenRequestBody = new URLSearchParams({
             grant_type: 'authorization_code',
@@ -77,10 +90,35 @@ exports.handler = async (event, context) => {
                 headers: {
                     'Access-Control-Allow-Origin': '*',
                 },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     error: 'Invalid response from Autodesk',
-                    details: responseText 
+                    details: responseText
                 })
+            };
+        }
+
+        // Log successful token exchange with scope information
+        if (response.ok && data.access_token) {
+            console.log('✓ Token exchange successful');
+            console.log('Token type:', data.token_type);
+            console.log('Expires in:', data.expires_in, 'seconds');
+            console.log('Scope granted:', data.scope || 'not specified');
+
+            // Verify the granted scopes include the enhanced permissions
+            const grantedScopes = data.scope || '';
+            const hasDataWrite = grantedScopes.includes('data:write');
+            const hasDataCreate = grantedScopes.includes('data:create');
+
+            console.log('Enhanced permissions granted:');
+            console.log('- data:write:', hasDataWrite);
+            console.log('- data:create:', hasDataCreate);
+
+            // Add scope information to the response
+            data.scope_analysis = {
+                granted_scopes: grantedScopes,
+                has_data_write: hasDataWrite,
+                has_data_create: hasDataCreate,
+                enhanced_permissions: hasDataWrite && hasDataCreate
             };
         }
 
@@ -101,9 +139,10 @@ exports.handler = async (event, context) => {
             headers: {
                 'Access-Control-Allow-Origin': '*',
             },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 error: 'Internal server error',
-                details: error.message 
+                details: error.message,
+                timestamp: new Date().toISOString()
             })
         };
     }

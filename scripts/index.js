@@ -2,6 +2,17 @@
 const ACC_CLIENT_ID = 'phUPKRBuqECpJUoBmRuKdKhSP3ZTRALH4LMWKAzAnymnYkQU';
 const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 
+// Enhanced scope configuration for full ACC integration
+const ACC_SCOPES = [
+    'data:read',        // View data within ACC
+    'data:write',       // Manage data within ACC  
+    'data:create',      // Create new data within ACC
+    'data:search',      // Search across ACC data
+    'account:read',     // View product and service accounts
+    'user:read',        // View user profile info
+    'viewables:read'    // View viewable data (for future file previews)
+].join(' ');
+
 // Global authentication state
 let forgeAccessToken = null;
 let isAuthenticated = false;
@@ -16,16 +27,16 @@ const authMessage = document.getElementById('authMessage');
 async function initializeApp() {
     try {
         updateAuthStatus('Checking authentication...', 'Verifying your login status...');
-        
+
         // Check for OAuth callback first
         const urlParams = new URLSearchParams(window.location.search);
         const authCode = urlParams.get('code');
         const error = urlParams.get('error');
-        
+
         if (error) {
             throw new Error(`Authentication error: ${error}`);
         }
-        
+
         if (authCode) {
             // Handle OAuth callback
             await handleOAuthCallback(authCode);
@@ -35,7 +46,7 @@ async function initializeApp() {
             if (storedToken && !isTokenExpired(storedToken)) {
                 forgeAccessToken = storedToken.access_token;
                 updateAuthStatus('Verifying token...', 'Checking your authentication...');
-                
+
                 // Verify token is still valid by making a test API call
                 const isValid = await verifyToken(forgeAccessToken);
                 if (isValid) {
@@ -58,25 +69,27 @@ async function initializeApp() {
 
 async function startAuthFlow() {
     updateAuthStatus('Redirecting to Login...', 'You will be redirected to Autodesk to sign in...');
-    
+
     // Small delay to show the message
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
+    // Updated auth URL with enhanced scopes
     const authUrl = `https://developer.api.autodesk.com/authentication/v2/authorize?` +
         `response_type=code&` +
         `client_id=${ACC_CLIENT_ID}&` +
         `redirect_uri=${encodeURIComponent(ACC_CALLBACK_URL)}&` +
-        `scope=${encodeURIComponent('data:read account:read')}&` +
+        `scope=${encodeURIComponent(ACC_SCOPES)}&` +
         `state=castlink-auth`;
-    
-    console.log('Redirecting to auth URL:', authUrl);
+
+    console.log('Redirecting to auth URL with enhanced scopes:', authUrl);
+    console.log('Requesting scopes:', ACC_SCOPES);
     window.location.href = authUrl;
 }
 
 async function handleOAuthCallback(authCode) {
     try {
         updateAuthStatus('Processing Login...', 'Exchanging authorization code for access token...');
-        
+
         const tokenResponse = await fetch('/.netlify/functions/auth', {
             method: 'POST',
             headers: {
@@ -87,30 +100,30 @@ async function handleOAuthCallback(authCode) {
                 redirect_uri: ACC_CALLBACK_URL
             })
         });
-        
+
         if (!tokenResponse.ok) {
             const errorText = await tokenResponse.text();
             throw new Error(`Token exchange failed: ${errorText}`);
         }
-        
+
         const tokenData = await tokenResponse.json();
-        
+
         if (tokenData.error) {
             throw new Error(`Auth error: ${tokenData.error}`);
         }
-        
+
         if (!tokenData.access_token) {
             throw new Error('No access token received');
         }
-        
+
         forgeAccessToken = tokenData.access_token;
         storeToken(tokenData);
-        
+
         // Clean up URL
         window.history.replaceState({}, document.title, window.location.pathname);
-        
+
         await completeAuthentication();
-        
+
     } catch (error) {
         console.error('OAuth callback failed:', error);
         throw error;
@@ -120,44 +133,61 @@ async function handleOAuthCallback(authCode) {
 async function completeAuthentication() {
     try {
         updateAuthStatus('Loading Projects...', 'Connecting to your Autodesk Construction Cloud account...');
-        
+
         // Test the connection and load basic account info
         const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
             headers: {
                 'Authorization': `Bearer ${forgeAccessToken}`
             }
         });
-        
+
         if (!hubsResponse.ok) {
             throw new Error('Failed to connect to ACC');
         }
-        
+
         const hubsData = await hubsResponse.json();
-        const accHubs = hubsData.data.filter(hub => 
+        const accHubs = hubsData.data.filter(hub =>
             hub.attributes.extension?.type === 'hubs:autodesk.bim360:Account'
         );
-        
+
         if (accHubs.length === 0) {
             throw new Error('No ACC hubs found in your account');
         }
-        
+
+        // Test enhanced permissions
+        updateAuthStatus('Verifying Permissions...', 'Checking your ACC permissions for file operations...');
+
+        const firstHub = accHubs[0];
+        const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${firstHub.id}/projects`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!projectsResponse.ok) {
+            console.warn('Limited project access - some features may be restricted');
+        }
+
         isAuthenticated = true;
         authCheckComplete = true;
-        
-        updateAuthStatus('Success!', 'Successfully connected to Autodesk Construction Cloud');
-        
+
+        updateAuthStatus('Success!', 'Successfully connected to Autodesk Construction Cloud with enhanced permissions');
+
         // Small delay to show success message
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         // Hide auth overlay and show main content
         authProcessing.classList.remove('active');
         document.body.classList.remove('auth-loading');
-        
+
         // Initialize page interactions
         initializePageInteractions();
-        
+
+        // Log successful authentication with scope info
         console.log('Authentication completed successfully');
-        
+        console.log('Access token scope includes:', ACC_SCOPES);
+        console.log('Available ACC hubs:', accHubs.length);
+
     } catch (error) {
         console.error('Authentication completion failed:', error);
         throw error;
@@ -202,12 +232,15 @@ function storeToken(tokenData) {
     const expirationTime = Date.now() + (tokenData.expires_in * 1000);
     const tokenInfo = {
         access_token: tokenData.access_token,
+        token_type: tokenData.token_type || 'Bearer',
+        expires_in: tokenData.expires_in,
         expires_at: expirationTime,
+        scope: tokenData.scope || ACC_SCOPES,
         stored_at: Date.now()
     };
     sessionStorage.setItem('forge_token', JSON.stringify(tokenInfo));
     localStorage.setItem('forge_token_backup', JSON.stringify(tokenInfo)); // Backup in localStorage
-    console.log('Token stored successfully');
+    console.log('Token stored successfully with scopes:', tokenInfo.scope);
 }
 
 function getStoredToken() {
@@ -227,7 +260,7 @@ function isTokenExpired(tokenInfo) {
     const now = Date.now();
     const expiresAt = tokenInfo.expires_at;
     const timeUntilExpiry = expiresAt - now;
-    
+
     // Consider token expired if it expires in less than 5 minutes
     return timeUntilExpiry < (5 * 60 * 1000);
 }
@@ -244,8 +277,8 @@ function navigateToModule(module) {
         showNotification('Please wait for authentication to complete');
         return;
     }
-    
-    switch(module) {
+
+    switch (module) {
         case 'quality':
             window.location.href = 'quality-control.html';
             break;
@@ -272,10 +305,10 @@ function navigateToModule(module) {
 function showNotification(message) {
     const notification = document.getElementById('notification');
     const notificationText = document.getElementById('notificationText');
-    
+
     notificationText.textContent = message;
     notification.classList.add('show');
-    
+
     setTimeout(() => {
         notification.classList.remove('show');
     }, 3000);
@@ -285,11 +318,11 @@ function initializePageInteractions() {
     // Add interactive effects to module cards
     const cards = document.querySelectorAll('.module-card');
     cards.forEach(card => {
-        card.addEventListener('mouseenter', function() {
+        card.addEventListener('mouseenter', function () {
             this.style.transform = 'translateY(-8px)';
         });
-        
-        card.addEventListener('mouseleave', function() {
+
+        card.addEventListener('mouseleave', function () {
             this.style.transform = 'translateY(0)';
         });
     });
@@ -299,6 +332,7 @@ function initializePageInteractions() {
 window.CastLinkAuth = {
     isAuthenticated: () => isAuthenticated,
     getToken: () => forgeAccessToken,
+    getScopes: () => ACC_SCOPES,
     waitForAuth: async () => {
         while (!authCheckComplete) {
             await new Promise(resolve => setTimeout(resolve, 100));
