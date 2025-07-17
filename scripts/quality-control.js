@@ -72,6 +72,63 @@ function debugLog(message, data = null) {
     }
 }
 
+// FIXED: JWT Token Decoder for proper scope extraction
+function decodeJWTScopes(accessToken) {
+    try {
+        debugLog('=== DECODING JWT FOR SCOPES ===');
+
+        if (!accessToken || typeof accessToken !== 'string') {
+            debugLog('Invalid access token provided');
+            return null;
+        }
+
+        // JWT has three parts separated by dots
+        const parts = accessToken.split('.');
+        if (parts.length !== 3) {
+            debugLog('Invalid JWT format - expected 3 parts, got:', parts.length);
+            return null;
+        }
+
+        // Decode the payload (middle part)
+        const payload = parts[1];
+
+        // Add padding if needed for base64 decoding
+        const paddedPayload = payload + '='.repeat((4 - payload.length % 4) % 4);
+
+        // Decode base64
+        const decodedPayload = atob(paddedPayload);
+        const parsedPayload = JSON.parse(decodedPayload);
+
+        debugLog('Decoded JWT payload:', parsedPayload);
+
+        // Extract scopes - Autodesk JWT stores scopes as an array
+        let scopes = [];
+        if (parsedPayload.scope && Array.isArray(parsedPayload.scope)) {
+            scopes = parsedPayload.scope;
+        } else if (parsedPayload.scope && typeof parsedPayload.scope === 'string') {
+            scopes = parsedPayload.scope.split(' ');
+        }
+
+        const scopeString = scopes.join(' ');
+        debugLog('Extracted scopes from JWT:', scopeString);
+        debugLog('Individual scopes:', scopes);
+
+        return {
+            scopes: scopes,
+            scopeString: scopeString,
+            fullPayload: parsedPayload,
+            userId: parsedPayload.userid || null,
+            clientId: parsedPayload.client_id || null,
+            expiresAt: parsedPayload.exp || null
+        };
+
+    } catch (error) {
+        debugLog('Error decoding JWT:', error);
+        console.error('JWT decode error:', error);
+        return null;
+    }
+}
+
 // Authentication Flow
 async function initializeApp() {
     try {
@@ -124,8 +181,8 @@ async function completeAuthentication() {
     try {
         updateAuthStatus('Loading Projects...', 'Connecting to your Autodesk Construction Cloud account...');
 
-        // Check token scopes before proceeding
-        const scopeValidation = await validateTokenScopes();
+        // FIXED: Check token scopes using JWT decoder first
+        const scopeValidation = await validateTokenScopesWithJWT();
 
         // Load project data
         await loadRealProjectData();
@@ -582,8 +639,8 @@ async function saveBedQCReportToACC(reportData) {
         debugLog('=== STARTING SAVE TO ACC ===');
         debugLog('Save attempt with current permissions for project:', projectId);
 
-        // First, validate current scopes
-        const scopeValidation = await validateTokenScopes();
+        // First, validate current scopes using JWT decoder
+        const scopeValidation = await validateTokenScopesWithJWT();
         debugLog('Current scope validation:', scopeValidation);
 
         debugLog('Current project context:', {
@@ -1884,7 +1941,7 @@ async function loadRealProjectData() {
         console.error('Failed to load project data:', error);
 
         // Get scope validation for error display
-        const scopeValidation = await validateTokenScopes();
+        const scopeValidation = await validateTokenScopesWithJWT();
 
         // Still enable manual entry mode
         const projectSelect = document.getElementById('projectName');
@@ -2205,8 +2262,8 @@ async function updateACCDetailsDisplay(projectCount) {
     const accDetails = document.getElementById('accDetails');
     if (!accDetails) return;
 
-    // Get current scope validation
-    const scopeValidation = await validateTokenScopes();
+    // Get current scope validation using JWT decoder
+    const scopeValidation = await validateTokenScopesWithJWT();
 
     let scopeStatusHtml = '';
     let scopeWarningHtml = '';
@@ -2294,30 +2351,54 @@ function onProjectSelected() {
     }
 }
 
-// Enhanced token scope validation with FIXED scope detection logic
-async function validateTokenScopes() {
-    debugLog('=== VALIDATING TOKEN SCOPES ===');
+// FIXED: Enhanced token scope validation with JWT decoding
+async function validateTokenScopesWithJWT() {
+    debugLog('=== VALIDATING TOKEN SCOPES WITH JWT DECODING ===');
 
     const storedToken = getStoredToken();
+    if (!storedToken?.access_token) {
+        debugLog('No stored token available');
+        return {
+            grantedScopes: '',
+            requestedScopes: ACC_SCOPES.split(' '),
+            hasDataRead: false,
+            hasDataWrite: false,
+            hasDataCreate: false,
+            hasEnhancedScopes: false,
+            missingScopes: ACC_SCOPES.split(' '),
+            scopeIssue: 'NO_TOKEN',
+            recommendation: 'REAUTHENTICATE',
+            scopeDetectionMethod: 'no_token'
+        };
+    }
 
-    // FIXED: Better scope detection logic
-    // The token response might have empty 'scope' field, but scopes are still granted
     let grantedScopes = '';
+    let scopeDetectionMethod = '';
 
-    if (storedToken?.scope && storedToken.scope.trim() !== '') {
+    // FIXED: Use JWT decoder to get actual scopes
+    const jwtData = decodeJWTScopes(storedToken.access_token);
+
+    if (jwtData && jwtData.scopeString) {
+        grantedScopes = jwtData.scopeString;
+        scopeDetectionMethod = 'jwt_decoded';
+        debugLog('✓ Scopes extracted from JWT successfully');
+    } else if (storedToken.scope && storedToken.scope.trim() !== '') {
         grantedScopes = storedToken.scope;
+        scopeDetectionMethod = 'token_response_field';
+        debugLog('✓ Scopes from token response field');
     } else {
-        // Fallback: If stored scope is empty but we have a token, 
-        // assume the requested scopes were granted (common with Autodesk tokens)
+        // Last fallback - assume requested scopes were granted
         grantedScopes = ACC_SCOPES;
-        debugLog('Using fallback scope detection - token response may have empty scope field');
+        scopeDetectionMethod = 'fallback_assumption';
+        debugLog('⚠️ Using fallback scope assumption');
     }
 
     const requestedScopes = ACC_SCOPES.split(' ');
 
-    debugLog('Stored token scopes:', storedToken?.scope || '(empty in token)');
-    debugLog('Effective granted scopes:', grantedScopes);
-    debugLog('Requested scopes:', requestedScopes);
+    debugLog('JWT data:', jwtData);
+    debugLog('Stored token scope field:', storedToken.scope || '(empty)');
+    debugLog('Final granted scopes:', grantedScopes);
+    debugLog('Detection method:', scopeDetectionMethod);
 
     const scopeValidation = {
         grantedScopes: grantedScopes,
@@ -2329,7 +2410,8 @@ async function validateTokenScopes() {
         missingScopes: [],
         scopeIssue: null,
         recommendation: null,
-        scopeDetectionMethod: storedToken?.scope && storedToken.scope.trim() !== '' ? 'from_token' : 'fallback_assumption'
+        scopeDetectionMethod: scopeDetectionMethod,
+        jwtData: jwtData
     };
 
     // Check for missing critical scopes
@@ -2349,7 +2431,7 @@ async function validateTokenScopes() {
         scopeValidation.recommendation = 'SCOPES_OK';
     }
 
-    debugLog('Scope validation result:', scopeValidation);
+    debugLog('✓ Scope validation result with JWT:', scopeValidation);
 
     return scopeValidation;
 }
@@ -2428,7 +2510,8 @@ function showScopeWarning(scopeValidation) {
                     <strong>Technical Details:</strong><br>
                     Client ID: ${ACC_CLIENT_ID}<br>
                     Granted Scopes: ${scopeValidation.grantedScopes || '(none)'}<br>
-                    Missing Scopes: ${scopeValidation.missingScopes.join(', ') || '(none)'}
+                    Missing Scopes: ${scopeValidation.missingScopes.join(', ') || '(none)'}<br>
+                    Detection Method: ${scopeValidation.scopeDetectionMethod}
                 </div>
             </div>
             <div class="modal-actions">
@@ -2510,8 +2593,8 @@ async function saveToACC() {
     try {
         debugLog('=== STARTING SAVE TO ACC PROCESS ===');
 
-        // Validate current scopes before attempting save
-        const scopeValidation = await validateTokenScopes();
+        // Validate current scopes using JWT decoder before attempting save
+        const scopeValidation = await validateTokenScopesWithJWT();
         debugLog('Current scope validation for save:', scopeValidation);
 
         debugLog('Current project context:', {
