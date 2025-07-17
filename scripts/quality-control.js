@@ -72,6 +72,14 @@ function debugLog(message, data = null) {
     }
 }
 
+// Helper to escape HTML special characters
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 // FIXED: JWT Token Decoder for proper scope extraction
 function decodeJWTScopes(accessToken) {
     try {
@@ -378,13 +386,14 @@ function updateAuthStatus(title, message) {
 }
 
 function showAuthError(message) {
-    updateAuthStatus('Authentication Error', message);
+    const safeMessage = escapeHtml(message);
+    updateAuthStatus('Authentication Error', safeMessage);
     if (authProcessing) {
         authProcessing.innerHTML = `
             <div class="auth-processing-content">
                 <div style="color: #dc2626; font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
                 <h3 style="color: #dc2626;">Authentication Error</h3>
-                <p style="color: #6b7280; margin-bottom: 1.5rem;">${message}</p>
+                <p style="color: #6b7280; margin-bottom: 1.5rem;">${safeMessage}</p>
                 <button onclick="window.location.href='index.html'" style="background: #059669; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem; margin-right: 0.5rem;">
                     Go to Main App
                 </button>
