@@ -751,6 +751,29 @@ async function saveBedQCReportToACC(reportData) {
 
             debugLog('Generated filename:', fileName);
 
+            // Double-check token scopes right before upload
+            const runtimeTokenInfo = decodeJWTScopes(forgeAccessToken);
+            const runtimeMissing = ['data:write', 'data:create'].filter(s => !runtimeTokenInfo?.scopes.includes(s));
+
+            if (runtimeMissing.length > 0) {
+                console.warn('Missing required upload scopes:', runtimeMissing.join(', '));
+                showScopeWarning({
+                    scopeIssue: 'MISSING_ENHANCED_SCOPES',
+                    missingScopes: runtimeMissing,
+                    grantedScopes: runtimeTokenInfo?.scopeString || '',
+                    requestedScopes: ACC_SCOPES.split(' '),
+                    hasDataRead: runtimeTokenInfo?.scopes.includes('data:read') || false,
+                    hasDataWrite: runtimeTokenInfo?.scopes.includes('data:write') || false,
+                    hasDataCreate: runtimeTokenInfo?.scopes.includes('data:create') || false,
+                    hasEnhancedScopes: false,
+                    scopeDetectionMethod: 'runtime_jwt_check'
+                });
+
+                debugLog('Skipping ACC upload due to missing scopes');
+                const localSaveResult = await saveToLocalStorageWithScopeInfo(reportContent, scopeValidation);
+                return localSaveResult;
+            }
+
             // Upload the file
             const uploadResult = await uploadJSONToACC(projectId, bedQCFolderId, fileName, reportContent);
 
