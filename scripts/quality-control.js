@@ -2,6 +2,10 @@
 const ACC_CLIENT_ID = 'phUPKRBuqECpJUoBmRuKdKhSP3ZTRALH4LMWKAzAnymnYkQU';
 const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 
+// Metromont specific configuration
+const METROMONT_ACCOUNT_ID = '956c9a49-bc6e-4459-b873-d9ecea0600cb';
+const METROMONT_HUB_ID = `b.${METROMONT_ACCOUNT_ID}`;
+
 // Enhanced scope configuration matching index.js
 const ACC_SCOPES = [
     'data:read',        // View data within ACC
@@ -1445,38 +1449,30 @@ function calculateAll() {
 async function loadRealProjectData() {
     try {
         console.log('Starting to load real project data with enhanced permissions...');
+        console.log('Using Metromont Account ID:', METROMONT_ACCOUNT_ID);
 
-        const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+        // Skip the hub enumeration - go directly to Metromont hub
+        hubId = METROMONT_HUB_ID;
+        console.log('Using Metromont ACC hub directly:', hubId);
+
+        // Verify hub access
+        const hubResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}`, {
             headers: {
                 'Authorization': `Bearer ${forgeAccessToken}`
             }
         });
 
-        if (!hubsResponse.ok) {
-            const errorText = await hubsResponse.text();
-            console.error('Hubs response error:', hubsResponse.status, errorText);
-            throw new Error(`Failed to load hubs: ${hubsResponse.status} ${errorText}`);
+        if (!hubResponse.ok) {
+            const errorText = await hubResponse.text();
+            console.error('Metromont hub access error:', hubResponse.status, errorText);
+            throw new Error(`Failed to access Metromont hub: ${hubResponse.status} ${errorText}`);
         }
 
-        const hubsData = await hubsResponse.json();
-        console.log('Hubs data received:', hubsData);
+        const hubData = await hubResponse.json();
+        console.log('✓ Metromont hub verified:', hubData.data.attributes.name);
 
-        const accHubs = hubsData.data.filter(hub =>
-            hub.attributes.extension?.type === 'hubs:autodesk.bim360:Account'
-        );
-
-        console.log('ACC hubs found:', accHubs.length);
-
-        if (accHubs.length > 0) {
-            const firstAccHub = accHubs[0];
-            hubId = firstAccHub.id;
-            console.log('Using ACC hub:', firstAccHub.attributes.name, hubId);
-
-            await loadProjectsFromHub(hubId);
-        } else {
-            console.warn('No ACC hubs found in response');
-            throw new Error('No ACC hubs found - only Fusion 360 hubs available');
-        }
+        // Load projects from Metromont hub
+        await loadProjectsFromHub(hubId);
 
         console.log('✓ Project data loading completed successfully');
 
@@ -1506,7 +1502,8 @@ async function loadRealProjectData() {
                     <small>You can still use the calculator by entering project details manually</small><br>
                     <small><em>Note: Projects must follow format "12345 - Project Name" to appear in dropdown</em></small><br>
                     <small><em>Reports will be saved locally with enhanced sync capability</em></small><br>
-                    <small><em>Enhanced permissions requested: ${ACC_SCOPES}</em></small>
+                    <small><em>Enhanced permissions requested: ${ACC_SCOPES}</em></small><br>
+                    <small><em>Metromont Account ID: ${METROMONT_ACCOUNT_ID}</em></small>
                 </div>
             `;
         }
@@ -1515,7 +1512,7 @@ async function loadRealProjectData() {
 
 async function loadProjectsFromHub(hubId) {
     try {
-        console.log('Loading projects from ACC hub:', hubId);
+        console.log('Loading projects from Metromont ACC hub:', hubId);
 
         const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
             headers: {
@@ -1524,76 +1521,165 @@ async function loadProjectsFromHub(hubId) {
         });
 
         if (!projectsResponse.ok) {
-            throw new Error('Failed to load projects');
+            throw new Error(`Failed to load projects: ${projectsResponse.status} ${await projectsResponse.text()}`);
         }
 
         const projectsData = await projectsResponse.json();
         console.log('ACC projects data received:', projectsData);
 
-        // Process projects with rate limiting to avoid 429 errors
+        // ADVANCED FILTERING: Only active ACC projects with proper naming format
+        const validProjects = [];
+        const projectNamePattern = /^(\d{5})\s*-\s*(.+)$/;
+
+        for (const project of projectsData.data) {
+            // Filter 1: Check project name format
+            const nameMatch = project.attributes.name.match(projectNamePattern);
+            if (!nameMatch) {
+                console.log('Skipping project (invalid format):', project.attributes.name);
+                continue;
+            }
+
+            // Filter 2: Only active ACC projects (filter out archived and BIM360)
+            const projectType = project.attributes.extension?.type || '';
+            const projectStatus = project.attributes.status || '';
+
+            // Skip archived projects
+            if (projectStatus === 'archived' || projectStatus === 'inactive') {
+                console.log('Skipping archived project:', project.attributes.name);
+                continue;
+            }
+
+            // Skip BIM360 projects - only keep ACC projects
+            if (projectType.includes('bim360') && !projectType.includes('acc')) {
+                console.log('Skipping BIM360 project:', project.attributes.name);
+                continue;
+            }
+
+            // Filter 3: Additional quality checks
+            const projectName = project.attributes.name;
+
+            // Skip test/template projects
+            if (projectName.toLowerCase().includes('test') ||
+                projectName.toLowerCase().includes('template') ||
+                projectName.toLowerCase().includes('training') ||
+                projectName.toLowerCase().includes('mockup') ||
+                projectName.toLowerCase().includes('legacy') ||
+                projectName.startsWith('zz') ||
+                projectName.startsWith('ZZ') ||
+                projectName.startsWith('TBD') ||
+                projectName.includes('R&D') ||
+                projectName.includes('R & D')) {
+                console.log('Skipping test/template project:', project.attributes.name);
+                continue;
+            }
+
+            // This project passed all filters
+            validProjects.push({
+                project: project,
+                projectNumberFromName: nameMatch[1],
+                projectDisplayName: nameMatch[2].trim()
+            });
+        }
+
+        console.log(`✓ Filtered ${validProjects.length} valid ACC projects from ${projectsData.data.length} total projects`);
+
+        if (validProjects.length === 0) {
+            console.warn('No active ACC projects matched the required format "12345 - Project Name"');
+            throw new Error('No active ACC projects found matching required format "12345 - Project Name"');
+        }
+
+        // OPTIMIZED PROCESSING: Process valid projects with strict rate limiting
         const projects = [];
-        const maxConcurrentRequests = 3; // Limit concurrent requests
+        const maxConcurrentRequests = 1; // Only 1 request at a time
+        const delayBetweenRequests = 300; // 300ms delay between each request
+        const maxRetries = 3;
 
-        for (let i = 0; i < projectsData.data.length; i += maxConcurrentRequests) {
-            const batch = projectsData.data.slice(i, i + maxConcurrentRequests);
+        console.log('Console log - Processing', validProjects.length, 'valid ACC projects'); // Your debugging statement
 
-            const batchPromises = batch.map(async (project) => {
-                console.log('Processing ACC project:', project.attributes.name);
+        for (let i = 0; i < validProjects.length; i += maxConcurrentRequests) {
+            const batch = validProjects.slice(i, i + maxConcurrentRequests);
 
-                // First, check if project name matches the required format: "12345 - Project name"
-                const projectNamePattern = /^(\d{5})\s*-\s*(.+)$/;
-                const nameMatch = project.attributes.name.match(projectNamePattern);
+            const batchPromises = batch.map(async (validProject) => {
+                const { project, projectNumberFromName, projectDisplayName } = validProject;
 
-                if (!nameMatch) {
-                    console.log('Skipping project (does not match format):', project.attributes.name);
-                    return null;
-                }
-
-                const projectNumberFromName = nameMatch[1];
-                const projectDisplayName = nameMatch[2];
+                console.log(`Processing ACC project [${i + 1}/${validProjects.length}]:`, project.attributes.name);
 
                 let projectNumber = projectNumberFromName;
                 let location = '';
 
-                // Add delay to prevent rate limiting
-                await new Promise(resolve => setTimeout(resolve, 50));
+                // Try to get detailed project info with retry logic
+                let retryCount = 0;
+                let success = false;
 
-                try {
-                    const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
-                        headers: {
-                            'Authorization': `Bearer ${forgeAccessToken}`
-                        }
-                    });
+                while (!success && retryCount < maxRetries) {
+                    try {
+                        // Add exponential backoff delay
+                        const delay = delayBetweenRequests * Math.pow(1.5, retryCount);
+                        await new Promise(resolve => setTimeout(resolve, delay));
 
-                    if (projectDetailResponse.ok) {
-                        const projectDetail = await projectDetailResponse.json();
-
-                        if (projectDetail.data?.attributes?.extension?.data) {
-                            const extData = projectDetail.data.attributes.extension.data;
-
-                            const accProjectNumber = extData.projectNumber ||
-                                extData.project_number ||
-                                extData.number ||
-                                extData.jobNumber ||
-                                extData.job_number ||
-                                extData.projectCode ||
-                                extData.code || '';
-
-                            if (accProjectNumber && accProjectNumber.trim() !== '') {
-                                projectNumber = accProjectNumber;
+                        const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
+                            headers: {
+                                'Authorization': `Bearer ${forgeAccessToken}`
                             }
+                        });
 
-                            location = extData.location ||
-                                extData.project_location ||
-                                extData.address ||
-                                extData.city ||
-                                extData.state ||
-                                extData.jobLocation ||
-                                extData.site || '';
+                        if (projectDetailResponse.ok) {
+                            const projectDetail = await projectDetailResponse.json();
+
+                            if (projectDetail.data?.attributes?.extension?.data) {
+                                const extData = projectDetail.data.attributes.extension.data;
+
+                                // Extract project number from various possible fields
+                                const accProjectNumber = extData.projectNumber ||
+                                    extData.project_number ||
+                                    extData.number ||
+                                    extData.jobNumber ||
+                                    extData.job_number ||
+                                    extData.projectCode ||
+                                    extData.code || '';
+
+                                if (accProjectNumber && accProjectNumber.trim() !== '') {
+                                    projectNumber = accProjectNumber.trim();
+                                }
+
+                                // Extract location from various possible fields
+                                location = extData.location ||
+                                    extData.project_location ||
+                                    extData.address ||
+                                    extData.city ||
+                                    extData.state ||
+                                    extData.jobLocation ||
+                                    extData.site ||
+                                    extData.client_location ||
+                                    extData.job_site || '';
+
+                                if (location) {
+                                    location = location.trim();
+                                }
+                            }
+                            success = true;
+                        } else if (projectDetailResponse.status === 429) {
+                            console.warn(`Rate limit hit for project ${project.attributes.name}, retrying... (${retryCount + 1}/${maxRetries})`);
+                            retryCount++;
+
+                            // If we've hit rate limit, wait much longer before retrying
+                            if (retryCount < maxRetries) {
+                                const waitTime = 3000 * retryCount; // Wait 3, 6, 9 seconds
+                                console.log(`Waiting ${waitTime}ms before retry...`);
+                                await new Promise(resolve => setTimeout(resolve, waitTime));
+                            }
+                        } else {
+                            console.warn(`Failed to get project details for ${project.attributes.name}: ${projectDetailResponse.status}`);
+                            success = true; // Don't retry for non-rate-limit errors
+                        }
+                    } catch (detailError) {
+                        console.warn('Could not get detailed project info for', project.attributes.name, ':', detailError);
+                        retryCount++;
+
+                        if (retryCount < maxRetries) {
+                            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
                         }
                     }
-                } catch (detailError) {
-                    console.warn('Could not get detailed project info for', project.attributes.name, ':', detailError);
                 }
 
                 return {
@@ -1604,28 +1690,31 @@ async function loadProjectsFromHub(hubId) {
                     numericSort: parseInt(projectNumberFromName, 10),
                     location: location || 'Location not specified',
                     fullData: project,
-                    permissions: 'enhanced'
+                    permissions: 'enhanced',
+                    projectType: 'ACC',
+                    status: project.attributes.status || 'active'
                 };
             });
 
             const batchResults = await Promise.all(batchPromises);
             projects.push(...batchResults.filter(project => project !== null));
 
-            // Add delay between batches
-            if (i + maxConcurrentRequests < projectsData.data.length) {
-                await new Promise(resolve => setTimeout(resolve, 100));
+            // Add longer delay between batches to prevent rate limiting
+            if (i + maxConcurrentRequests < validProjects.length) {
+                const remaining = validProjects.length - (i + maxConcurrentRequests);
+                console.log(`✓ Processed ${i + maxConcurrentRequests} of ${validProjects.length} projects, ${remaining} remaining...`);
+                await new Promise(resolve => setTimeout(resolve, 800)); // 800ms between batches
             }
         }
 
-        if (projects.length === 0) {
-            console.warn('No projects matched the required format "12345 - Project Name"');
-            throw new Error('No projects found matching required format "12345 - Project Name"');
-        }
+        console.log(`✓ Successfully processed ${projects.length} Metromont ACC projects`);
 
+        // Sort projects by project number
         const sortedProjects = projects.sort((a, b) => a.numericSort - b.numericSort);
 
         populateProjectDropdown(sortedProjects);
 
+        // Auto-select first project if available
         if (sortedProjects.length > 0) {
             setTimeout(() => {
                 const projectSelect = document.getElementById('projectName');
@@ -1670,11 +1759,13 @@ function populateProjectDropdown(projects) {
         const accDetails = document.getElementById('accDetails');
         if (accDetails) {
             accDetails.innerHTML = `
-                <strong>Status:</strong> Connected to ACC with enhanced permissions<br>
-                <strong>Projects Found:</strong> ${projects.length} ACC projects (filtered by format)<br>
+                <strong>Status:</strong> Connected to Metromont ACC with enhanced permissions<br>
+                <strong>Account:</strong> ${METROMONT_ACCOUNT_ID}<br>
+                <strong>Projects Found:</strong> ${projects.length} active ACC projects (filtered by format)<br>
                 <strong>Hub:</strong> Metromont ACC Account<br>
                 <strong>Storage:</strong> JSON file upload to ACC with enhanced local fallback<br>
-                <strong>Permissions:</strong> ${ACC_SCOPES}
+                <strong>Permissions:</strong> ${ACC_SCOPES}<br>
+                <strong>Project Types:</strong> Active ACC projects only (archived and BIM360 filtered out)
             `;
         }
 
