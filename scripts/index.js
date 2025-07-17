@@ -1,5 +1,5 @@
 // ACC Authentication Configuration
-const ACC_CLIENT_ID = 'phUPKRBuqECpJUoBmRuKdKhSP3ZTRALH4LMWKAzAnymnYkQU';
+const ACC_CLIENT_ID = window.ACC_CLIENT_ID;
 const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 
 // Enhanced scope configuration for full ACC integration
