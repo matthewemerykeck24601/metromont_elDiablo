@@ -40,9 +40,7 @@
             };
         }
 
-        console.log('Exchanging code for token with enhanced scopes...');
-        console.log('Client ID:', process.env.ACC_CLIENT_ID);
-        console.log('Redirect URI:', redirect_uri);
+        console.log('Exchanging code for token...');
 
         // Enhanced scopes that match the frontend
         const enhancedScopes = [
@@ -55,7 +53,6 @@
             'viewables:read'
         ].join(' ');
 
-        console.log('Enhanced scopes requested:', enhancedScopes);
 
         const tokenRequestBody = new URLSearchParams({
             grant_type: 'authorization_code',
@@ -65,7 +62,6 @@
             client_secret: process.env.ACC_CLIENT_SECRET
         });
 
-        console.log('Token request body:', tokenRequestBody.toString());
 
         const response = await fetch('https://developer.api.autodesk.com/authentication/v2/token', {
             method: 'POST',
@@ -78,7 +74,6 @@
 
         const responseText = await response.text();
         console.log('Autodesk response status:', response.status);
-        console.log('Autodesk response:', responseText);
 
         let data;
         try {
@@ -100,18 +95,12 @@
         // Log successful token exchange with scope information
         if (response.ok && data.access_token) {
             console.log('✓ Token exchange successful');
-            console.log('Token type:', data.token_type);
-            console.log('Expires in:', data.expires_in, 'seconds');
-            console.log('Scope granted:', data.scope || 'not specified');
 
             // Verify the granted scopes include the enhanced permissions
             const grantedScopes = data.scope || '';
             const hasDataWrite = grantedScopes.includes('data:write');
             const hasDataCreate = grantedScopes.includes('data:create');
 
-            console.log('Enhanced permissions granted:');
-            console.log('- data:write:', hasDataWrite);
-            console.log('- data:create:', hasDataCreate);
 
             // Add scope information to the response
             data.scope_analysis = {
