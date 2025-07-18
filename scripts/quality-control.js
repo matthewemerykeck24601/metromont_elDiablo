@@ -17,9 +17,13 @@ const ACC_SCOPES = [
     'viewables:read'    // View viewable data (for future file previews)
 ].join(' ');
 
-// ACC Data Management API Configuration
-const ACC_DATA_API_BASE = 'https://developer.api.autodesk.com/data/v1';
+// OSS API Configuration (replacing Document Management)
+const OSS_API_BASE = 'https://developer.api.autodesk.com/oss/v2';
 const ACC_PROJECT_API_BASE = 'https://developer.api.autodesk.com/project/v1';
+
+// OSS Bucket Configuration
+const OSS_BUCKET_PREFIX = 'metromont-castlink';
+const OSS_REGION = 'US'; // Can be US, EMEA, or APAC
 
 // ACC/Forge Integration Variables
 let forgeAccessToken = null;
@@ -29,9 +33,7 @@ let userProfile = null;
 let isACCConnected = false;
 let currentCalculation = null;
 let userProjects = [];
-let currentProjectBucketKey = null;
-let bedQCFolderId = null;
-let projectTopFolderId = null;
+let currentOSSBucketKey = null; // Replaces currentProjectBucketKey
 let projectMembers = []; // Store project team members
 
 // Form Instance Management
@@ -195,54 +197,22 @@ async function completeAuthentication() {
         // Load project data
         await loadRealProjectData();
 
-        // Test enhanced permissions for file operations
-        updateAuthStatus('Verifying Permissions...', 'Testing ACC file operation permissions...');
+        // Test OSS permissions instead of folder permissions
+        updateAuthStatus('Verifying OSS Permissions...', 'Testing OSS bucket access for report storage...');
 
-        // Test data write permissions by attempting to get a project's folders
+        // Test OSS permissions
         if (projectId) {
-            debugLog('Testing folder access for project:', projectId);
+            debugLog('Testing OSS access for project:', projectId);
 
             try {
-                const testResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders`, {
-                    headers: {
-                        'Authorization': `Bearer ${forgeAccessToken}`
-                    }
-                });
-
-                debugLog('Folder access test response:', {
-                    status: testResponse.status,
-                    statusText: testResponse.statusText,
-                    url: testResponse.url
-                });
-
-                if (testResponse.ok) {
-                    const folderData = await testResponse.json();
-                    debugLog('✓ ACC folder access confirmed, folders found:', folderData.data?.length || 0);
-                    scopeValidation.folderAccess = true;
-                } else {
-                    const errorText = await testResponse.text();
-                    debugLog('⚠ Limited ACC folder access - some features may be restricted');
-                    debugLog('Status:', testResponse.status, 'Response:', errorText);
-                    scopeValidation.folderAccess = false;
-                    scopeValidation.folderError = {
-                        status: testResponse.status,
-                        response: errorText
-                    };
-
-                    // Check if this is a 404 vs 403
-                    if (testResponse.status === 404) {
-                        debugLog('404 Error suggests wrong endpoint or project structure');
-                        debugLog('Trying alternative folder structure...');
-
-                        // Try alternative approach - get project details first
-                        const altResult = await tryAlternativeFolderAccess(projectId);
-                        scopeValidation.alternativeAccess = altResult;
-                    }
-                }
-            } catch (error) {
-                debugLog('⚠ Could not test folder access:', error);
-                scopeValidation.folderAccess = false;
-                scopeValidation.folderError = { error: error.message };
+                const ossTestResult = await testOSSAccess();
+                debugLog('OSS access test result:', ossTestResult);
+                scopeValidation.ossAccess = ossTestResult.success;
+                scopeValidation.ossBucketKey = ossTestResult.bucketKey;
+            } catch (ossError) {
+                debugLog('⚠ OSS access test failed:', ossError);
+                scopeValidation.ossAccess = false;
+                scopeValidation.ossError = ossError.message;
             }
         }
 
@@ -251,9 +221,9 @@ async function completeAuthentication() {
 
         // Show appropriate status based on scope validation
         if (scopeValidation.hasEnhancedScopes) {
-            updateAuthStatus('Success!', 'Successfully connected to ACC with enhanced permissions');
+            updateAuthStatus('Success!', 'Successfully connected to ACC with OSS storage capability');
         } else {
-            updateAuthStatus('Connected with Limited Permissions', 'Connected to ACC but missing enhanced scopes for file operations');
+            updateAuthStatus('Connected with Limited Permissions', 'Connected to ACC but missing enhanced scopes for OSS operations');
         }
 
         // Small delay to show success message
@@ -280,16 +250,16 @@ async function completeAuthentication() {
             }
         }
 
-        // Enable ACC features (with limitations if scopes are missing)
-        enableACCFeatures(scopeValidation);
+        // Enable OSS features (with limitations if scopes are missing)
+        enableOSSFeatures(scopeValidation);
 
         // Initialize dropdowns
         initializeDropdowns();
 
-        // Initialize report history
+        // Initialize report history with OSS
         await initializeReportHistory();
 
-        debugLog('Authentication completed with scope validation:', scopeValidation);
+        debugLog('Authentication completed with OSS scope validation:', scopeValidation);
 
         // Show scope warning if needed
         if (!scopeValidation.hasEnhancedScopes) {
@@ -299,70 +269,6 @@ async function completeAuthentication() {
     } catch (error) {
         console.error('Authentication completion failed:', error);
         showAuthError('Failed to load project data: ' + error.message);
-    }
-}
-
-// Try alternative folder access method
-async function tryAlternativeFolderAccess(projectId) {
-    try {
-        debugLog('Trying alternative folder access methods...');
-
-        // Method 1: Try to get project hub and traverse from there
-        const projectDetailResponse = await fetch(`${ACC_PROJECT_API_BASE}/hubs/${hubId}/projects/${projectId}`, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        if (projectDetailResponse.ok) {
-            const projectDetail = await projectDetailResponse.json();
-            debugLog('Project detail response:', projectDetail);
-
-            // Check if project has rootFolder link
-            if (projectDetail.data?.relationships?.rootFolder?.data?.id) {
-                const rootFolderId = projectDetail.data.relationships.rootFolder.data.id;
-                debugLog('Found root folder ID:', rootFolderId);
-
-                // Try to access the root folder
-                const rootFolderResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders/${rootFolderId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${forgeAccessToken}`
-                    }
-                });
-
-                if (rootFolderResponse.ok) {
-                    const rootFolderData = await rootFolderResponse.json();
-                    debugLog('✓ Root folder accessible:', rootFolderData);
-                    projectTopFolderId = rootFolderId;
-                    return true;
-                }
-            }
-        }
-
-        // Method 2: Try to get top folders using alternative endpoint
-        const topFoldersResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/topFolders`, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        if (topFoldersResponse.ok) {
-            const topFoldersData = await topFoldersResponse.json();
-            debugLog('✓ Top folders accessible:', topFoldersData);
-
-            if (topFoldersData.data && topFoldersData.data.length > 0) {
-                projectTopFolderId = topFoldersData.data[0].id;
-                debugLog('Set project top folder ID:', projectTopFolderId);
-                return true;
-            }
-        }
-
-        debugLog('Alternative folder access methods failed');
-        return false;
-
-    } catch (error) {
-        debugLog('Error in alternative folder access:', error);
-        return false;
     }
 }
 
@@ -435,7 +341,737 @@ function clearStoredToken() {
 }
 
 // =================================================================
-// DROPDOWN INITIALIZATION
+// OSS (Object Storage Service) INTEGRATION - REPLACING DOCUMENT MANAGEMENT
+// =================================================================
+
+// Test OSS access and create bucket if needed
+async function testOSSAccess() {
+    try {
+        debugLog('=== TESTING OSS ACCESS ===');
+
+        if (!projectId) {
+            throw new Error('No project ID available for OSS bucket creation');
+        }
+
+        // Generate bucket key for this project
+        const bucketKey = generateOSSBucketKey(projectId);
+        debugLog('Generated OSS bucket key:', bucketKey);
+
+        // Check if bucket exists or create it
+        const bucketResult = await ensureOSSBucket(bucketKey);
+        
+        if (bucketResult.success) {
+            currentOSSBucketKey = bucketKey;
+            debugLog('✓ OSS bucket ready:', bucketKey);
+            
+            return {
+                success: true,
+                bucketKey: bucketKey,
+                created: bucketResult.created,
+                message: bucketResult.created ? 'OSS bucket created successfully' : 'OSS bucket already exists'
+            };
+        } else {
+            throw new Error(bucketResult.error || 'Failed to ensure OSS bucket');
+        }
+
+    } catch (error) {
+        debugLog('OSS access test failed:', error);
+        return {
+            success: false,
+            error: error.message,
+            bucketKey: null
+        };
+    }
+}
+
+// Generate OSS bucket key for project
+function generateOSSBucketKey(projectId) {
+    // OSS bucket names must be globally unique and follow specific naming rules
+    // Format: metromont-castlink-{projectid-hash}-{timestamp-short}
+    const projectHash = btoa(projectId).replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substr(0, 8);
+    const timestamp = Date.now().toString().substr(-6); // Last 6 digits for uniqueness
+    
+    return `${OSS_BUCKET_PREFIX}-${projectHash}-${timestamp}`.toLowerCase();
+}
+
+// Ensure OSS bucket exists (create if doesn't exist)
+async function ensureOSSBucket(bucketKey) {
+    try {
+        debugLog('=== ENSURING OSS BUCKET ===');
+        debugLog('Bucket key:', bucketKey);
+
+        // First, try to get bucket details to see if it exists
+        debugLog('Step 1: Checking if bucket exists...');
+        
+        const checkResponse = await fetch(`${OSS_API_BASE}/buckets/${bucketKey}/details`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (checkResponse.ok) {
+            debugLog('✓ OSS bucket already exists:', bucketKey);
+            return {
+                success: true,
+                created: false,
+                bucketKey: bucketKey
+            };
+        } else if (checkResponse.status === 404) {
+            // Bucket doesn't exist, create it
+            debugLog('Step 2: Bucket not found, creating new bucket...');
+            return await createOSSBucket(bucketKey);
+        } else {
+            const errorText = await checkResponse.text();
+            debugLog('Error checking bucket:', errorText);
+            throw new Error(`Failed to check bucket: ${checkResponse.status} - ${errorText}`);
+        }
+
+    } catch (error) {
+        debugLog('Error ensuring OSS bucket:', error);
+        throw error;
+    }
+}
+
+// Create new OSS bucket
+async function createOSSBucket(bucketKey) {
+    try {
+        debugLog('=== CREATING OSS BUCKET ===');
+        debugLog('Creating bucket:', bucketKey);
+
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const createPayload = {
+            bucketKey: bucketKey,
+            policyKey: 'temporary', // temporary, transient, or persistent
+            allow: [
+                {
+                    authId: forgeAccessToken, // Use the current token for access
+                    access: 'full'
+                }
+            ]
+        };
+
+        debugLog('Create bucket payload:', createPayload);
+
+        const createResponse = await fetch(`${OSS_API_BASE}/buckets`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(createPayload)
+        });
+
+        debugLog('Create bucket response status:', createResponse.status);
+
+        if (createResponse.ok) {
+            const bucketData = await createResponse.json();
+            debugLog('✓ OSS bucket created successfully:', bucketData);
+            
+            return {
+                success: true,
+                created: true,
+                bucketKey: bucketKey,
+                bucketData: bucketData
+            };
+        } else {
+            const errorText = await createResponse.text();
+            debugLog('Failed to create bucket:', errorText);
+            
+            // Try to parse error details
+            try {
+                const errorData = JSON.parse(errorText);
+                debugLog('Parsed bucket creation error:', errorData);
+                
+                if (errorData.reason === 'Bucket already exists') {
+                    // Bucket exists but we couldn't access it in the check - assume it's usable
+                    debugLog('Bucket already exists, treating as success');
+                    return {
+                        success: true,
+                        created: false,
+                        bucketKey: bucketKey
+                    };
+                }
+            } catch (parseError) {
+                debugLog('Could not parse bucket error response');
+            }
+
+            throw new Error(`Failed to create OSS bucket: ${createResponse.status} - ${errorText}`);
+        }
+
+    } catch (error) {
+        debugLog('Error creating OSS bucket:', error);
+        throw error;
+    }
+}
+
+// Enhanced Bed QC Report saving with OSS instead of Document Management
+async function saveBedQCReportToOSS(reportData) {
+    try {
+        debugLog('=== STARTING SAVE TO OSS ===');
+        debugLog('Save attempt with OSS storage for project:', projectId);
+
+        // First, validate current scopes using JWT decoder
+        const scopeValidation = await validateTokenScopesWithJWT();
+        debugLog('Current scope validation:', scopeValidation);
+
+        debugLog('Current OSS context:', {
+            projectId: projectId,
+            hubId: hubId,
+            currentOSSBucketKey: currentOSSBucketKey,
+            hasEnhancedScopes: scopeValidation.hasEnhancedScopes
+        });
+
+        debugLog('Report Data Summary:', {
+            reportId: reportData.reportId,
+            bedName: reportData.bedName,
+            projectName: reportData.projectMetadata?.projectName,
+            timestamp: reportData.timestamp
+        });
+
+        // Create the report content for OSS storage
+        const reportContent = {
+            type: 'bedqc-report',
+            version: '1.3',
+            timestamp: new Date().toISOString(),
+            application: 'MetromontCastLink',
+            module: 'QualityControl',
+            schema: 'BedQCReport-v1.3',
+            storageMethod: 'oss',
+            metadata: {
+                saveAttempt: new Date().toISOString(),
+                ossContext: {
+                    projectId: projectId,
+                    hubId: hubId,
+                    bucketKey: currentOSSBucketKey
+                },
+                scopeValidation: scopeValidation,
+                debugInfo: {
+                    tokenScopes: scopeValidation.grantedScopes,
+                    requestedScopes: ACC_SCOPES,
+                    apiEndpoints: {
+                        ossAPI: OSS_API_BASE,
+                        projectAPI: ACC_PROJECT_API_BASE
+                    }
+                }
+            },
+            reportData: {
+                ...reportData,
+                savedToOSS: scopeValidation.hasEnhancedScopes,
+                ossProjectId: projectId,
+                ossBucketKey: currentOSSBucketKey,
+                permissions: {
+                    scopesUsed: scopeValidation.grantedScopes,
+                    dataWriteEnabled: scopeValidation.hasDataWrite,
+                    dataCreateEnabled: scopeValidation.hasDataCreate,
+                    enhancedPermissions: scopeValidation.hasEnhancedScopes
+                }
+            }
+        };
+
+        debugLog('Prepared report content for OSS save');
+
+        // Check if we have enhanced scopes before attempting OSS upload
+        if (!scopeValidation.hasEnhancedScopes) {
+            debugLog('=== INSUFFICIENT SCOPES - SAVING LOCALLY ===');
+            debugLog('Missing scopes:', scopeValidation.missingScopes);
+            debugLog('Scope issue:', scopeValidation.scopeIssue);
+
+            const localSaveResult = await saveToLocalStorageWithScopeInfo(reportContent, scopeValidation);
+            return localSaveResult;
+        }
+
+        // Try OSS upload (only if we have enhanced scopes)
+        try {
+            debugLog('=== OSS UPLOAD METHOD ===');
+            debugLog('Enhanced scopes confirmed, attempting OSS upload...');
+
+            // Step 1: Ensure OSS bucket exists
+            debugLog('Step 1: Ensuring OSS bucket...');
+
+            if (!currentOSSBucketKey) {
+                debugLog('No OSS bucket key, creating bucket...');
+                const ossTest = await testOSSAccess();
+                if (!ossTest.success) {
+                    throw new Error(`Cannot access OSS storage: ${ossTest.error}`);
+                }
+            }
+
+            debugLog('OSS bucket confirmed:', currentOSSBucketKey);
+
+            // Step 2: Generate object key and upload
+            debugLog('Step 2: Uploading object to OSS...');
+
+            const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            const objectKey = `${projectId}/${timestamp}-${reportData.bedName}-${reportData.reportId}.json`;
+
+            debugLog('Generated object key:', objectKey);
+
+            // Upload the object to OSS
+            const uploadResult = await uploadJSONToOSS(currentOSSBucketKey, objectKey, reportContent);
+
+            debugLog('✓ Successfully uploaded report to OSS:', uploadResult);
+
+            return {
+                success: true,
+                objectKey: objectKey,
+                bucketKey: currentOSSBucketKey,
+                reportId: reportData.reportId,
+                method: 'oss-upload',
+                permissions: 'enhanced',
+                scopeValidation: scopeValidation,
+                debugInfo: {
+                    projectId: projectId,
+                    hubId: hubId,
+                    bucketKey: currentOSSBucketKey,
+                    objectKey: objectKey
+                }
+            };
+
+        } catch (ossError) {
+            debugLog('=== OSS UPLOAD FAILED ===');
+            debugLog('OSS upload error:', ossError.message);
+            debugLog('Error details:', ossError);
+
+            // Enhanced error analysis for OSS
+            let errorAnalysis = 'OSS upload failed despite having enhanced scopes. ';
+            let troubleshootingSteps = [];
+
+            if (ossError.message.includes('403')) {
+                errorAnalysis += 'Access forbidden (403 error). OSS permissions may need configuration.';
+                troubleshootingSteps = [
+                    'Verify Custom Integration has OSS access permissions',
+                    'Check if bucket creation permissions are enabled',
+                    'Confirm user has data:write and data:create scopes',
+                    'Try refreshing OAuth token by logging out and back in'
+                ];
+            } else if (ossError.message.includes('404')) {
+                errorAnalysis += 'OSS resource not found (404 error). Bucket may not exist or be accessible.';
+                troubleshootingSteps = [
+                    'Verify OSS API endpoints are correct',
+                    'Check if project has OSS storage enabled',
+                    'Confirm bucket key format is valid',
+                    'Try recreating the OSS bucket'
+                ];
+            } else if (ossError.message.includes('429')) {
+                errorAnalysis += 'Rate limit exceeded (429 error). Too many API requests made too quickly.';
+                troubleshootingSteps = [
+                    'Wait before retrying (rate limits usually reset after 60 seconds)',
+                    'Implement request throttling in production',
+                    'Consider using batch operations for multiple saves'
+                ];
+            } else {
+                errorAnalysis += `Technical error: ${ossError.message}`;
+                troubleshootingSteps = [
+                    'Check network connectivity',
+                    'Verify OSS API endpoints are accessible',
+                    'Check if Autodesk services are operational',
+                    'Review browser console for additional errors'
+                ];
+            }
+
+            debugLog('Error analysis:', errorAnalysis);
+            debugLog('Troubleshooting steps:', troubleshootingSteps);
+
+            // Fallback to local storage even with enhanced scopes
+            debugLog('=== FALLBACK: ENHANCED LOCAL STORAGE ===');
+            const localSaveResult = await saveToLocalStorageWithScopeInfo(reportContent, scopeValidation, {
+                uploadError: ossError.message,
+                errorAnalysis: errorAnalysis,
+                troubleshootingSteps: troubleshootingSteps
+            });
+
+            return localSaveResult;
+        }
+
+    } catch (error) {
+        debugLog('=== ALL SAVE METHODS FAILED ===');
+        debugLog('Complete failure:', error);
+        console.error('All save methods failed:', error);
+        throw new Error(`Failed to save report: ${error.message}`);
+    }
+}
+
+// Upload JSON content to OSS
+async function uploadJSONToOSS(bucketKey, objectKey, jsonData) {
+    try {
+        debugLog('=== UPLOADING JSON TO OSS ===');
+        debugLog('Bucket Key:', bucketKey);
+        debugLog('Object Key:', objectKey);
+
+        if (!bucketKey) {
+            throw new Error('No bucket key available for OSS upload');
+        }
+
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Prepare JSON content
+        const jsonContent = JSON.stringify(jsonData, null, 2);
+        debugLog('JSON content size:', jsonContent.length, 'characters');
+
+        // Upload object to OSS
+        debugLog('Uploading object to OSS...');
+
+        const uploadResponse = await fetch(`${OSS_API_BASE}/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/json',
+                'Content-Length': jsonContent.length.toString()
+            },
+            body: jsonContent
+        });
+
+        debugLog('OSS upload response status:', uploadResponse.status);
+
+        if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            debugLog('OSS upload failed:', errorText);
+            throw new Error(`Failed to upload to OSS: ${uploadResponse.status} - ${errorText}`);
+        }
+
+        const uploadData = await uploadResponse.json();
+        debugLog('✓ Object uploaded successfully to OSS:', uploadData);
+
+        return {
+            success: true,
+            objectKey: objectKey,
+            bucketKey: bucketKey,
+            size: jsonContent.length,
+            method: 'oss-upload',
+            uploadData: uploadData
+        };
+
+    } catch (error) {
+        debugLog('Error uploading to OSS:', error);
+        console.error('Error uploading to OSS:', error);
+        throw error;
+    }
+}
+
+// Load reports from OSS instead of Document Management
+async function loadBedQCReportsFromOSS(projectId) {
+    try {
+        debugLog('=== LOADING REPORTS FROM OSS ===');
+        debugLog('Project ID:', projectId);
+
+        const reports = [];
+
+        // Method 1: Try to load from OSS if bucket exists
+        try {
+            if (!currentOSSBucketKey) {
+                const ossTest = await testOSSAccess();
+                if (!ossTest.success) {
+                    debugLog('OSS not available, using local storage only');
+                } else {
+                    debugLog('OSS bucket established:', currentOSSBucketKey);
+                }
+            }
+
+            if (currentOSSBucketKey) {
+                debugLog('Loading from OSS bucket:', currentOSSBucketKey);
+
+                // Add delay to prevent rate limiting
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // List objects in the OSS bucket
+                const listResponse = await fetch(`${OSS_API_BASE}/buckets/${currentOSSBucketKey}/details`, {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+
+                if (listResponse.ok) {
+                    const bucketData = await listResponse.json();
+                    debugLog('✓ Found OSS bucket with objects:', bucketData);
+
+                    // If bucket has objects, fetch the object list
+                    if (bucketData.size > 0) {
+                        const objectsResponse = await fetch(`${OSS_API_BASE}/buckets/${currentOSSBucketKey}/objects`, {
+                            headers: {
+                                'Authorization': `Bearer ${forgeAccessToken}`
+                            }
+                        });
+
+                        if (objectsResponse.ok) {
+                            const objectsData = await objectsResponse.json();
+                            debugLog('✓ Found objects in OSS bucket:', objectsData.items?.length || 0);
+
+                            for (const item of objectsData.items || []) {
+                                if (item.objectKey.endsWith('.json') && item.objectKey.includes(projectId)) {
+                                    reports.push({
+                                        objectKey: item.objectKey,
+                                        bucketKey: currentOSSBucketKey,
+                                        size: item.size,
+                                        lastModified: item.dateModified,
+                                        displayName: item.objectKey.split('/').pop().replace('.json', ''),
+                                        source: 'oss-object',
+                                        needsDownload: true,
+                                        permissions: 'enhanced'
+                                    });
+
+                                    debugLog('Added OSS report:', item.objectKey);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    const errorText = await listResponse.text();
+                    debugLog('Could not list OSS bucket contents:', errorText);
+                }
+            } else {
+                debugLog('No OSS bucket available, using local storage only');
+            }
+        } catch (ossError) {
+            debugLog('Could not load from OSS:', ossError);
+        }
+
+        // Method 2: Load from local storage
+        debugLog('Loading from local storage...');
+        const projectReportsKey = `bedqc_reports_${projectId}`;
+        const localReportIds = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
+
+        debugLog('Found local report IDs:', localReportIds);
+
+        for (const reportId of localReportIds) {
+            const storageKey = `bedqc_${projectId}_${reportId}`;
+            const reportDataStr = localStorage.getItem(storageKey);
+
+            if (reportDataStr) {
+                try {
+                    const reportData = JSON.parse(reportDataStr);
+
+                    // Skip if we already have this report from OSS
+                    const existingReport = reports.find(r =>
+                        r.objectKey && r.objectKey.includes(reportId)
+                    );
+
+                    if (!existingReport) {
+                        reports.push({
+                            objectKey: storageKey,
+                            storageKey: storageKey,
+                            lastModified: reportData.timestamp,
+                            displayName: `${reportData.reportData?.bedName || 'Unknown'} - ${reportData.reportData?.reportId || reportId}`,
+                            data: reportData,
+                            source: reportData.storedLocally ? 'local' : 'local-synced',
+                            permissions: reportData.permissionsRequested || 'basic',
+                            errorInfo: reportData.uploadError ? {
+                                error: reportData.uploadError,
+                                analysis: reportData.errorAnalysis,
+                                troubleshooting: reportData.troubleshootingSteps
+                            } : null
+                        });
+
+                        debugLog('Added local report:', reportId);
+                    }
+                } catch (parseError) {
+                    debugLog('Could not parse local report:', reportId, parseError);
+                }
+            }
+        }
+
+        // Sort by date (newest first)
+        reports.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+
+        debugLog(`✓ Loaded ${reports.length} reports total from OSS and local storage`);
+        debugLog('Report sources:', reports.map(r => ({ name: r.displayName, source: r.source })));
+
+        return reports;
+
+    } catch (error) {
+        debugLog('Error loading reports from OSS:', error);
+        console.error('Error loading reports from OSS:', error);
+        return [];
+    }
+}
+
+// Download report content from OSS
+async function downloadReportFromOSS(bucketKey, objectKey) {
+    try {
+        debugLog('=== DOWNLOADING REPORT FROM OSS ===');
+        debugLog('Bucket Key:', bucketKey);
+        debugLog('Object Key:', objectKey);
+
+        // Add delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Download the object from OSS
+        const downloadResponse = await fetch(`${OSS_API_BASE}/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        debugLog('OSS download response status:', downloadResponse.status);
+
+        if (!downloadResponse.ok) {
+            const errorText = await downloadResponse.text();
+            debugLog('Failed to download from OSS:', errorText);
+            throw new Error(`Failed to download from OSS: ${downloadResponse.status} - ${errorText}`);
+        }
+
+        const reportContent = await downloadResponse.json();
+        debugLog('✓ Successfully downloaded report from OSS');
+
+        return reportContent;
+
+    } catch (error) {
+        debugLog('Error downloading report from OSS:', error);
+        console.error('Error downloading report from OSS:', error);
+        throw error;
+    }
+}
+
+// Delete report from OSS
+async function deleteBedQCReportFromOSS(objectKey, bucketKey, isOSSObject = false) {
+    try {
+        debugLog('=== DELETING REPORT FROM OSS ===');
+        debugLog('Object Key:', objectKey);
+        debugLog('Bucket Key:', bucketKey);
+        debugLog('Is OSS Object:', isOSSObject);
+
+        if (isOSSObject && bucketKey && objectKey) {
+            // Try to delete from OSS
+            try {
+                // Add delay to prevent rate limiting
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                const deleteResponse = await fetch(`${OSS_API_BASE}/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+
+                debugLog('OSS delete response status:', deleteResponse.status);
+
+                if (deleteResponse.ok) {
+                    debugLog('✓ Report deleted from OSS');
+                    return true;
+                } else {
+                    const errorText = await deleteResponse.text();
+                    debugLog('Could not delete from OSS:', errorText);
+                    debugLog('Removing from local list only');
+                }
+            } catch (ossDeleteError) {
+                debugLog('OSS delete failed:', ossDeleteError);
+            }
+        }
+
+        // Remove from local storage
+        localStorage.removeItem(objectKey);
+        debugLog('Removed from local storage:', objectKey);
+
+        // Remove from project reports list if it's a storage key
+        if (objectKey.startsWith('bedqc_')) {
+            const projectReportsKey = `bedqc_reports_${projectId}`;
+            const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
+            const reportIdToRemove = objectKey.split('_').pop(); // Extract report ID from storage key
+
+            const updatedReports = existingReports.filter(id => id !== reportIdToRemove);
+            localStorage.setItem(projectReportsKey, JSON.stringify(updatedReports));
+
+            debugLog('Updated project reports list:', updatedReports);
+        }
+
+        debugLog('✓ Report deleted from storage');
+        return true;
+
+    } catch (error) {
+        debugLog('Error deleting report:', error);
+        console.error('Error deleting report:', error);
+        throw error;
+    }
+}
+
+// Save to local storage with comprehensive scope information
+async function saveToLocalStorageWithScopeInfo(reportContent, scopeValidation, uploadErrorInfo = null) {
+    debugLog('=== SAVING TO LOCAL STORAGE WITH SCOPE INFO ===');
+
+    const storageKey = `bedqc_${projectId}_${reportContent.reportData.reportId}`;
+
+    let saveReason = '';
+    let userMessage = '';
+
+    if (!scopeValidation.hasEnhancedScopes) {
+        saveReason = 'INSUFFICIENT_OAUTH_SCOPES';
+        userMessage = 'Report saved locally because OAuth token lacks required scopes for OSS operations.';
+    } else if (uploadErrorInfo) {
+        saveReason = 'OSS_UPLOAD_FAILED';
+        userMessage = 'Report saved locally because OSS upload failed despite having enhanced scopes.';
+    } else {
+        saveReason = 'FALLBACK_STORAGE';
+        userMessage = 'Report saved locally as fallback storage method.';
+    }
+
+    const storageData = {
+        ...reportContent,
+        storedLocally: true,
+        needsOSSSync: scopeValidation.hasEnhancedScopes, // Only sync if we have scopes
+        storageMethod: 'local-with-scope-info',
+        saveReason: saveReason,
+        userMessage: userMessage,
+        scopeValidation: scopeValidation,
+        uploadErrorInfo: uploadErrorInfo,
+        retryCount: 0,
+        lastRetryAttempt: null,
+        ossContext: {
+            projectId: projectId,
+            hubId: hubId,
+            bucketKey: currentOSSBucketKey,
+            ossAccessAvailable: !!currentOSSBucketKey
+        },
+        customIntegrationRequired: !scopeValidation.hasEnhancedScopes,
+        saveAttemptDetails: {
+            timestamp: new Date().toISOString(),
+            bucketKey: currentOSSBucketKey,
+            methodAttempted: scopeValidation.hasEnhancedScopes ? 'oss-upload' : 'local-only'
+        }
+    };
+
+    localStorage.setItem(storageKey, JSON.stringify(storageData));
+
+    // Store list of all reports for this project
+    const projectReportsKey = `bedqc_reports_${projectId}`;
+    const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
+
+    if (!existingReports.includes(reportContent.reportData.reportId)) {
+        existingReports.push(reportContent.reportData.reportId);
+        localStorage.setItem(projectReportsKey, JSON.stringify(existingReports));
+    }
+
+    debugLog('Saved to local storage with key:', storageKey);
+    debugLog('Save reason:', saveReason);
+    debugLog('Updated project reports list:', existingReports);
+
+    return {
+        success: true,
+        projectId: projectId,
+        reportId: reportContent.reportData.reportId,
+        storageKey: storageKey,
+        method: 'local-storage',
+        saveReason: saveReason,
+        userMessage: userMessage,
+        scopeValidation: scopeValidation,
+        warning: userMessage,
+        error: uploadErrorInfo?.uploadError,
+        errorAnalysis: uploadErrorInfo?.errorAnalysis,
+        troubleshootingSteps: uploadErrorInfo?.troubleshootingSteps,
+        canRetry: scopeValidation.hasEnhancedScopes && !!currentOSSBucketKey,
+        customIntegrationRequired: !scopeValidation.hasEnhancedScopes,
+        permissionsNote: `Token scopes: ${scopeValidation.grantedScopes || '(none)'}`,
+        debugInfo: {
+            ossContext: storageData.ossContext,
+            saveAttemptDetails: storageData.saveAttemptDetails,
+            scopeValidation: scopeValidation
+        }
+    };
+}
+
+// =================================================================
+// DROPDOWN INITIALIZATION (unchanged)
 // =================================================================
 
 function initializeDropdowns() {
@@ -759,933 +1395,7 @@ function onStrandSizeChange(type) {
 }
 
 // =================================================================
-// ENHANCED ACC DATA MANAGEMENT API FUNCTIONS WITH IMPROVED ERROR HANDLING
-// =================================================================
-
-// Enhanced Bed QC Report saving with comprehensive debugging and scope awareness
-async function saveBedQCReportToACC(reportData) {
-    try {
-        debugLog('=== STARTING SAVE TO ACC ===');
-        debugLog('Save attempt with current permissions for project:', projectId);
-
-        // First, validate current scopes using JWT decoder
-        const scopeValidation = await validateTokenScopesWithJWT();
-        debugLog('Current scope validation:', scopeValidation);
-
-        debugLog('Current project context:', {
-            projectId: projectId,
-            hubId: hubId,
-            projectTopFolderId: projectTopFolderId,
-            bedQCFolderId: bedQCFolderId,
-            hasEnhancedScopes: scopeValidation.hasEnhancedScopes
-        });
-
-        debugLog('Report Data Summary:', {
-            reportId: reportData.reportId,
-            bedName: reportData.bedName,
-            projectName: reportData.projectMetadata?.projectName,
-            timestamp: reportData.timestamp
-        });
-
-        // Create the report content
-        const reportContent = {
-            type: 'bedqc-report',
-            version: '1.2',
-            timestamp: new Date().toISOString(),
-            application: 'MetromontCastLink',
-            module: 'QualityControl',
-            schema: 'BedQCReport-v1.2',
-            metadata: {
-                saveAttempt: new Date().toISOString(),
-                projectContext: {
-                    projectId: projectId,
-                    hubId: hubId,
-                    projectTopFolderId: projectTopFolderId,
-                    bedQCFolderId: bedQCFolderId
-                },
-                scopeValidation: scopeValidation,
-                debugInfo: {
-                    tokenScopes: scopeValidation.grantedScopes,
-                    requestedScopes: ACC_SCOPES,
-                    apiEndpoints: {
-                        dataAPI: ACC_DATA_API_BASE,
-                        projectAPI: ACC_PROJECT_API_BASE
-                    }
-                }
-            },
-            reportData: {
-                ...reportData,
-                savedToACC: scopeValidation.hasEnhancedScopes,
-                accProjectId: projectId,
-                accHubId: hubId,
-                permissions: {
-                    scopesUsed: scopeValidation.grantedScopes,
-                    dataWriteEnabled: scopeValidation.hasDataWrite,
-                    dataCreateEnabled: scopeValidation.hasDataCreate,
-                    enhancedPermissions: scopeValidation.hasEnhancedScopes
-                }
-            }
-        };
-
-        debugLog('Prepared report content for save');
-
-        // Check if we have enhanced scopes before attempting ACC upload
-        if (!scopeValidation.hasEnhancedScopes) {
-            debugLog('=== INSUFFICIENT SCOPES - SAVING LOCALLY ===');
-            debugLog('Missing scopes:', scopeValidation.missingScopes);
-            debugLog('Scope issue:', scopeValidation.scopeIssue);
-
-            const localSaveResult = await saveToLocalStorageWithScopeInfo(reportContent, scopeValidation);
-            return localSaveResult;
-        }
-
-        // Try Method 1: Upload as JSON file to ACC (only if we have enhanced scopes)
-        try {
-            debugLog('=== METHOD 1: ACC FILE UPLOAD ===');
-            debugLog('Enhanced scopes confirmed, attempting ACC upload...');
-
-            // Step 1: Ensure we have folder access
-            debugLog('Step 1: Checking folder access...');
-
-            if (!projectTopFolderId) {
-                debugLog('No project top folder ID, attempting to get it...');
-                await getProjectTopFolder(projectId);
-            }
-
-            if (!projectTopFolderId) {
-                throw new Error('Cannot access project folders - check Data Management API permissions and Custom Integration setup');
-            }
-
-            debugLog('Project top folder confirmed:', projectTopFolderId);
-
-            // Step 2: Get or create BedQC folder
-            debugLog('Step 2: Ensuring BedQC folder exists...');
-
-            if (!bedQCFolderId) {
-                debugLog('No BedQC folder ID, attempting to create/find it...');
-                await ensureBedQCFolder(projectId, projectTopFolderId);
-            }
-
-            if (!bedQCFolderId) {
-                throw new Error('Cannot create/access BedQC folder - check data:create permissions and Custom Integration setup');
-            }
-
-            debugLog('BedQC folder confirmed:', bedQCFolderId);
-
-            // Step 3: Generate filename and upload
-            debugLog('Step 3: Uploading file to ACC...');
-
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const fileName = `BedQC-${reportData.bedName}-${reportData.reportId}-${timestamp}.json`;
-
-            debugLog('Generated filename:', fileName);
-
-            // Double-check token scopes right before upload
-            const runtimeTokenInfo = decodeJWTScopes(forgeAccessToken);
-            const runtimeMissing = ['data:write', 'data:create'].filter(s => !runtimeTokenInfo?.scopes.includes(s));
-
-            if (runtimeMissing.length > 0) {
-                console.warn('Missing required upload scopes:', runtimeMissing.join(', '));
-                showScopeWarning({
-                    scopeIssue: 'MISSING_ENHANCED_SCOPES',
-                    missingScopes: runtimeMissing,
-                    grantedScopes: runtimeTokenInfo?.scopeString || '',
-                    requestedScopes: ACC_SCOPES.split(' '),
-                    hasDataRead: runtimeTokenInfo?.scopes.includes('data:read') || false,
-                    hasDataWrite: runtimeTokenInfo?.scopes.includes('data:write') || false,
-                    hasDataCreate: runtimeTokenInfo?.scopes.includes('data:create') || false,
-                    hasEnhancedScopes: false,
-                    scopeDetectionMethod: 'runtime_jwt_check'
-                });
-
-                debugLog('Skipping ACC upload due to missing scopes');
-                const localSaveResult = await saveToLocalStorageWithScopeInfo(reportContent, scopeValidation);
-                return localSaveResult;
-            }
-
-            // Upload the file
-            const uploadResult = await uploadJSONToACC(projectId, bedQCFolderId, fileName, reportContent);
-
-            debugLog('✓ Successfully uploaded report to ACC:', uploadResult);
-
-            return {
-                success: true,
-                versionId: uploadResult.versionId,
-                itemId: uploadResult.itemId,
-                fileName: fileName,
-                reportId: reportData.reportId,
-                method: 'acc-file-upload',
-                permissions: 'enhanced',
-                scopeValidation: scopeValidation,
-                debugInfo: {
-                    projectId: projectId,
-                    hubId: hubId,
-                    projectTopFolderId: projectTopFolderId,
-                    bedQCFolderId: bedQCFolderId
-                }
-            };
-
-        } catch (method1Error) {
-            debugLog('=== METHOD 1 FAILED ===');
-            debugLog('File upload error:', method1Error.message);
-            debugLog('Error details:', method1Error);
-
-            // Enhanced error analysis
-            let errorAnalysis = 'File upload to ACC failed despite having enhanced scopes. ';
-            let troubleshootingSteps = [];
-
-            if (method1Error.message.includes('404')) {
-                errorAnalysis += 'Project folders not accessible (404 error). This may indicate project configuration issues.';
-                troubleshootingSteps = [
-                    'Verify project has BIM 360 or ACC document management enabled',
-                    'Check if project supports Data Management API v1',
-                    'Confirm project ID is correct: ' + projectId,
-                    'Try accessing project through ACC web interface first',
-                    'Verify Custom Integration has "Document Management" access enabled'
-                ];
-            } else if (method1Error.message.includes('403')) {
-                errorAnalysis += 'Access forbidden (403 error). Custom Integration may need additional configuration.';
-                troubleshootingSteps = [
-                    'Verify Custom Integration is set to "Active" status in ACC Account Admin',
-                    'Check if Custom Integration has proper access levels configured',
-                    'Confirm user has admin/contributor access to project',
-                    'Try refreshing OAuth token by logging out and back in'
-                ];
-            } else if (method1Error.message.includes('429')) {
-                errorAnalysis += 'Rate limit exceeded (429 error). Too many API requests made too quickly.';
-                troubleshootingSteps = [
-                    'Wait before retrying (rate limits usually reset after 60 seconds)',
-                    'Implement request throttling in production',
-                    'Consider using batch operations for multiple saves'
-                ];
-            } else {
-                errorAnalysis += `Technical error: ${method1Error.message}`;
-                troubleshootingSteps = [
-                    'Check network connectivity',
-                    'Verify API endpoints are accessible',
-                    'Check if Autodesk services are operational',
-                    'Review browser console for additional errors'
-                ];
-            }
-
-            debugLog('Error analysis:', errorAnalysis);
-            debugLog('Troubleshooting steps:', troubleshootingSteps);
-
-            // Fallback to local storage even with enhanced scopes
-            debugLog('=== FALLBACK: ENHANCED LOCAL STORAGE ===');
-            const localSaveResult = await saveToLocalStorageWithScopeInfo(reportContent, scopeValidation, {
-                uploadError: method1Error.message,
-                errorAnalysis: errorAnalysis,
-                troubleshootingSteps: troubleshootingSteps
-            });
-
-            return localSaveResult;
-        }
-
-    } catch (error) {
-        debugLog('=== ALL SAVE METHODS FAILED ===');
-        debugLog('Complete failure:', error);
-        console.error('All save methods failed:', error);
-        throw new Error(`Failed to save report: ${error.message}`);
-    }
-}
-
-// Save to local storage with comprehensive scope information
-async function saveToLocalStorageWithScopeInfo(reportContent, scopeValidation, uploadErrorInfo = null) {
-    debugLog('=== SAVING TO LOCAL STORAGE WITH SCOPE INFO ===');
-
-    const storageKey = `bedqc_${projectId}_${reportContent.reportData.reportId}`;
-
-    let saveReason = '';
-    let userMessage = '';
-
-    if (!scopeValidation.hasEnhancedScopes) {
-        saveReason = 'INSUFFICIENT_OAUTH_SCOPES';
-        userMessage = 'Report saved locally because OAuth token lacks required scopes for ACC file operations.';
-    } else if (uploadErrorInfo) {
-        saveReason = 'ACC_UPLOAD_FAILED';
-        userMessage = 'Report saved locally because ACC upload failed despite having enhanced scopes.';
-    } else {
-        saveReason = 'FALLBACK_STORAGE';
-        userMessage = 'Report saved locally as fallback storage method.';
-    }
-
-    const storageData = {
-        ...reportContent,
-        storedLocally: true,
-        needsACCSync: scopeValidation.hasEnhancedScopes, // Only sync if we have scopes
-        storageMethod: 'local-with-scope-info',
-        saveReason: saveReason,
-        userMessage: userMessage,
-        scopeValidation: scopeValidation,
-        uploadErrorInfo: uploadErrorInfo,
-        retryCount: 0,
-        lastRetryAttempt: null,
-        projectContext: {
-            projectId: projectId,
-            hubId: hubId,
-            projectHasFileAccess: !!projectTopFolderId,
-            bedQCFolderExists: !!bedQCFolderId
-        },
-        customIntegrationRequired: !scopeValidation.hasEnhancedScopes,
-        saveAttemptDetails: {
-            timestamp: new Date().toISOString(),
-            projectTopFolderId: projectTopFolderId,
-            bedQCFolderId: bedQCFolderId,
-            methodAttempted: scopeValidation.hasEnhancedScopes ? 'acc-file-upload' : 'local-only'
-        }
-    };
-
-    localStorage.setItem(storageKey, JSON.stringify(storageData));
-
-    // Store list of all reports for this project
-    const projectReportsKey = `bedqc_reports_${projectId}`;
-    const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
-
-    if (!existingReports.includes(reportContent.reportData.reportId)) {
-        existingReports.push(reportContent.reportData.reportId);
-        localStorage.setItem(projectReportsKey, JSON.stringify(existingReports));
-    }
-
-    debugLog('Saved to local storage with key:', storageKey);
-    debugLog('Save reason:', saveReason);
-    debugLog('Updated project reports list:', existingReports);
-
-    return {
-        success: true,
-        projectId: projectId,
-        reportId: reportContent.reportData.reportId,
-        storageKey: storageKey,
-        method: 'local-storage',
-        saveReason: saveReason,
-        userMessage: userMessage,
-        scopeValidation: scopeValidation,
-        warning: userMessage,
-        error: uploadErrorInfo?.uploadError,
-        errorAnalysis: uploadErrorInfo?.errorAnalysis,
-        troubleshootingSteps: uploadErrorInfo?.troubleshootingSteps,
-        canRetry: scopeValidation.hasEnhancedScopes && !!projectTopFolderId,
-        customIntegrationRequired: !scopeValidation.hasEnhancedScopes,
-        permissionsNote: `Token scopes: ${scopeValidation.grantedScopes || '(none)'}`,
-        debugInfo: {
-            projectContext: storageData.projectContext,
-            saveAttemptDetails: storageData.saveAttemptDetails,
-            scopeValidation: scopeValidation
-        }
-    };
-}
-
-// Get project's top folder with improved error handling and rate limiting
-async function getProjectTopFolder(projectId) {
-    try {
-        debugLog('=== GETTING PROJECT TOP FOLDER ===');
-        debugLog('Attempting to get project folders for:', projectId);
-
-        // Add delay to prevent rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Try the standard folders endpoint first
-        debugLog('Trying standard folders endpoint...');
-        const response = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders`, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        debugLog('Folders endpoint response status:', response.status);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            debugLog('Folders endpoint failed:', errorText);
-
-            if (response.status === 403) {
-                debugLog('❌ Insufficient permissions for folder access');
-                debugLog('Current scopes:', ACC_SCOPES);
-                debugLog('This may be due to:');
-                debugLog('- Missing BIM 360 or ACC document management permissions');
-                debugLog('- Project not configured for Data Management API access');
-                debugLog('- Account-level permissions restrictions');
-            } else if (response.status === 404) {
-                debugLog('❌ Project folders not found (404)');
-                debugLog('This may be due to:');
-                debugLog('- Project is not a BIM 360 or ACC project');
-                debugLog('- Project does not have document management enabled');
-                debugLog('- Wrong API endpoint or project structure');
-                debugLog('- Project ID may be incorrect:', projectId);
-
-                // Try alternative methods
-                return await tryAlternativeFolderAccess(projectId);
-            } else if (response.status === 429) {
-                debugLog('❌ Rate limit exceeded');
-                throw new Error('Rate limit exceeded - please wait and try again');
-            }
-
-            return null;
-        }
-
-        const data = await response.json();
-        debugLog('✓ Successfully retrieved project folders:', data.data?.length || 0, 'folders found');
-
-        if (data.data && data.data.length > 0) {
-            debugLog('Available folders:', data.data.map(f => ({
-                id: f.id,
-                name: f.attributes?.name,
-                type: f.attributes?.extension?.type
-            })));
-
-            // Look for the main project folder
-            const topFolders = data.data.filter(folder =>
-                folder.attributes.name === 'Project Files' ||
-                folder.attributes.name === 'Files' ||
-                folder.attributes.extension?.type === 'folders:autodesk.bim360:Folder' ||
-                folder.type === 'folders'
-            );
-
-            if (topFolders.length > 0) {
-                projectTopFolderId = topFolders[0].id;
-                debugLog('✓ Found project top folder:', projectTopFolderId, 'Name:', topFolders[0].attributes?.name);
-                return topFolders[0].id;
-            } else {
-                debugLog('No suitable top-level folders found');
-                debugLog('Using first available folder as fallback');
-                projectTopFolderId = data.data[0].id;
-                return data.data[0].id;
-            }
-        } else {
-            debugLog('No folders found in response');
-            return null;
-        }
-    } catch (error) {
-        debugLog('Error getting project folders:', error);
-        console.warn('Error getting project folders, using fallback storage:', error);
-        return null;
-    }
-}
-
-// Create or find BedQC folder with enhanced permission handling
-async function ensureBedQCFolder(projectId, parentFolderId) {
-    try {
-        debugLog('=== ENSURING BEDQC FOLDER ===');
-        debugLog('Parent folder ID:', parentFolderId);
-
-        if (!parentFolderId) {
-            debugLog('No parent folder available');
-            return null;
-        }
-
-        // Add delay to prevent rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // First, try to find existing BedQC folder
-        debugLog('Step 1: Looking for existing BedQC folder...');
-        const foldersResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders/${parentFolderId}/contents`, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        if (foldersResponse.ok) {
-            const foldersData = await foldersResponse.json();
-            debugLog('Found items in parent folder:', foldersData.data?.length || 0);
-
-            const existingFolder = foldersData.data?.find(item =>
-                item.type === 'folders' &&
-                item.attributes.name === 'BedQC Reports'
-            );
-
-            if (existingFolder) {
-                bedQCFolderId = existingFolder.id;
-                debugLog('✓ Found existing BedQC folder:', bedQCFolderId);
-                return existingFolder.id;
-            }
-        } else {
-            const errorText = await foldersResponse.text();
-            debugLog('Could not list folder contents:', errorText);
-        }
-
-        // Create new BedQC folder
-        debugLog('Step 2: Creating new BedQC Reports folder...');
-
-        // Add delay to prevent rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        const createFolderPayload = {
-            data: {
-                type: 'folders',
-                attributes: {
-                    name: 'BedQC Reports',
-                    extension: {
-                        type: 'folders:autodesk.bim360:Folder',
-                        version: '1.0'
-                    }
-                },
-                relationships: {
-                    parent: {
-                        data: {
-                            type: 'folders',
-                            id: parentFolderId
-                        }
-                    }
-                }
-            }
-        };
-
-        debugLog('Create folder payload:', createFolderPayload);
-
-        const createFolderResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`,
-                'Content-Type': 'application/vnd.api+json'
-            },
-            body: JSON.stringify(createFolderPayload)
-        });
-
-        debugLog('Create folder response status:', createFolderResponse.status);
-
-        if (createFolderResponse.ok) {
-            const folderData = await createFolderResponse.json();
-            bedQCFolderId = folderData.data.id;
-            debugLog('✓ Created BedQC folder:', bedQCFolderId);
-            return folderData.data.id;
-        } else {
-            const errorResponse = await createFolderResponse.text();
-            debugLog('Failed to create folder:', errorResponse);
-
-            // Try to parse error details
-            try {
-                const errorData = JSON.parse(errorResponse);
-                debugLog('Parsed error details:', errorData);
-            } catch (e) {
-                debugLog('Could not parse error response');
-            }
-
-            return null;
-        }
-    } catch (error) {
-        debugLog('Error ensuring BedQC folder:', error);
-        console.warn('Error ensuring BedQC folder, using fallback storage:', error);
-        return null;
-    }
-}
-
-// Enhanced JSON file upload to ACC with better error handling
-async function uploadJSONToACC(projectId, folderId, fileName, jsonData) {
-    try {
-        debugLog('=== UPLOADING JSON TO ACC ===');
-        debugLog('Project ID:', projectId);
-        debugLog('Folder ID:', folderId);
-        debugLog('File name:', fileName);
-
-        if (!folderId) {
-            throw new Error('No folder available for upload');
-        }
-
-        // Add delay to prevent rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Step 1: Create storage location
-        debugLog('Step 1: Creating storage location...');
-
-        const storagePayload = {
-            data: {
-                type: 'objects',
-                attributes: {
-                    name: fileName
-                },
-                relationships: {
-                    target: {
-                        data: {
-                            type: 'folders',
-                            id: folderId
-                        }
-                    }
-                }
-            }
-        };
-
-        debugLog('Storage payload:', storagePayload);
-
-        const storageResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/storage`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`,
-                'Content-Type': 'application/vnd.api+json'
-            },
-            body: JSON.stringify(storagePayload)
-        });
-
-        debugLog('Storage response status:', storageResponse.status);
-
-        if (!storageResponse.ok) {
-            const errorText = await storageResponse.text();
-            debugLog('Storage creation failed:', errorText);
-            throw new Error(`Failed to create storage location: ${storageResponse.status} - ${errorText}`);
-        }
-
-        const storageData = await storageResponse.json();
-        const bucketKey = storageData.data.id;
-        const uploadURL = storageData.data.attributes.location;
-
-        debugLog('✓ Storage location created:', bucketKey);
-        debugLog('Upload URL:', uploadURL);
-
-        // Step 2: Upload file content
-        debugLog('Step 2: Uploading file content...');
-        const fileContent = JSON.stringify(jsonData, null, 2);
-        debugLog('File content size:', fileContent.length, 'characters');
-
-        // Add delay to prevent rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        const uploadResponse = await fetch(uploadURL, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${forgeAccessToken}`
-            },
-            body: fileContent
-        });
-
-        debugLog('Upload response status:', uploadResponse.status);
-
-        if (!uploadResponse.ok) {
-            const errorText = await uploadResponse.text();
-            debugLog('File upload failed:', errorText);
-            throw new Error(`Failed to upload file: ${uploadResponse.status} - ${errorText}`);
-        }
-
-        debugLog('✓ File uploaded successfully');
-
-        // Step 3: Create first version
-        debugLog('Step 3: Creating file version...');
-
-        // Add delay to prevent rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        const versionPayload = {
-            data: {
-                type: 'versions',
-                attributes: {
-                    name: fileName,
-                    extension: {
-                        type: 'versions:autodesk.bim360:File',
-                        version: '1.0'
-                    }
-                },
-                relationships: {
-                    item: {
-                        data: {
-                            type: 'items'
-                        }
-                    },
-                    storage: {
-                        data: {
-                            type: 'objects',
-                            id: bucketKey
-                        }
-                    }
-                }
-            }
-        };
-
-        debugLog('Version payload:', versionPayload);
-
-        const versionResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/versions`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`,
-                'Content-Type': 'application/vnd.api+json'
-            },
-            body: JSON.stringify(versionPayload)
-        });
-
-        debugLog('Version response status:', versionResponse.status);
-
-        if (!versionResponse.ok) {
-            const errorText = await versionResponse.text();
-            debugLog('Version creation failed:', errorText);
-            throw new Error(`Failed to create version: ${versionResponse.status} - ${errorText}`);
-        }
-
-        const versionData = await versionResponse.json();
-        debugLog('✓ Version created successfully:', versionData.data.id);
-
-        return {
-            success: true,
-            versionId: versionData.data.id,
-            itemId: versionData.data.relationships?.item?.data?.id,
-            storageId: bucketKey,
-            method: 'acc-file-upload'
-        };
-
-    } catch (error) {
-        debugLog('Error uploading to ACC:', error);
-        console.error('Error uploading to ACC:', error);
-        throw error;
-    }
-}
-
-// Load reports using enhanced approach with better error handling
-async function loadBedQCReportsFromACC(projectId) {
-    try {
-        debugLog('=== LOADING REPORTS FROM ACC ===');
-        debugLog('Project ID:', projectId);
-
-        const reports = [];
-
-        // Method 1: Try to load from ACC BedQC folder if accessible
-        try {
-            if (!projectTopFolderId) {
-                await getProjectTopFolder(projectId);
-            }
-
-            if (projectTopFolderId && !bedQCFolderId) {
-                await ensureBedQCFolder(projectId, projectTopFolderId);
-            }
-
-            if (bedQCFolderId) {
-                debugLog('Loading from ACC BedQC folder:', bedQCFolderId);
-
-                // Add delay to prevent rate limiting
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                const folderContentsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/folders/${bedQCFolderId}/contents`, {
-                    headers: {
-                        'Authorization': `Bearer ${forgeAccessToken}`
-                    }
-                });
-
-                if (folderContentsResponse.ok) {
-                    const contentsData = await folderContentsResponse.json();
-                    debugLog('✓ Found items in BedQC folder:', contentsData.data?.length || 0);
-
-                    for (const item of contentsData.data || []) {
-                        if (item.type === 'items' && item.attributes.name.endsWith('.json')) {
-                            try {
-                                // Add delay to prevent rate limiting
-                                await new Promise(resolve => setTimeout(resolve, 50));
-
-                                // Get the latest version of the item
-                                const versionsResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/items/${item.id}/versions`, {
-                                    headers: {
-                                        'Authorization': `Bearer ${forgeAccessToken}`
-                                    }
-                                });
-
-                                if (versionsResponse.ok) {
-                                    const versionsData = await versionsResponse.json();
-                                    if (versionsData.data && versionsData.data.length > 0) {
-                                        const latestVersion = versionsData.data[0];
-
-                                        reports.push({
-                                            itemId: item.id,
-                                            versionId: latestVersion.id,
-                                            fileName: item.attributes.name,
-                                            lastModified: item.attributes.lastModifiedTime,
-                                            displayName: item.attributes.displayName || item.attributes.name,
-                                            source: 'acc-file',
-                                            needsDownload: true,
-                                            permissions: 'enhanced'
-                                        });
-
-                                        debugLog('Added ACC report:', item.attributes.name);
-                                    }
-                                }
-                            } catch (itemError) {
-                                debugLog('Could not process ACC item:', item.attributes.name, itemError);
-                            }
-                        }
-                    }
-                } else {
-                    const errorText = await folderContentsResponse.text();
-                    debugLog('Could not load folder contents:', errorText);
-                }
-            } else {
-                debugLog('No ACC folder access available, using local storage only');
-            }
-        } catch (accError) {
-            debugLog('Could not load from ACC folder:', accError);
-        }
-
-        // Method 2: Load from local storage
-        debugLog('Loading from local storage...');
-        const projectReportsKey = `bedqc_reports_${projectId}`;
-        const localReportIds = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
-
-        debugLog('Found local report IDs:', localReportIds);
-
-        for (const reportId of localReportIds) {
-            const storageKey = `bedqc_${projectId}_${reportId}`;
-            const reportDataStr = localStorage.getItem(storageKey);
-
-            if (reportDataStr) {
-                try {
-                    const reportData = JSON.parse(reportDataStr);
-
-                    // Skip if we already have this report from ACC
-                    const existingReport = reports.find(r =>
-                        r.fileName && r.fileName.includes(reportId)
-                    );
-
-                    if (!existingReport) {
-                        reports.push({
-                            itemId: storageKey,
-                            storageKey: storageKey,
-                            lastModified: reportData.timestamp,
-                            displayName: `${reportData.reportData?.bedName || 'Unknown'} - ${reportData.reportData?.reportId || reportId}`,
-                            data: reportData,
-                            source: reportData.storedLocally ? 'local' : 'local-synced',
-                            permissions: reportData.permissionsRequested || 'basic',
-                            errorInfo: reportData.uploadError ? {
-                                error: reportData.uploadError,
-                                analysis: reportData.errorAnalysis,
-                                troubleshooting: reportData.troubleshootingSteps
-                            } : null
-                        });
-
-                        debugLog('Added local report:', reportId);
-                    }
-                } catch (parseError) {
-                    debugLog('Could not parse local report:', reportId, parseError);
-                }
-            }
-        }
-
-        // Sort by date (newest first)
-        reports.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
-
-        debugLog(`✓ Loaded ${reports.length} reports total`);
-        debugLog('Report sources:', reports.map(r => ({ name: r.displayName, source: r.source })));
-
-        return reports;
-
-    } catch (error) {
-        debugLog('Error loading reports:', error);
-        console.error('Error loading reports:', error);
-        return [];
-    }
-}
-
-// Download report content from ACC with better error handling
-async function downloadReportFromACC(versionId) {
-    try {
-        debugLog('=== DOWNLOADING REPORT FROM ACC ===');
-        debugLog('Version ID:', versionId);
-
-        // Add delay to prevent rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Get download URL
-        const downloadResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/versions/${versionId}/downloads`, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        debugLog('Download URL response status:', downloadResponse.status);
-
-        if (!downloadResponse.ok) {
-            const errorText = await downloadResponse.text();
-            debugLog('Failed to get download URL:', errorText);
-            throw new Error(`Failed to get download URL: ${downloadResponse.status} - ${errorText}`);
-        }
-
-        const downloadData = await downloadResponse.json();
-        const downloadUrl = downloadData.data.attributes.location;
-
-        debugLog('Download URL obtained:', downloadUrl ? 'Yes' : 'No');
-
-        // Download the file content
-        const contentResponse = await fetch(downloadUrl, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        debugLog('Content download response status:', contentResponse.status);
-
-        if (!contentResponse.ok) {
-            const errorText = await contentResponse.text();
-            debugLog('Failed to download file content:', errorText);
-            throw new Error(`Failed to download file: ${contentResponse.status} - ${errorText}`);
-        }
-
-        const reportContent = await contentResponse.json();
-        debugLog('✓ Successfully downloaded report from ACC');
-
-        return reportContent;
-
-    } catch (error) {
-        debugLog('Error downloading report from ACC:', error);
-        console.error('Error downloading report from ACC:', error);
-        throw error;
-    }
-}
-
-// Delete report (works with enhanced permissions)
-async function deleteBedQCReportFromACC(itemId, isACCFile = false) {
-    try {
-        debugLog('=== DELETING REPORT ===');
-        debugLog('Item ID:', itemId);
-        debugLog('Is ACC File:', isACCFile);
-
-        if (isACCFile && itemId.startsWith('urn:')) {
-            // Try to delete from ACC with enhanced permissions
-            try {
-                // Add delay to prevent rate limiting
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                const deleteResponse = await fetch(`${ACC_DATA_API_BASE}/projects/${projectId}/items/${itemId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${forgeAccessToken}`
-                    }
-                });
-
-                debugLog('ACC delete response status:', deleteResponse.status);
-
-                if (deleteResponse.ok) {
-                    debugLog('✓ Report deleted from ACC');
-                    return true;
-                } else {
-                    const errorText = await deleteResponse.text();
-                    debugLog('Could not delete from ACC:', errorText);
-                    debugLog('Removing from local list only');
-                }
-            } catch (accDeleteError) {
-                debugLog('ACC delete failed:', accDeleteError);
-            }
-        }
-
-        // Remove from local storage
-        localStorage.removeItem(itemId);
-        debugLog('Removed from local storage:', itemId);
-
-        // Remove from project reports list if it's a storage key
-        if (itemId.startsWith('bedqc_')) {
-            const projectReportsKey = `bedqc_reports_${projectId}`;
-            const existingReports = JSON.parse(localStorage.getItem(projectReportsKey) || '[]');
-            const reportIdToRemove = itemId.split('_').pop(); // Extract report ID from storage key
-
-            const updatedReports = existingReports.filter(id => id !== reportIdToRemove);
-            localStorage.setItem(projectReportsKey, JSON.stringify(updatedReports));
-
-            debugLog('Updated project reports list:', updatedReports);
-        }
-
-        debugLog('✓ Report deleted from storage');
-        return true;
-
-    } catch (error) {
-        debugLog('Error deleting report:', error);
-        console.error('Error deleting report:', error);
-        throw error;
-    }
-}
-
-// =================================================================
-// BED SELECTION AND FORM MANAGEMENT
+// BED SELECTION AND FORM MANAGEMENT (unchanged)
 // =================================================================
 
 // Bed Selection Functions
@@ -1876,7 +1586,7 @@ function getElementValue(id) {
 }
 
 // =================================================================
-// CALCULATION FUNCTIONS
+// CALCULATION FUNCTIONS (unchanged)
 // =================================================================
 
 // Utility functions
@@ -2051,12 +1761,12 @@ function calculateAll() {
     debugLog('Calculations updated:', {
         reportId: currentReportId,
         selfStressPull: selfStressingResults.calculatedPullRounded,
-        nonSelfStressPull: nonSelfStressingResults.calculatedPullRounded
+        nonSelfStressPull: nonStressingResults.calculatedPullRounded
     });
 }
 
 // =================================================================
-// FIXED: PROJECT DATA LOADING WITH MORE FLEXIBLE PROJECT FILTERING
+// FIXED: PROJECT DATA LOADING WITH MORE FLEXIBLE PROJECT FILTERING (unchanged)
 // =================================================================
 
 async function loadRealProjectData() {
@@ -2141,7 +1851,7 @@ async function loadRealProjectData() {
                     <strong>Project Loading Issue:</strong> ${error.message}<br>
                     <small>You can still use the calculator by entering project details manually</small><br>
                     <small><em>Note: Projects can have any name format, not just "12345 - Project Name"</em></small><br>
-                    <small><em>Reports will be saved locally ${scopeValidation.hasEnhancedScopes ? 'with enhanced sync capability' : '(limited permissions)'}</em></small><br>
+                    <small><em>Reports will be saved locally ${scopeValidation.hasEnhancedScopes ? 'with OSS sync capability' : '(limited permissions)'}</em></small><br>
                     <small><em>Granted scopes: ${scopeValidation.grantedScopes || '(none)'}</em></small><br>
                     <small><em>Metromont Account ID: ${METROMONT_ACCOUNT_ID}</em></small><br>
                     <small><em>Client ID: ${ACC_CLIENT_ID}</em></small>
@@ -2480,7 +2190,7 @@ async function updateACCDetailsDisplay(projectCount) {
                 <div style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem;">
                     <strong style="color: #dc2626;">Custom Integration Required:</strong><br>
                     <span style="color: #7f1d1d; font-size: 0.875rem;">
-                        No OAuth scopes were granted. Register Client ID as Custom Integration in ACC Account Admin to enable file operations.
+                        No OAuth scopes were granted. Register Client ID as Custom Integration in ACC Account Admin to enable OSS operations.
                     </span>
                 </div>
             `;
@@ -2503,7 +2213,7 @@ async function updateACCDetailsDisplay(projectCount) {
         <strong>Hub:</strong> Metromont ACC Account<br>
         <strong>OAuth Scopes:</strong> ${scopeStatusHtml}<br>
         <strong>Granted Scopes:</strong> <code style="font-size: 0.75rem;">${scopeValidation.grantedScopes || '(none)'}</code><br>
-        <strong>Storage Method:</strong> ${scopeValidation.hasEnhancedScopes ? 'ACC JSON file upload with local fallback' : 'Local storage only'}<br>
+        <strong>Storage Method:</strong> ${scopeValidation.hasEnhancedScopes ? 'OSS (Object Storage) with local fallback' : 'Local storage only'}<br>
         <strong>Project Types:</strong> Active ACC projects (flexible filtering applied)<br>
         <strong>Client ID:</strong> <code style="font-size: 0.75rem;">${ACC_CLIENT_ID}</code>
         ${scopeWarningHtml}
@@ -2548,6 +2258,19 @@ async function onProjectSelected() {
         if (projectSource) {
             projectSource.style.display = 'inline-flex';
             projectSource.textContent = `Project Data from ACC (${permissions} permissions)`;
+        }
+
+        // Initialize OSS for this project
+        debugLog('Initializing OSS for selected project...');
+        try {
+            const ossResult = await testOSSAccess();
+            if (ossResult.success) {
+                debugLog('✓ OSS initialized for project:', ossResult.bucketKey);
+            } else {
+                debugLog('⚠ OSS initialization failed:', ossResult.error);
+            }
+        } catch (ossError) {
+            debugLog('OSS initialization error:', ossError);
         }
 
         // FIXED: Load project members when project is selected
@@ -2670,18 +2393,18 @@ function showScopeWarning(scopeValidation) {
 
     if (scopeValidation.scopeIssue === 'NO_SCOPES_GRANTED') {
         warningTitle = 'OAuth Scopes Not Granted';
-        warningMessage = 'Your access token did not receive any OAuth scopes, which means enhanced file operations will not work.';
+        warningMessage = 'Your access token did not receive any OAuth scopes, which means enhanced OSS operations will not work.';
         actionSteps = [
             '1. Register your Client ID as a Custom Integration in ACC Account Admin',
             '2. Navigate to ACC Account Admin → Settings → Custom Integrations',
             '3. Add Client ID: ' + ACC_CLIENT_ID,
-            '4. Enable "Document Management" access level',
+            '4. Enable "Document Management" access level (required for OSS)',
             '5. Set integration status to "Active"',
             '6. Log out and log back in to CastLink'
         ];
     } else if (scopeValidation.scopeIssue === 'MISSING_ENHANCED_SCOPES') {
         warningTitle = 'Limited OAuth Permissions';
-        warningMessage = `Missing required scopes: ${scopeValidation.missingScopes.join(', ')}. File save operations may fail.`;
+        warningMessage = `Missing required scopes: ${scopeValidation.missingScopes.join(', ')}. OSS storage operations may fail.`;
         actionSteps = [
             '1. Verify Custom Integration registration in ACC Account Admin',
             '2. Check that "Document Management" access is enabled',
@@ -2725,8 +2448,8 @@ function showScopeWarning(scopeValidation) {
                     <h4 style="margin: 0 0 0.5rem 0; color: #0c4a6e;">What You Can Do Now:</h4>
                     <p style="margin: 0; color: #0c4a6e; font-size: 0.875rem;">
                         • Use the Quality Control calculator normally<br>
-                        • Reports will be saved locally with sync capability<br>
-                        • Once Custom Integration is configured, reports can be uploaded to ACC
+                        • Reports will be saved locally with OSS sync capability<br>
+                        • Once Custom Integration is configured, reports can be uploaded to OSS
                     </p>
                 </div>
                 
@@ -2760,7 +2483,7 @@ function showScopeWarning(scopeValidation) {
     }, 30000);
 }
 
-function enableACCFeatures(scopeValidation = null) {
+function enableOSSFeatures(scopeValidation = null) {
     const saveBtn = document.getElementById('saveBtn');
     const exportBtn = document.getElementById('exportBtn');
 
@@ -2775,7 +2498,7 @@ function enableACCFeatures(scopeValidation = null) {
                 </svg>
                 Save Locally
             `;
-            saveBtn.title = 'Will save to local storage due to limited ACC permissions';
+            saveBtn.title = 'Will save to local storage due to limited OSS permissions';
         }
     }
 
@@ -2784,11 +2507,11 @@ function enableACCFeatures(scopeValidation = null) {
 
         if (scopeValidation && !scopeValidation.hasEnhancedScopes) {
             exportBtn.disabled = true;
-            exportBtn.title = 'Export requires enhanced ACC permissions';
+            exportBtn.title = 'Export requires enhanced OSS permissions';
         }
     }
 
-    debugLog('ACC features enabled with scope limitations:', scopeValidation?.hasEnhancedScopes);
+    debugLog('OSS features enabled with scope limitations:', scopeValidation?.hasEnhancedScopes);
 }
 
 function setupUI() {
@@ -2799,11 +2522,11 @@ function setupUI() {
 }
 
 // =================================================================
-// ENHANCED SAVE FUNCTIONALITY WITH FULL ACC INTEGRATION
+// ENHANCED SAVE FUNCTIONALITY WITH OSS INTEGRATION
 // =================================================================
 
-// Updated saveToACC function with enhanced scope awareness
-async function saveToACC() {
+// Updated saveToOSS function with enhanced scope awareness (replaces saveToACC)
+async function saveToOSS() {
     if (!isACCConnected) {
         alert('Not connected to ACC. Please check your connection.');
         return;
@@ -2815,17 +2538,16 @@ async function saveToACC() {
     }
 
     try {
-        debugLog('=== STARTING SAVE TO ACC PROCESS ===');
+        debugLog('=== STARTING SAVE TO OSS PROCESS ===');
 
         // Validate current scopes using JWT decoder before attempting save
         const scopeValidation = await validateTokenScopesWithJWT();
         debugLog('Current scope validation for save:', scopeValidation);
 
-        debugLog('Current project context:', {
+        debugLog('Current OSS context:', {
             projectId: projectId,
             hubId: hubId,
-            projectTopFolderId: projectTopFolderId,
-            bedQCFolderId: bedQCFolderId,
+            currentOSSBucketKey: currentOSSBucketKey,
             reportId: currentCalculation?.reportId,
             bedName: currentCalculation?.bedName,
             hasEnhancedScopes: scopeValidation.hasEnhancedScopes
@@ -2836,7 +2558,7 @@ async function saveToACC() {
             saveBtn.disabled = true;
 
             if (scopeValidation.hasEnhancedScopes) {
-                saveBtn.innerHTML = '<div class="loading"></div> Saving to ACC with enhanced permissions...';
+                saveBtn.innerHTML = '<div class="loading"></div> Saving to OSS with enhanced permissions...';
             } else {
                 saveBtn.innerHTML = '<div class="loading"></div> Saving locally (limited permissions)...';
             }
@@ -2847,7 +2569,7 @@ async function saveToACC() {
             ...currentCalculation,
             status: 'Completed',
             createdDate: currentCalculation.timestamp,
-            savedToACC: scopeValidation.hasEnhancedScopes,
+            savedToOSS: scopeValidation.hasEnhancedScopes,
             permissions: {
                 scopesUsed: scopeValidation.grantedScopes,
                 enhancedPermissions: scopeValidation.hasEnhancedScopes,
@@ -2867,20 +2589,20 @@ async function saveToACC() {
 
         debugLog('Enhanced calculation prepared for save');
 
-        // Save to ACC Data Management API or local storage based on scope validation
-        const result = await saveBedQCReportToACC(enhancedCalculation);
+        // Save to OSS or local storage based on scope validation
+        const result = await saveBedQCReportToOSS(enhancedCalculation);
 
         debugLog('✓ Save process completed:', result);
 
         if (saveBtn) {
             saveBtn.disabled = false;
 
-            if (result.method === 'acc-file-upload') {
+            if (result.method === 'oss-upload') {
                 saveBtn.innerHTML = `
                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
                     </svg>
-                    Saved to ACC
+                    Saved to OSS
                 `;
             } else {
                 saveBtn.innerHTML = `
@@ -2895,10 +2617,10 @@ async function saveToACC() {
         // Show appropriate success message based on storage method and scope validation
         let successMessage = `Report saved successfully!\nReport ID: ${result.reportId}`;
 
-        if (result.method === 'acc-file-upload') {
-            successMessage += `\n\n✅ Storage: ACC JSON File Upload\nFile Name: ${result.fileName}\nVersion ID: ${result.versionId}\nPermissions: Enhanced scopes confirmed`;
+        if (result.method === 'oss-upload') {
+            successMessage += `\n\n✅ Storage: OSS (Object Storage Service)\nBucket: ${result.bucketKey}\nObject Key: ${result.objectKey}\nPermissions: Enhanced scopes confirmed`;
             if (result.debugInfo) {
-                successMessage += `\n\nProject Context:\nProject ID: ${result.debugInfo.projectId}\nBedQC Folder: ${result.debugInfo.bedQCFolderId}`;
+                successMessage += `\n\nProject Context:\nProject ID: ${result.debugInfo.projectId}\nOSS Bucket: ${result.debugInfo.bucketKey}`;
             }
         } else if (result.method === 'local-storage') {
             successMessage += `\n\n💾 Storage: Local browser storage`;
@@ -2906,14 +2628,14 @@ async function saveToACC() {
             if (result.customIntegrationRequired) {
                 successMessage += `\n\n⚠️ Scope Issue: ${result.saveReason}`;
                 successMessage += `\nReason: ${result.userMessage}`;
-                successMessage += `\n\nTo enable ACC file uploads:`;
+                successMessage += `\n\nTo enable OSS uploads:`;
                 successMessage += `\n• Register Client ID as Custom Integration in ACC Account Admin`;
                 successMessage += `\n• Enable "Document Management" access level`;
                 successMessage += `\n• Set integration status to "Active"`;
                 successMessage += `\n• Log out and back in to refresh scopes`;
                 successMessage += `\n\nClient ID: ${ACC_CLIENT_ID}`;
             } else if (result.error) {
-                successMessage += `\n\nNote: ACC upload failed, saved locally instead`;
+                successMessage += `\n\nNote: OSS upload failed, saved locally instead`;
                 successMessage += `\nError: ${result.error}`;
                 if (result.troubleshootingSteps && result.troubleshootingSteps.length > 0) {
                     successMessage += `\n\nTroubleshooting:\n• ${result.troubleshootingSteps.slice(0, 3).join('\n• ')}`;
@@ -2953,10 +2675,11 @@ async function saveToACC() {
         errorMessage += '• Network connectivity issues\n';
         errorMessage += '• OAuth scope configuration problems\n';
         errorMessage += '• Missing Custom Integration setup in ACC\n';
-        errorMessage += '• Project configuration issues\n\n';
+        errorMessage += '• OSS bucket configuration issues\n\n';
         errorMessage += `Current scopes: Check browser console for detailed scope information\n\n`;
         errorMessage += `Project ID: ${projectId}\n`;
-        errorMessage += `Hub ID: ${hubId}\n\n`;
+        errorMessage += `Hub ID: ${hubId}\n`;
+        errorMessage += `OSS Bucket: ${currentOSSBucketKey || 'Not initialized'}\n\n`;
         errorMessage += 'The calculation is still available in your browser session.\n';
         errorMessage += 'Check the browser console for detailed debugging information.';
 
@@ -2974,7 +2697,7 @@ function showSaveSuccessDialog(result, message) {
     let statusIcon = '';
     let statusColor = '';
 
-    if (result.method === 'acc-file-upload') {
+    if (result.method === 'oss-upload') {
         statusIcon = '☁️';
         statusColor = '#059669';
         actionButtons = `
@@ -3041,25 +2764,25 @@ ${message}
 }
 
 async function exportToACCDocs() {
-    alert('Export functionality with enhanced permissions - full implementation available in production version.');
+    alert('Export functionality with OSS permissions - full implementation available in production version.');
 }
 
 function generatePDF() {
-    alert('PDF generation functionality with enhanced permissions - full implementation available in production version.');
+    alert('PDF generation functionality with OSS permissions - full implementation available in production version.');
 }
 
 // =================================================================
-// ENHANCED REPORT HISTORY FUNCTIONALITY
+// ENHANCED REPORT HISTORY FUNCTIONALITY WITH OSS
 // =================================================================
 
 async function initializeReportHistory() {
     try {
-        debugLog('Initializing report history with enhanced permissions...');
+        debugLog('Initializing report history with OSS permissions...');
 
         // Add Report History section to the page
         addReportHistorySection();
 
-        // Load existing reports
+        // Load existing reports from OSS
         await refreshReportHistory();
 
         debugLog('Report history initialization completed');
@@ -3082,7 +2805,7 @@ function addReportHistorySection() {
                 <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z"/>
                 </svg>
-                Report History (Enhanced Permissions)
+                Report History (OSS Storage)
                 <button class="btn btn-secondary" onclick="refreshReportHistory()" style="margin-left: auto;">
                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
@@ -3095,7 +2818,7 @@ function addReportHistorySection() {
             <div id="reportsList">
                 <div style="text-align: center; color: #6b7280; padding: 2rem;">
                     <div class="loading"></div>
-                    <p>Loading reports with enhanced permissions...</p>
+                    <p>Loading reports from OSS with enhanced permissions...</p>
                 </div>
             </div>
         </div>
@@ -3106,7 +2829,7 @@ function addReportHistorySection() {
 
 async function refreshReportHistory() {
     try {
-        debugLog('=== REFRESHING REPORT HISTORY ===');
+        debugLog('=== REFRESHING REPORT HISTORY WITH OSS ===');
 
         const reportsList = document.getElementById('reportsList');
         if (!reportsList) return;
@@ -3114,12 +2837,12 @@ async function refreshReportHistory() {
         reportsList.innerHTML = `
             <div style="text-align: center; color: #6b7280; padding: 2rem;">
                 <div class="loading"></div>
-                <p>Loading reports from ACC with enhanced permissions...</p>
+                <p>Loading reports from OSS with enhanced permissions...</p>
             </div>
         `;
 
-        // Load reports from ACC
-        existingReports = await loadBedQCReportsFromACC(projectId);
+        // Load reports from OSS
+        existingReports = await loadBedQCReportsFromOSS(projectId);
 
         // Display reports
         displayReports(existingReports);
@@ -3137,6 +2860,7 @@ async function refreshReportHistory() {
                     <small>Required permissions: ${ACC_SCOPES}</small><br>
                     <small>Project ID: ${projectId}</small><br>
                     <small>Hub ID: ${hubId}</small><br>
+                    <small>OSS Bucket: ${currentOSSBucketKey || 'Not initialized'}</small><br>
                     <button class="btn btn-secondary" onclick="refreshReportHistory()">Try Again</button>
                 </div>
             `;
@@ -3191,7 +2915,7 @@ function displayReports(reports) {
             const date = new Date(data.createdDate || data.timestamp || report.lastModified);
             formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
         } else {
-            // ACC file without local data
+            // OSS object without local data
             const parts = report.displayName?.split(' - ') || ['', ''];
             bedName = parts[0] || 'Unknown Bed';
             reportId = parts[1] || 'Unknown ID';
@@ -3213,8 +2937,8 @@ function displayReports(reports) {
         if (report.source === 'local') {
             sourceIndicator = '💾 Local';
             sourceClass = 'background: #fef3c7; color: #92400e;';
-        } else if (report.source === 'acc-file') {
-            sourceIndicator = '☁️ ACC File';
+        } else if (report.source === 'oss-object') {
+            sourceIndicator = '☁️ OSS';
             sourceClass = 'background: #dcfce7; color: #166534;';
         } else {
             sourceIndicator = '💾 Stored';
@@ -3237,7 +2961,7 @@ function displayReports(reports) {
 
         return `
             <div class="tool-card" style="margin-bottom: 1rem; cursor: pointer;" 
-                 onclick="loadExistingReport('${report.itemId}', ${report.needsDownload || false})">
+                 onclick="loadExistingReport('${report.objectKey}', '${report.bucketKey || ''}', ${report.needsDownload || false})">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
                     <div>
                         <h4 style="font-size: 1.125rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;">
@@ -3255,7 +2979,7 @@ function displayReports(reports) {
                         <span style="padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 500; ${permissionClass}">${permissionIndicator}</span>
                         ${errorIndicator}
                         <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" 
-                                onclick="event.stopPropagation(); deleteReport('${report.itemId}', '${reportId}', ${report.source === 'acc-file'})">
+                                onclick="event.stopPropagation(); deleteReport('${report.objectKey}', '${report.bucketKey || ''}', '${reportId}', ${report.source === 'oss-object'})">
                             <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
                             </svg>
@@ -3277,7 +3001,7 @@ function displayReports(reports) {
                 ${notes ? `<div style="font-size: 0.875rem; color: #6b7280; font-style: italic;">"${notes}"</div>` : ''}
                 
                 <div style="margin-top: 1rem; font-size: 0.75rem; color: #9ca3af;">
-                    ${report.needsDownload ? 'Will download from ACC when opened' : 'Ready to load'} | ${permissions} permissions | Click to open and edit
+                    ${report.needsDownload ? 'Will download from OSS when opened' : 'Ready to load'} | ${permissions} permissions | Click to open and edit
                     ${errorInfo ? `<br><span style="color: #dc2626;">Issue: ${errorInfo.analysis}</span>` : ''}
                 </div>
             </div>
@@ -3287,22 +3011,23 @@ function displayReports(reports) {
     reportsList.innerHTML = reportsHTML;
 }
 
-// Load Existing Report
-async function loadExistingReport(itemId, needsDownload = false) {
+// Load Existing Report from OSS
+async function loadExistingReport(objectKey, bucketKey = '', needsDownload = false) {
     try {
-        debugLog('=== LOADING EXISTING REPORT ===');
-        debugLog('Item ID:', itemId);
+        debugLog('=== LOADING EXISTING REPORT FROM OSS ===');
+        debugLog('Object Key:', objectKey);
+        debugLog('Bucket Key:', bucketKey);
         debugLog('Needs Download:', needsDownload);
 
         let reportData = null;
 
-        if (needsDownload) {
-            // Download from ACC
-            const reportContent = await downloadReportFromACC(itemId);
+        if (needsDownload && bucketKey) {
+            // Download from OSS
+            const reportContent = await downloadReportFromOSS(bucketKey, objectKey);
             reportData = reportContent.reportData;
         } else {
             // Find the report in our loaded data
-            const reportObj = existingReports.find(r => r.itemId === itemId);
+            const reportObj = existingReports.find(r => r.objectKey === objectKey);
             if (!reportObj) {
                 throw new Error('Report not found in loaded data');
             }
@@ -3340,7 +3065,7 @@ async function loadExistingReport(itemId, needsDownload = false) {
         if (saveBtn) saveBtn.disabled = false;
         if (exportBtn) exportBtn.disabled = false;
 
-        debugLog('✓ Successfully loaded existing report');
+        debugLog('✓ Successfully loaded existing report from OSS');
 
     } catch (error) {
         debugLog('Error loading existing report:', error);
@@ -3419,19 +3144,19 @@ function setElementValue(id, value) {
     }
 }
 
-// Delete Report
-async function deleteReport(itemId, reportId, isACCFile = false) {
+// Delete Report from OSS
+async function deleteReport(objectKey, bucketKey, reportId, isOSSObject = false) {
     if (!confirm(`Are you sure you want to delete report "${reportId}"? This action cannot be undone.`)) {
         return;
     }
 
     try {
-        debugLog('Deleting report:', itemId, reportId, isACCFile);
+        debugLog('Deleting report:', objectKey, bucketKey, reportId, isOSSObject);
 
-        await deleteBedQCReportFromACC(itemId, isACCFile);
+        await deleteBedQCReportFromOSS(objectKey, bucketKey, isOSSObject);
 
         // Remove from local array
-        existingReports = existingReports.filter(r => r.itemId !== itemId);
+        existingReports = existingReports.filter(r => r.objectKey !== objectKey);
 
         // Refresh display
         displayReports(existingReports);
@@ -3468,10 +3193,47 @@ function setupModalHandlers() {
     }
 }
 
+// ALIAS FUNCTIONS TO MAINTAIN COMPATIBILITY
+// These functions provide aliases for the old Document Management API calls
+// so the HTML onclick handlers continue to work without modification
+
+// Alias: saveToACC now calls saveToOSS
+async function saveToACC() {
+    return await saveToOSS();
+}
+
+// Alias: saveBedQCReportToACC now calls saveBedQCReportToOSS
+async function saveBedQCReportToACC(reportData) {
+    return await saveBedQCReportToOSS(reportData);
+}
+
+// Alias: loadBedQCReportsFromACC now calls loadBedQCReportsFromOSS
+async function loadBedQCReportsFromACC(projectId) {
+    return await loadBedQCReportsFromOSS(projectId);
+}
+
+// Alias: downloadReportFromACC now calls downloadReportFromOSS
+async function downloadReportFromACC(versionId) {
+    // For OSS, we need bucketKey and objectKey instead of versionId
+    // This function should not be called directly anymore, but we provide it for compatibility
+    throw new Error('downloadReportFromACC is deprecated. Use downloadReportFromOSS with bucketKey and objectKey instead.');
+}
+
+// Alias: deleteBedQCReportFromACC now calls deleteBedQCReportFromOSS
+async function deleteBedQCReportFromACC(itemId, isACCFile = false) {
+    // Extract objectKey and bucketKey from itemId if it's an OSS reference
+    if (itemId.includes('/') && currentOSSBucketKey) {
+        return await deleteBedQCReportFromOSS(itemId, currentOSSBucketKey, true);
+    } else {
+        return await deleteBedQCReportFromOSS(itemId, '', false);
+    }
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {
-    console.log('Quality Control page loaded with enhanced ACC permissions');
+    console.log('Quality Control page loaded with OSS integration');
     console.log('Requesting scopes:', ACC_SCOPES);
+    console.log('OSS API Base:', OSS_API_BASE);
     console.log('Debug mode enabled:', debugMode);
     setupUI();
     setupModalHandlers();
