@@ -684,7 +684,7 @@ function navigateToModule(module) {
             showNotification('Design Development coming Q3 2025');
             break;
         case 'production':
-            showNotification('Production Scheduling coming Q2 2025');
+            window.location.href = 'production-scheduling.html';
             break;
         case 'inventory':
             showNotification('Inventory Tracking coming Q1 2025');
