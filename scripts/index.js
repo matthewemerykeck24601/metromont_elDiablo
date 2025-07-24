@@ -671,6 +671,8 @@ function clearStoredToken() {
 
 // Navigation functions
 function navigateToModule(module) {
+    console.log('Navigation attempt:', module, 'isAuthenticated:', isAuthenticated);
+
     if (!isAuthenticated) {
         showNotification('Please wait for authentication to complete');
         return;
