@@ -2,6 +2,10 @@
 const ACC_CLIENT_ID = window.ACC_CLIENT_ID;
 const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 
+// Metromont Hub Configuration
+const METROMONT_ACCOUNT_ID = 'f61b9f7b-5481-4d25-a552-365ba99077b8'; // Change this for testing
+const METROMONT_HUB_ID = `b.${METROMONT_ACCOUNT_ID}`;
+
 // Enhanced scope configuration for full ACC integration including OSS bucket management
 const ACC_SCOPES = [
     'data:read',        // View data within ACC
@@ -23,6 +27,20 @@ let isAuthenticated = false;
 let authCheckComplete = false;
 let hubId = null;
 let projectId = null;
+
+// Global Hub/Project Data (shared across all modules)
+let globalHubData = {
+    hubId: null,
+    hubInfo: null,
+    projects: [],
+    projectMembers: {},
+    loadedAt: null,
+    accountInfo: {
+        id: METROMONT_ACCOUNT_ID,
+        hubId: METROMONT_HUB_ID,
+        name: 'Metromont ACC Account'
+    }
+};
 
 // UI Elements
 const authProcessing = document.getElementById('authProcessing');
@@ -217,58 +235,18 @@ async function handleOAuthCallback(authCode) {
 
 async function completeAuthentication() {
     try {
-        updateAuthStatus('Loading Projects...', 'Connecting to your Autodesk Construction Cloud account...');
+        updateAuthStatus('Connecting to Hub...', 'Loading your Metromont ACC account...');
 
-        // Test the connection and load basic account info
-        const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
+        // Connect to hub and load project data during main authentication
+        await connectToHubAndLoadProjects();
 
-        if (!hubsResponse.ok) {
-            throw new Error('Failed to connect to ACC');
-        }
-
-        const hubsData = await hubsResponse.json();
-        const accHubs = hubsData.data.filter(hub =>
-            hub.attributes.extension?.type === 'hubs:autodesk.bim360:Account'
-        );
-
-        if (accHubs.length === 0) {
-            throw new Error('No ACC hubs found in your account');
-        }
-
-        // Set hubId for testing
-        hubId = accHubs[0].id;
-
-        // Test enhanced permissions
-        updateAuthStatus('Verifying Permissions...', 'Checking your ACC permissions for file operations...');
-
-        const firstHub = accHubs[0];
-        const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${firstHub.id}/projects`, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        if (!projectsResponse.ok) {
-            console.warn('Limited project access - some features may be restricted');
-        } else {
-            const projectsData = await projectsResponse.json();
-            if (projectsData.data && projectsData.data.length > 0) {
-                projectId = projectsData.data[0].id; // Set projectId for testing
-            }
-        }
-
-        // Test scope permissions with better error handling
         updateAuthStatus('Testing Permissions...', 'Validating API access capabilities including OSS bucket access...');
         await testScopePermissions();
 
         isAuthenticated = true;
         authCheckComplete = true;
 
-        updateAuthStatus('Success!', 'Successfully connected to Autodesk Construction Cloud with OSS bucket permissions');
+        updateAuthStatus('Success!', `Successfully connected to Metromont ACC with ${globalHubData.projects.length} projects loaded`);
 
         // Small delay to show success message
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -281,12 +259,250 @@ async function completeAuthentication() {
         initializePageInteractions();
 
         // Log successful authentication with scope info
-        console.log('Authentication completed successfully');
+        console.log('=== AUTHENTICATION COMPLETE ===');
         console.log('Access token scope includes:', ACC_SCOPES);
-        console.log('Available ACC hubs:', accHubs.length);
+        console.log('Hub connected:', globalHubData.hubId);
+        console.log('Projects loaded:', globalHubData.projects.length);
+        console.log('Global hub data available for all modules');
+        console.log('===============================');
 
     } catch (error) {
         console.error('Authentication completion failed:', error);
+        throw error;
+    }
+}
+
+// NEW: Hub Connection and Project Loading during main auth
+async function connectToHubAndLoadProjects() {
+    try {
+        // Connect to the Metromont hub
+        hubId = METROMONT_HUB_ID;
+        globalHubData.hubId = hubId;
+
+        console.log('=== HUB CONNECTION ===');
+        console.log('Connecting to hub:', hubId);
+        console.log('Account ID:', METROMONT_ACCOUNT_ID);
+
+        const hubResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!hubResponse.ok) {
+            const errorText = await hubResponse.text();
+            throw new Error(`Failed to access Metromont hub: ${hubResponse.status} ${errorText}`);
+        }
+
+        const hubData = await hubResponse.json();
+        globalHubData.hubInfo = hubData.data;
+
+        console.log('✅ Hub connection successful');
+        console.log('Hub name:', hubData.data?.attributes?.name || 'Unknown');
+
+        // Load all projects from the hub
+        updateAuthStatus('Loading Projects...', 'Loading all projects from your ACC account...');
+        await loadAllProjectsFromHub(hubId);
+
+        // Store the loaded data with timestamp
+        globalHubData.loadedAt = new Date().toISOString();
+
+        // Store in session storage so it persists across page navigation
+        sessionStorage.setItem('castlink_hub_data', JSON.stringify(globalHubData));
+
+        console.log('✅ Projects loaded successfully');
+        console.log('Total projects:', globalHubData.projects.length);
+        console.log('======================');
+
+    } catch (error) {
+        console.error('Hub connection failed:', error);
+
+        // Set minimal hub data so modules can still work with manual entry
+        globalHubData = {
+            hubId: METROMONT_HUB_ID,
+            hubInfo: null,
+            projects: [],
+            projectMembers: {},
+            loadedAt: new Date().toISOString(),
+            error: error.message,
+            accountInfo: {
+                id: METROMONT_ACCOUNT_ID,
+                hubId: METROMONT_HUB_ID,
+                name: 'Metromont ACC Account (Error Loading)'
+            }
+        };
+
+        sessionStorage.setItem('castlink_hub_data', JSON.stringify(globalHubData));
+
+        console.warn('⚠️ Hub connection failed, modules will fall back to manual entry');
+        throw error;
+    }
+}
+
+async function loadAllProjectsFromHub(hubId) {
+    try {
+        const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!projectsResponse.ok) {
+            throw new Error(`Failed to load projects: ${projectsResponse.status} ${await projectsResponse.text()}`);
+        }
+
+        const projectsData = await projectsResponse.json();
+        const validProjects = [];
+
+        const strictPattern = /^(\d{5})\s*-\s*(.+)$/;
+        const flexiblePattern = /^(\d{3,6})\s*[-_\s]+(.+)$/;
+        const numberFirstPattern = /^(\d{3,6})\s+(.+)$/;
+
+        for (const project of projectsData.data) {
+            const projectName = project.attributes.name || '';
+
+            const projectStatus = project.attributes.status || '';
+            if (projectStatus === 'archived' || projectStatus === 'inactive') {
+                continue;
+            }
+
+            if (projectName.toLowerCase().includes('test') ||
+                projectName.toLowerCase().includes('template') ||
+                projectName.toLowerCase().includes('training') ||
+                projectName.toLowerCase().includes('mockup') ||
+                projectName.toLowerCase().includes('legacy') ||
+                projectName.startsWith('zz') ||
+                projectName.startsWith('ZZ')) {
+                continue;
+            }
+
+            let nameMatch = null;
+            let projectNumber = '';
+            let projectDisplayName = projectName;
+
+            nameMatch = projectName.match(strictPattern);
+            if (nameMatch) {
+                projectNumber = nameMatch[1];
+                projectDisplayName = nameMatch[2].trim();
+            } else {
+                nameMatch = projectName.match(flexiblePattern);
+                if (nameMatch) {
+                    projectNumber = nameMatch[1];
+                    projectDisplayName = nameMatch[2].trim();
+                } else {
+                    nameMatch = projectName.match(numberFirstPattern);
+                    if (nameMatch) {
+                        projectNumber = nameMatch[1];
+                        projectDisplayName = nameMatch[2].trim();
+                    } else {
+                        const numberExtract = projectName.match(/(\d{3,6})/);
+                        if (numberExtract) {
+                            projectNumber = numberExtract[1];
+                            projectDisplayName = projectName;
+                        } else {
+                            projectNumber = 'N/A';
+                            projectDisplayName = projectName;
+                        }
+                    }
+                }
+            }
+
+            validProjects.push({
+                project: project,
+                projectNumber: projectNumber,
+                projectDisplayName: projectDisplayName,
+                fullProjectName: projectName
+            });
+        }
+
+        // Process each project to get additional details
+        const projects = [];
+        for (const validProject of validProjects) {
+            const { project, projectNumber, projectDisplayName, fullProjectName } = validProject;
+
+            let location = '';
+            let actualProjectNumber = projectNumber;
+
+            try {
+                // Small delay to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
+                    headers: {
+                        'Authorization': `Bearer ${forgeAccessToken}`
+                    }
+                });
+
+                if (projectDetailResponse.ok) {
+                    const projectDetail = await projectDetailResponse.json();
+
+                    if (projectDetail.data?.attributes?.extension?.data) {
+                        const extData = projectDetail.data.attributes.extension.data;
+
+                        const accProjectNumber = extData.projectNumber ||
+                            extData.project_number ||
+                            extData.number ||
+                            extData.jobNumber ||
+                            extData.job_number ||
+                            extData.projectCode ||
+                            extData.code || '';
+
+                        if (accProjectNumber && accProjectNumber.trim() !== '') {
+                            actualProjectNumber = accProjectNumber.trim();
+                        }
+
+                        location = extData.location ||
+                            extData.project_location ||
+                            extData.address ||
+                            extData.city ||
+                            extData.state ||
+                            extData.jobLocation ||
+                            extData.site ||
+                            extData.client_location ||
+                            extData.job_site || '';
+
+                        if (location) {
+                            location = location.trim();
+                        }
+                    }
+                }
+            } catch (detailError) {
+                console.log('Could not get detailed project info for', fullProjectName, ':', detailError.message);
+            }
+
+            projects.push({
+                id: project.id,
+                name: fullProjectName,
+                displayName: projectDisplayName,
+                number: actualProjectNumber,
+                numericSort: parseInt(actualProjectNumber, 10) || 999999,
+                location: location || 'Location not specified',
+                fullData: project,
+                permissions: 'enhanced',
+                projectType: 'ACC',
+                status: project.attributes.status || 'active'
+            });
+        }
+
+        // Sort projects by number
+        const sortedProjects = projects.sort((a, b) => {
+            if (a.numericSort !== b.numericSort) {
+                return a.numericSort - b.numericSort;
+            }
+            return a.name.localeCompare(b.name);
+        });
+
+        globalHubData.projects = sortedProjects;
+
+        // Set the first project as default
+        if (sortedProjects.length > 0) {
+            projectId = sortedProjects[0].id;
+        }
+
+        console.log(`✅ Processed ${sortedProjects.length} projects from hub`);
+
+    } catch (error) {
+        console.error('Error in loadAllProjectsFromHub:', error);
         throw error;
     }
 }
@@ -323,7 +539,6 @@ async function testScopePermissions() {
     }
 
     // Test 3: Folder access (requires data:read, enhanced permissions)
-    // IMPROVED: Better 404 error handling and explanation
     if (projectId) {
         try {
             const foldersResponse = await fetch(`https://developer.api.autodesk.com/data/v1/projects/${projectId}/folders`, {
@@ -341,10 +556,6 @@ async function testScopePermissions() {
 
                 if (foldersResponse.status === 404) {
                     console.log('   📝 404 Analysis: This project may not have Data Management API enabled');
-                    console.log('   📝 Common causes:');
-                    console.log('      • Project lacks Document Management module');
-                    console.log('      • Project is legacy BIM 360 without ACC features');
-                    console.log('      • Project admin needs to enable Data Management API');
                     console.log('   📝 Solution: Reports will save via OSS with local fallback');
                 } else if (foldersResponse.status === 403) {
                     console.log('   📝 403 Analysis: Permission issue despite scopes');
@@ -454,7 +665,8 @@ function isTokenExpired(tokenInfo) {
 function clearStoredToken() {
     sessionStorage.removeItem('forge_token');
     localStorage.removeItem('forge_token_backup');
-    console.log('Token cleared');
+    sessionStorage.removeItem('castlink_hub_data'); // Also clear hub data
+    console.log('Token and hub data cleared');
 }
 
 // Navigation functions
@@ -519,6 +731,7 @@ window.CastLinkAuth = {
     isAuthenticated: () => isAuthenticated,
     getToken: () => forgeAccessToken,
     getScopes: () => ACC_SCOPES,
+    getHubData: () => globalHubData,
     waitForAuth: async () => {
         while (!authCheckComplete) {
             await new Promise(resolve => setTimeout(resolve, 100));

@@ -2,10 +2,6 @@
 const ACC_CLIENT_ID = window.ACC_CLIENT_ID;
 const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 
-// Metromont specific configuration
-const METROMONT_ACCOUNT_ID = '956c9a49-bc6e-4459-b873-d9ecea0600cb';
-const METROMONT_HUB_ID = `b.${METROMONT_ACCOUNT_ID}`;
-
 // Enhanced scope configuration including OSS bucket management
 const ACC_SCOPES = [
     'data:read',
@@ -33,6 +29,9 @@ let currentCalculation = null;
 let userProjects = [];
 let projectMembers = [];
 
+// Global Hub Data (loaded from main app)
+let globalHubData = null;
+
 // Form Instance Management
 let currentReportId = null;
 let currentBedId = null;
@@ -56,15 +55,18 @@ const authProcessing = document.getElementById('authProcessing');
 const authTitle = document.getElementById('authTitle');
 const authMessage = document.getElementById('authMessage');
 
-// Authentication Flow
+// Authentication Flow - Simplified to use pre-loaded data
 async function initializeApp() {
     try {
+        console.log('=== QUALITY CONTROL MODULE INITIALIZATION ===');
+
         if (window.opener && window.opener.CastLinkAuth) {
             const parentAuth = window.opener.CastLinkAuth;
             const isParentAuth = await parentAuth.waitForAuth();
 
             if (isParentAuth) {
                 forgeAccessToken = parentAuth.getToken();
+                globalHubData = parentAuth.getHubData();
                 await completeAuthentication();
                 return;
             }
@@ -99,12 +101,17 @@ function redirectToMainApp() {
 
 async function completeAuthentication() {
     try {
-        updateAuthStatus('Loading Projects...', 'Connecting to your Autodesk Construction Cloud account...');
+        updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
 
-        await loadRealProjectData();
+        // Load the hub data that was already loaded during main authentication
+        await loadPreLoadedHubData();
 
         isACCConnected = true;
-        updateAuthStatus('Success!', 'Successfully connected to ACC with OSS backend and bucket permissions');
+
+        const projectCount = globalHubData ? globalHubData.projects.length : 0;
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
+
+        updateAuthStatus('Success!', `Connected to ${accountName} with ${projectCount} projects available`);
 
         await new Promise(resolve => setTimeout(resolve, 800));
 
@@ -116,14 +123,98 @@ async function completeAuthentication() {
         const authStatusBadge = document.getElementById('authStatusBadge');
         if (authStatusBadge) {
             authStatusBadge.style.display = 'inline-flex';
+            authStatusBadge.innerHTML = `
+                <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                </svg>
+                Connected to ${accountName}
+            `;
         }
 
         initializeDropdowns();
         await initializeReportHistory();
 
+        console.log('✅ Quality Control module ready with pre-loaded data');
+
     } catch (error) {
         console.error('Authentication completion failed:', error);
         showAuthError('Failed to load project data: ' + error.message);
+    }
+}
+
+// NEW: Load pre-loaded hub data instead of making API calls
+async function loadPreLoadedHubData() {
+    try {
+        // Try to get hub data from parent window first
+        if (!globalHubData && window.opener && window.opener.CastLinkAuth) {
+            globalHubData = window.opener.CastLinkAuth.getHubData();
+        }
+
+        // If not available, try to load from session storage
+        if (!globalHubData) {
+            const storedHubData = sessionStorage.getItem('castlink_hub_data');
+            if (storedHubData) {
+                globalHubData = JSON.parse(storedHubData);
+                console.log('✅ Loaded hub data from session storage');
+            }
+        }
+
+        if (globalHubData && globalHubData.projects && globalHubData.projects.length > 0) {
+            // Use the pre-loaded project data
+            userProjects = globalHubData.projects;
+            hubId = globalHubData.hubId;
+
+            // Set default project
+            if (globalHubData.projects.length > 0) {
+                projectId = globalHubData.projects[0].id;
+            }
+
+            populateProjectDropdown(globalHubData.projects);
+            updateACCDetailsDisplay(globalHubData.projects.length);
+
+            console.log('✅ Using pre-loaded hub data:');
+            console.log('   Hub ID:', globalHubData.hubId);
+            console.log('   Projects:', globalHubData.projects.length);
+            console.log('   Loaded at:', globalHubData.loadedAt);
+
+        } else {
+            console.warn('⚠️ No pre-loaded hub data available, falling back to manual entry');
+            await handleMissingHubData();
+        }
+
+    } catch (error) {
+        console.error('Error loading pre-loaded hub data:', error);
+        await handleMissingHubData();
+    }
+}
+
+async function handleMissingHubData() {
+    console.log('Setting up manual entry fallback...');
+
+    const projectSelect = document.getElementById('projectName');
+    if (projectSelect) {
+        projectSelect.innerHTML = '<option value="">Enter project details manually below...</option>';
+        projectSelect.disabled = false;
+    }
+
+    ['projectNumber', 'location'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.disabled = false;
+            element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
+        }
+    });
+
+    const accDetails = document.getElementById('accDetails');
+    if (accDetails) {
+        accDetails.innerHTML = `
+            <div style="color: #f59e0b;">
+                <strong>Hub Data Not Available:</strong> Pre-loaded project data not found<br>
+                <small>You can still use the calculator by entering project details manually</small><br>
+                <small><em>Reports will be saved to OSS backend via server function with bucket permissions</em></small><br>
+                <small><strong>Tip:</strong> Go back to main dashboard and reload to connect to hub</small>
+            </div>
+        `;
     }
 }
 
@@ -198,223 +289,6 @@ function clearStoredToken() {
     console.log('Token cleared');
 }
 
-// Project Data Loading
-async function loadRealProjectData() {
-    try {
-        hubId = METROMONT_HUB_ID;
-
-        const hubResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}`, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        if (!hubResponse.ok) {
-            const errorText = await hubResponse.text();
-            throw new Error(`Failed to access Metromont hub: ${hubResponse.status} ${errorText}`);
-        }
-
-        await loadProjectsFromHub(hubId);
-
-    } catch (error) {
-        console.error('Failed to load project data:', error);
-
-        const projectSelect = document.getElementById('projectName');
-        if (projectSelect) {
-            projectSelect.innerHTML = '<option value="">Enter project details manually below...</option>';
-            projectSelect.disabled = false;
-        }
-
-        ['projectNumber', 'location'].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.disabled = false;
-                element.placeholder = element.placeholder.replace('Loading from ACC...', 'Enter manually');
-            }
-        });
-
-        const accDetails = document.getElementById('accDetails');
-        if (accDetails) {
-            accDetails.innerHTML = `
-                <div style="color: #dc2626;">
-                    <strong>Project Loading Issue:</strong> ${error.message}<br>
-                    <small>You can still use the calculator by entering project details manually</small><br>
-                    <small><em>Reports will be saved to OSS backend via server function with bucket permissions</em></small>
-                </div>
-            `;
-        }
-    }
-}
-
-async function loadProjectsFromHub(hubId) {
-    try {
-        const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects`, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`
-            }
-        });
-
-        if (!projectsResponse.ok) {
-            throw new Error(`Failed to load projects: ${projectsResponse.status} ${await projectsResponse.text()}`);
-        }
-
-        const projectsData = await projectsResponse.json();
-        const validProjects = [];
-
-        const strictPattern = /^(\d{5})\s*-\s*(.+)$/;
-        const flexiblePattern = /^(\d{3,6})\s*[-_\s]+(.+)$/;
-        const numberFirstPattern = /^(\d{3,6})\s+(.+)$/;
-
-        for (const project of projectsData.data) {
-            const projectName = project.attributes.name || '';
-
-            const projectStatus = project.attributes.status || '';
-            if (projectStatus === 'archived' || projectStatus === 'inactive') {
-                continue;
-            }
-
-            if (projectName.toLowerCase().includes('test') ||
-                projectName.toLowerCase().includes('template') ||
-                projectName.toLowerCase().includes('training') ||
-                projectName.toLowerCase().includes('mockup') ||
-                projectName.toLowerCase().includes('legacy') ||
-                projectName.startsWith('zz') ||
-                projectName.startsWith('ZZ')) {
-                continue;
-            }
-
-            let nameMatch = null;
-            let projectNumber = '';
-            let projectDisplayName = projectName;
-
-            nameMatch = projectName.match(strictPattern);
-            if (nameMatch) {
-                projectNumber = nameMatch[1];
-                projectDisplayName = nameMatch[2].trim();
-            } else {
-                nameMatch = projectName.match(flexiblePattern);
-                if (nameMatch) {
-                    projectNumber = nameMatch[1];
-                    projectDisplayName = nameMatch[2].trim();
-                } else {
-                    nameMatch = projectName.match(numberFirstPattern);
-                    if (nameMatch) {
-                        projectNumber = nameMatch[1];
-                        projectDisplayName = nameMatch[2].trim();
-                    } else {
-                        const numberExtract = projectName.match(/(\d{3,6})/);
-                        if (numberExtract) {
-                            projectNumber = numberExtract[1];
-                            projectDisplayName = projectName;
-                        } else {
-                            projectNumber = 'N/A';
-                            projectDisplayName = projectName;
-                        }
-                    }
-                }
-            }
-
-            validProjects.push({
-                project: project,
-                projectNumber: projectNumber,
-                projectDisplayName: projectDisplayName,
-                fullProjectName: projectName
-            });
-        }
-
-        const projects = [];
-        for (const validProject of validProjects) {
-            const { project, projectNumber, projectDisplayName, fullProjectName } = validProject;
-
-            let location = '';
-            let actualProjectNumber = projectNumber;
-
-            try {
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
-                    headers: {
-                        'Authorization': `Bearer ${forgeAccessToken}`
-                    }
-                });
-
-                if (projectDetailResponse.ok) {
-                    const projectDetail = await projectDetailResponse.json();
-
-                    if (projectDetail.data?.attributes?.extension?.data) {
-                        const extData = projectDetail.data.attributes.extension.data;
-
-                        const accProjectNumber = extData.projectNumber ||
-                            extData.project_number ||
-                            extData.number ||
-                            extData.jobNumber ||
-                            extData.job_number ||
-                            extData.projectCode ||
-                            extData.code || '';
-
-                        if (accProjectNumber && accProjectNumber.trim() !== '') {
-                            actualProjectNumber = accProjectNumber.trim();
-                        }
-
-                        location = extData.location ||
-                            extData.project_location ||
-                            extData.address ||
-                            extData.city ||
-                            extData.state ||
-                            extData.jobLocation ||
-                            extData.site ||
-                            extData.client_location ||
-                            extData.job_site || '';
-
-                        if (location) {
-                            location = location.trim();
-                        }
-                    }
-                }
-            } catch (detailError) {
-                console.log('Could not get detailed project info for', fullProjectName, ':', detailError);
-            }
-
-            projects.push({
-                id: project.id,
-                name: fullProjectName,
-                displayName: projectDisplayName,
-                number: actualProjectNumber,
-                numericSort: parseInt(actualProjectNumber, 10) || 999999,
-                location: location || 'Location not specified',
-                fullData: project,
-                permissions: 'enhanced',
-                projectType: 'ACC',
-                status: project.attributes.status || 'active'
-            });
-        }
-
-        const sortedProjects = projects.sort((a, b) => {
-            if (a.numericSort !== b.numericSort) {
-                return a.numericSort - b.numericSort;
-            }
-            return a.name.localeCompare(b.name);
-        });
-
-        populateProjectDropdown(sortedProjects);
-
-        if (sortedProjects.length > 0) {
-            setTimeout(() => {
-                const projectSelect = document.getElementById('projectName');
-                if (projectSelect) {
-                    projectSelect.value = sortedProjects[0].id;
-                    projectId = sortedProjects[0].id;
-                    onProjectSelected();
-                }
-            }, 100);
-        }
-
-    } catch (error) {
-        console.error('Error in loadProjectsFromHub:', error);
-        throw error;
-    }
-}
-
 function populateProjectDropdown(projects) {
     try {
         userProjects = projects;
@@ -425,7 +299,8 @@ function populateProjectDropdown(projects) {
             return;
         }
 
-        projectSelect.innerHTML = '<option value="">Select an ACC project...</option>';
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
+        projectSelect.innerHTML = `<option value="">Select a project from ${accountName}...</option>`;
 
         projects.forEach((project) => {
             const option = document.createElement('option');
@@ -439,7 +314,14 @@ function populateProjectDropdown(projects) {
 
         projectSelect.disabled = false;
 
-        updateACCDetailsDisplay(projects.length);
+        // Auto-select first project
+        if (projects.length > 0) {
+            setTimeout(() => {
+                projectSelect.value = projects[0].id;
+                projectId = projects[0].id;
+                onProjectSelected();
+            }, 100);
+        }
 
     } catch (error) {
         console.error('Error in populateProjectDropdown:', error);
@@ -451,11 +333,17 @@ function updateACCDetailsDisplay(projectCount) {
     const accDetails = document.getElementById('accDetails');
     if (!accDetails) return;
 
+    const accountInfo = globalHubData ? globalHubData.accountInfo : null;
+    const accountName = accountInfo ? accountInfo.name : 'ACC Account';
+    const accountId = accountInfo ? accountInfo.id : 'Unknown';
+    const loadedAt = globalHubData ? new Date(globalHubData.loadedAt).toLocaleString() : 'Unknown';
+
     accDetails.innerHTML = `
-        <strong>Status:</strong> Connected to Metromont ACC<br>
-        <strong>Account:</strong> ${METROMONT_ACCOUNT_ID}<br>
+        <strong>Status:</strong> Connected to ${accountName}<br>
+        <strong>Account:</strong> ${accountId}<br>
         <strong>Projects Found:</strong> ${projectCount} active ACC projects<br>
-        <strong>Hub:</strong> Metromont ACC Account<br>
+        <strong>Hub:</strong> ${accountInfo ? accountInfo.description : 'ACC Account'}<br>
+        <strong>Data Loaded:</strong> ${loadedAt} (pre-loaded during main authentication)<br>
         <strong>Storage Method:</strong> OSS Backend with bucket permissions (via server function) with local fallback<br>
         <strong>Client ID:</strong> <code style="font-size: 0.75rem;">${ACC_CLIENT_ID}</code><br>
         <strong>Bucket Scopes:</strong> <code style="font-size: 0.75rem;">bucket:create, bucket:read, bucket:update, bucket:delete</code>
@@ -491,7 +379,7 @@ async function onProjectSelected() {
 
         if (projectSource) {
             projectSource.style.display = 'inline-flex';
-            projectSource.textContent = `Project Data from ACC (${permissions} permissions)`;
+            projectSource.textContent = `Project Data from ACC (${permissions} permissions, pre-loaded)`;
         }
 
         try {
@@ -1216,7 +1104,8 @@ async function saveBedQCReportToOSS(reportData) {
             projectId: projectId,
             hubId: hubId,
             userToken: forgeAccessToken ? 'present' : 'missing',
-            bucketPermissions: 'create,read,update,delete'
+            bucketPermissions: 'create,read,update,delete',
+            dataSource: 'pre-loaded-hub-data'
         },
         reportData: reportData
     };
@@ -1826,7 +1715,7 @@ function setupUI() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    console.log('Quality Control page loaded with OSS backend integration and bucket permissions');
+    console.log('Quality Control page loaded with pre-loaded hub data integration and bucket permissions');
     console.log('Requesting scopes:', ACC_SCOPES);
     setupUI();
     setupModalHandlers();
