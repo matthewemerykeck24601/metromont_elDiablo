@@ -241,18 +241,18 @@ function initializeUI() {
     }
 }
 
-// Three.js Initialization
+// 3D Viewer Initialization
 async function initializeThreeJS() {
     try {
         const container = document.getElementById('threejsContainer');
         if (!container) {
-            console.error('Three.js container not found');
+            console.error('3D container not found');
             return;
         }
 
-        // Check if Three.js is available
+        // Check if our 3D engine is available
         if (typeof THREE === 'undefined') {
-            throw new Error('Three.js library not loaded');
+            throw new Error('3D graphics engine not loaded');
         }
 
         // Scene setup
@@ -266,14 +266,13 @@ async function initializeThreeJS() {
         camera.position.set(100, 100, 100);
         camera.lookAt(0, 0, 0);
 
-        // Renderer setup
+        // Renderer setup (using our canvas-based renderer)
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(container.clientWidth, container.clientHeight);
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(renderer.domElement);
 
-        // Controls (using our custom implementation)
+        // Controls
         if (THREE.OrbitControls) {
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
@@ -285,26 +284,18 @@ async function initializeThreeJS() {
             console.warn('OrbitControls not available, using basic mouse controls');
         }
 
-        // Lights
+        // Lights (simplified for canvas renderer)
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
 
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
         directionalLight.position.set(50, 100, 50);
         directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -100;
-        directionalLight.shadow.camera.right = 100;
-        directionalLight.shadow.camera.top = 100;
-        directionalLight.shadow.camera.bottom = -100;
-        directionalLight.shadow.camera.near = 0.1;
-        directionalLight.shadow.camera.far = 200;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
         scene.add(directionalLight);
 
         // Raycaster for mouse interaction
         raycaster = new THREE.Raycaster();
-        mouse = new THREE.Vector2();
+        mouse = { x: 0, y: 0 }; // Simple mouse object
 
         // Event listeners
         renderer.domElement.addEventListener('click', onMouseClick);
@@ -315,10 +306,10 @@ async function initializeThreeJS() {
         animate();
 
         isThreeJSInitialized = true;
-        console.log('Three.js initialized successfully');
+        console.log('3D viewer initialized successfully');
 
     } catch (error) {
-        console.error('Three.js initialization failed:', error);
+        console.error('3D viewer initialization failed:', error);
         showThreeJSError(error.message);
     }
 }
@@ -369,18 +360,32 @@ function onMouseClick(event) {
     const container = document.getElementById('threejsContainer');
     const rect = container.getBoundingClientRect();
 
+    // Normalize mouse coordinates
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
     raycaster.setFromCamera(mouse, camera);
 
-    // Get all piece meshes
-    const meshes = Array.from(pieceMeshes.values()).flat();
+    // Get all piece meshes for intersection testing
+    const meshes = [];
+    pieceMeshes.forEach(group => {
+        if (group.children) {
+            group.children.forEach(child => meshes.push(child));
+        } else {
+            meshes.push(group);
+        }
+    });
+
     const intersects = raycaster.intersectObjects(meshes, true);
 
     if (intersects.length > 0) {
         const intersectedObject = intersects[0].object;
-        const group = intersectedObject.parent;
+        let group = intersectedObject;
+
+        // Find the parent group with userData
+        while (group && (!group.userData || !group.userData.assetId)) {
+            group = group.parent;
+        }
 
         if (group && group.userData && group.userData.assetId) {
             selectPiece(group.userData.assetId);
@@ -429,7 +434,7 @@ function loadBed(bedId) {
     const config = BED_CONFIGS[bedId];
     if (!config) return;
 
-    // Create bed geometry
+    // Create bed geometry (using our simplified BoxGeometry)
     const geometry = new THREE.BoxGeometry(config.length, config.height, config.width);
     const material = new THREE.MeshLambertMaterial({ color: config.color });
     bedMesh = new THREE.Mesh(geometry, material);
@@ -437,7 +442,7 @@ function loadBed(bedId) {
     bedMesh.receiveShadow = true;
     scene.add(bedMesh);
 
-    // Create grid
+    // Create grid helper
     gridHelper = new THREE.GridHelper(Math.max(config.length, config.width) * 1.2, 20);
     gridHelper.material.opacity = 0.3;
     gridHelper.material.transparent = true;
@@ -695,9 +700,6 @@ function addPieceToScene(assetId) {
     group.position.y = asset.dimensions.height / 2;
     group.position.z = (Math.random() - 0.5) * 50;
 
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-
     scene.add(group);
     pieceMeshes.set(assetId, group);
 
@@ -723,15 +725,25 @@ function selectPiece(assetId) {
     // Deselect previous piece
     if (selectedPiece) {
         const prevGroup = pieceMeshes.get(selectedPiece);
-        if (prevGroup) {
-            prevGroup.children[0].material.emissive.setHex(0x000000);
+        if (prevGroup && prevGroup.children[0] && prevGroup.children[0].material) {
+            const material = prevGroup.children[0].material;
+            if (material.emissive) {
+                material.emissive.r = 0;
+                material.emissive.g = 0;
+                material.emissive.b = 0;
+            }
         }
     }
 
     selectedPiece = assetId;
     const group = pieceMeshes.get(assetId);
-    if (group) {
-        group.children[0].material.emissive.setHex(0x444444);
+    if (group && group.children[0] && group.children[0].material) {
+        const material = group.children[0].material;
+        if (material.emissive) {
+            material.emissive.r = 0.3;
+            material.emissive.g = 0.3;
+            material.emissive.b = 0.3;
+        }
         showPieceDetails(assetId);
     }
 }
@@ -739,8 +751,13 @@ function selectPiece(assetId) {
 function deselectPiece() {
     if (selectedPiece) {
         const group = pieceMeshes.get(selectedPiece);
-        if (group) {
-            group.children[0].material.emissive.setHex(0x000000);
+        if (group && group.children[0] && group.children[0].material) {
+            const material = group.children[0].material;
+            if (material.emissive) {
+                material.emissive.r = 0;
+                material.emissive.g = 0;
+                material.emissive.b = 0;
+            }
         }
         selectedPiece = null;
     }
