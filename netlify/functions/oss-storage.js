@@ -1,4 +1,4 @@
-exports.handler = async (event, context) => {
+﻿exports.handler = async (event, context) => {
     // Handle CORS preflight
     if (event.httpMethod === 'OPTIONS') {
         return {
@@ -29,7 +29,7 @@ exports.handler = async (event, context) => {
 
         // Get 2-legged token for OSS access
         const ossToken = await get2LeggedToken();
-        
+
         switch (action) {
             case 'save-report':
                 return await saveReportToOSS(ossToken, data);
@@ -57,11 +57,11 @@ exports.handler = async (event, context) => {
     }
 };
 
-// Get 2-legged OAuth token for OSS access
+// Get 2-legged OAuth token for OSS access with complete bucket permissions
 async function get2LeggedToken() {
     const tokenBody = new URLSearchParams({
         grant_type: 'client_credentials',
-        scope: 'bucket:create bucket:read data:read data:write data:create',
+        scope: 'bucket:create bucket:read bucket:update bucket:delete data:read data:write data:create',
         client_id: process.env.ACC_CLIENT_ID,
         client_secret: process.env.ACC_CLIENT_SECRET
     });
@@ -81,6 +81,10 @@ async function get2LeggedToken() {
     }
 
     const tokenData = await response.json();
+
+    // Log the granted scopes for debugging
+    console.log('2-legged token granted scopes:', tokenData.scope || 'No scope in response');
+
     return tokenData.access_token;
 }
 
@@ -119,15 +123,16 @@ async function ensureBucket(token, bucketKey) {
 
         if (!createResponse.ok) {
             const errorText = await createResponse.text();
-            
+
             // Check if bucket already exists error
             if (errorText.includes('already exists')) {
                 return { exists: true, bucketKey };
             }
-            
+
             throw new Error(`Failed to create bucket: ${createResponse.status} - ${errorText}`);
         }
 
+        console.log(`✓ Created new OSS bucket: ${bucketKey}`);
         return { exists: true, bucketKey, created: true };
     }
 
@@ -138,19 +143,19 @@ async function ensureBucket(token, bucketKey) {
 async function saveReportToOSS(token, reportData) {
     try {
         const { projectId, reportContent } = reportData;
-        
+
         // Generate bucket key
         const bucketKey = generateBucketKey(projectId);
-        
+
         // Ensure bucket exists
         await ensureBucket(token, bucketKey);
-        
+
         // Generate object key with structured path
         const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
         const bedName = reportContent.reportData.bedName || 'unknown-bed';
         const reportId = reportContent.reportData.reportId || 'unknown-report';
         const objectKey = `reports/${date}/${bedName}/${reportId}.json`;
-        
+
         // Add OSS metadata to report content
         const ossReportContent = {
             ...reportContent,
@@ -159,10 +164,11 @@ async function saveReportToOSS(token, reportData) {
                 objectKey: objectKey,
                 savedAt: new Date().toISOString(),
                 version: '2.0',
-                storageType: 'oss-persistent'
+                storageType: 'oss-persistent',
+                bucketPermissions: 'create,read,update,delete'
             }
         };
-        
+
         // Upload to OSS
         const uploadResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
             method: 'PUT',
@@ -181,6 +187,8 @@ async function saveReportToOSS(token, reportData) {
 
         const uploadResult = await uploadResponse.json();
 
+        console.log(`✓ Saved report to OSS: ${objectKey} (${JSON.stringify(ossReportContent).length} bytes)`);
+
         return {
             statusCode: 200,
             headers: { 'Access-Control-Allow-Origin': '*' },
@@ -191,7 +199,8 @@ async function saveReportToOSS(token, reportData) {
                 size: JSON.stringify(ossReportContent).length,
                 reportId: reportId,
                 uploadResult: uploadResult,
-                method: 'oss-storage'
+                method: 'oss-storage',
+                bucketPermissions: 'create,read,update,delete'
             })
         };
 
@@ -204,7 +213,7 @@ async function saveReportToOSS(token, reportData) {
 async function loadReportsFromOSS(token, projectId) {
     try {
         const bucketKey = generateBucketKey(projectId);
-        
+
         // Try to get bucket contents
         const listResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects`, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -234,7 +243,7 @@ async function loadReportsFromOSS(token, projectId) {
             if (item.objectKey.endsWith('.json') && item.objectKey.includes('reports/')) {
                 const pathParts = item.objectKey.split('/');
                 const fileName = pathParts[pathParts.length - 1].replace('.json', '');
-                
+
                 reports.push({
                     bucketKey: bucketKey,
                     objectKey: item.objectKey,
@@ -242,10 +251,13 @@ async function loadReportsFromOSS(token, projectId) {
                     size: item.size,
                     lastModified: item.dateModified,
                     source: 'oss',
-                    needsDownload: true
+                    needsDownload: true,
+                    bucketPermissions: 'create,read,update,delete'
                 });
             }
         }
+
+        console.log(`✓ Loaded ${reports.length} reports from OSS bucket: ${bucketKey}`);
 
         return {
             statusCode: 200,
@@ -253,7 +265,8 @@ async function loadReportsFromOSS(token, projectId) {
             body: JSON.stringify({
                 success: true,
                 reports: reports,
-                bucketKey: bucketKey
+                bucketKey: bucketKey,
+                bucketPermissions: 'create,read,update,delete'
             })
         };
 
@@ -275,12 +288,15 @@ async function loadSingleReportFromOSS(token, bucketKey, objectKey) {
 
         const reportContent = await downloadResponse.json();
 
+        console.log(`✓ Downloaded report from OSS: ${objectKey}`);
+
         return {
             statusCode: 200,
             headers: { 'Access-Control-Allow-Origin': '*' },
             body: JSON.stringify({
                 success: true,
-                reportContent: reportContent
+                reportContent: reportContent,
+                bucketPermissions: 'create,read,update,delete'
             })
         };
 
@@ -301,12 +317,15 @@ async function deleteReportFromOSS(token, bucketKey, objectKey) {
             throw new Error(`Failed to delete report: ${deleteResponse.status}`);
         }
 
+        console.log(`✓ Deleted report from OSS: ${objectKey}`);
+
         return {
             statusCode: 200,
             headers: { 'Access-Control-Allow-Origin': '*' },
             body: JSON.stringify({
                 success: true,
-                message: 'Report deleted successfully'
+                message: 'Report deleted successfully',
+                bucketPermissions: 'create,read,update,delete'
             })
         };
 

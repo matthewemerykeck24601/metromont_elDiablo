@@ -42,7 +42,7 @@
 
         console.log('Exchanging code for token...');
 
-        // Enhanced scopes that match the frontend
+        // Enhanced scopes that match the frontend including bucket permissions
         const enhancedScopes = [
             'data:read',
             'data:write',
@@ -50,9 +50,12 @@
             'data:search',
             'account:read',
             'user:read',
-            'viewables:read'
+            'viewables:read',
+            'bucket:create',
+            'bucket:read',
+            'bucket:update',
+            'bucket:delete'
         ].join(' ');
-
 
         const tokenRequestBody = new URLSearchParams({
             grant_type: 'authorization_code',
@@ -61,7 +64,6 @@
             client_id: process.env.ACC_CLIENT_ID,
             client_secret: process.env.ACC_CLIENT_SECRET
         });
-
 
         const response = await fetch('https://developer.api.autodesk.com/authentication/v2/token', {
             method: 'POST',
@@ -96,19 +98,36 @@
         if (response.ok && data.access_token) {
             console.log('✓ Token exchange successful');
 
-            // Verify the granted scopes include the enhanced permissions
+            // Verify the granted scopes include the enhanced permissions including bucket scopes
             const grantedScopes = data.scope || '';
             const hasDataWrite = grantedScopes.includes('data:write');
             const hasDataCreate = grantedScopes.includes('data:create');
-
+            const hasBucketCreate = grantedScopes.includes('bucket:create');
+            const hasBucketRead = grantedScopes.includes('bucket:read');
+            const hasBucketUpdate = grantedScopes.includes('bucket:update');
+            const hasBucketDelete = grantedScopes.includes('bucket:delete');
 
             // Add scope information to the response
             data.scope_analysis = {
                 granted_scopes: grantedScopes,
                 has_data_write: hasDataWrite,
                 has_data_create: hasDataCreate,
-                enhanced_permissions: hasDataWrite && hasDataCreate
+                has_bucket_create: hasBucketCreate,
+                has_bucket_read: hasBucketRead,
+                has_bucket_update: hasBucketUpdate,
+                has_bucket_delete: hasBucketDelete,
+                enhanced_permissions: hasDataWrite && hasDataCreate,
+                bucket_permissions: hasBucketCreate && hasBucketRead && hasBucketUpdate && hasBucketDelete,
+                requested_scopes: enhancedScopes
             };
+
+            console.log('=== SCOPE ANALYSIS ===');
+            console.log('Requested scopes:', enhancedScopes);
+            console.log('Granted scopes:', grantedScopes);
+            console.log('Data permissions:', { hasDataWrite, hasDataCreate });
+            console.log('Bucket permissions:', { hasBucketCreate, hasBucketRead, hasBucketUpdate, hasBucketDelete });
+            console.log('Full bucket permissions granted:', data.scope_analysis.bucket_permissions);
+            console.log('======================');
         }
 
         return {

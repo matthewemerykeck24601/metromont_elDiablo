@@ -6,7 +6,7 @@ const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 const METROMONT_ACCOUNT_ID = '956c9a49-bc6e-4459-b873-d9ecea0600cb';
 const METROMONT_HUB_ID = `b.${METROMONT_ACCOUNT_ID}`;
 
-// Enhanced scope configuration
+// Enhanced scope configuration including OSS bucket management
 const ACC_SCOPES = [
     'data:read',
     'data:write',
@@ -14,7 +14,11 @@ const ACC_SCOPES = [
     'data:search',
     'account:read',
     'user:read',
-    'viewables:read'
+    'viewables:read',
+    'bucket:create',
+    'bucket:read',
+    'bucket:update',
+    'bucket:delete'
 ].join(' ');
 
 const ACC_PROJECT_API_BASE = 'https://developer.api.autodesk.com/project/v1';
@@ -100,7 +104,7 @@ async function completeAuthentication() {
         await loadRealProjectData();
 
         isACCConnected = true;
-        updateAuthStatus('Success!', 'Successfully connected to ACC with OSS backend');
+        updateAuthStatus('Success!', 'Successfully connected to ACC with OSS backend and bucket permissions');
 
         await new Promise(resolve => setTimeout(resolve, 800));
 
@@ -235,7 +239,7 @@ async function loadRealProjectData() {
                 <div style="color: #dc2626;">
                     <strong>Project Loading Issue:</strong> ${error.message}<br>
                     <small>You can still use the calculator by entering project details manually</small><br>
-                    <small><em>Reports will be saved to OSS backend via server function</em></small>
+                    <small><em>Reports will be saved to OSS backend via server function with bucket permissions</em></small>
                 </div>
             `;
         }
@@ -256,14 +260,14 @@ async function loadProjectsFromHub(hubId) {
 
         const projectsData = await projectsResponse.json();
         const validProjects = [];
-        
+
         const strictPattern = /^(\d{5})\s*-\s*(.+)$/;
         const flexiblePattern = /^(\d{3,6})\s*[-_\s]+(.+)$/;
         const numberFirstPattern = /^(\d{3,6})\s+(.+)$/;
 
         for (const project of projectsData.data) {
             const projectName = project.attributes.name || '';
-            
+
             const projectStatus = project.attributes.status || '';
             if (projectStatus === 'archived' || projectStatus === 'inactive') {
                 continue;
@@ -452,8 +456,9 @@ function updateACCDetailsDisplay(projectCount) {
         <strong>Account:</strong> ${METROMONT_ACCOUNT_ID}<br>
         <strong>Projects Found:</strong> ${projectCount} active ACC projects<br>
         <strong>Hub:</strong> Metromont ACC Account<br>
-        <strong>Storage Method:</strong> OSS Backend (via server function) with local fallback<br>
-        <strong>Client ID:</strong> <code style="font-size: 0.75rem;">${ACC_CLIENT_ID}</code>
+        <strong>Storage Method:</strong> OSS Backend with bucket permissions (via server function) with local fallback<br>
+        <strong>Client ID:</strong> <code style="font-size: 0.75rem;">${ACC_CLIENT_ID}</code><br>
+        <strong>Bucket Scopes:</strong> <code style="font-size: 0.75rem;">bucket:create, bucket:read, bucket:update, bucket:delete</code>
     `;
 }
 
@@ -491,10 +496,10 @@ async function onProjectSelected() {
 
         try {
             projectMembers = await loadProjectMembers(projectId);
-            
+
             const calculatedBySelect = document.getElementById('calculatedBy');
             const reviewedBySelect = document.getElementById('reviewedBy');
-            
+
             if (calculatedBySelect) {
                 populateProjectMemberDropdown(calculatedBySelect);
             }
@@ -548,9 +553,9 @@ function parseProjectMembers(membersData) {
             };
 
             if (member.attributes) {
-                memberInfo.name = member.attributes.name || 
-                                 member.attributes.firstName + ' ' + member.attributes.lastName ||
-                                 member.attributes.displayName || '';
+                memberInfo.name = member.attributes.name ||
+                    member.attributes.firstName + ' ' + member.attributes.lastName ||
+                    member.attributes.displayName || '';
                 memberInfo.email = member.attributes.email || '';
                 memberInfo.role = member.attributes.role || member.attributes.roleId || '';
                 memberInfo.company = member.attributes.company || member.attributes.companyName || '';
@@ -840,7 +845,8 @@ function initializeFormInstance(reportId, bedId, bedName, description) {
         },
         permissions: {
             scopesUsed: ACC_SCOPES,
-            enhancedPermissions: true
+            enhancedPermissions: true,
+            bucketPermissions: true
         }
     };
 
@@ -1042,7 +1048,8 @@ function calculateAll() {
         status: 'Draft',
         permissions: {
             scopesUsed: ACC_SCOPES,
-            enhancedPermissions: true
+            enhancedPermissions: true,
+            bucketPermissions: true
         },
         projectMetadata: {
             projectName: getElementValue('projectName'),
@@ -1103,7 +1110,7 @@ async function saveToACC() {
         const saveBtn = document.getElementById('saveBtn');
         if (saveBtn) {
             saveBtn.disabled = true;
-            saveBtn.innerHTML = '<div class="loading"></div> Saving to OSS Backend...';
+            saveBtn.innerHTML = '<div class="loading"></div> Saving to OSS Backend with bucket permissions...';
         }
 
         const enhancedCalculation = {
@@ -1113,7 +1120,8 @@ async function saveToACC() {
             savedToOSS: true,
             permissions: {
                 scopesUsed: ACC_SCOPES,
-                enhancedPermissions: true
+                enhancedPermissions: true,
+                bucketPermissions: true
             },
             qualityMetrics: {
                 complianceStatus: 'Pass',
@@ -1129,7 +1137,7 @@ async function saveToACC() {
         // Try OSS backend first
         try {
             const result = await saveBedQCReportToOSS(enhancedCalculation);
-            
+
             if (saveBtn) {
                 saveBtn.disabled = false;
                 saveBtn.innerHTML = `
@@ -1141,20 +1149,21 @@ async function saveToACC() {
             }
 
             let successMessage = `Report saved successfully!\nReport ID: ${result.reportId}`;
-            successMessage += `\n\n☁️ Storage: OSS Backend (Object Storage)`;
+            successMessage += `\n\n☁️ Storage: OSS Backend (Object Storage Service)`;
             successMessage += `\nBucket: ${result.bucketKey}`;
             successMessage += `\nPath: ${result.objectKey}`;
             successMessage += `\nSize: ${(result.size / 1024).toFixed(1)} KB`;
+            successMessage += `\nBucket Permissions: create, read, update, delete`;
 
             showSaveSuccessDialog(result, successMessage);
             await refreshReportHistory();
-            
+
         } catch (ossError) {
             console.log('OSS backend failed, falling back to local storage:', ossError);
-            
+
             // Fallback to local storage
             const localResult = await saveBedQCReportToLocal(enhancedCalculation);
-            
+
             if (saveBtn) {
                 saveBtn.disabled = false;
                 saveBtn.innerHTML = `
@@ -1206,7 +1215,8 @@ async function saveBedQCReportToOSS(reportData) {
             saveAttempt: new Date().toISOString(),
             projectId: projectId,
             hubId: hubId,
-            userToken: forgeAccessToken ? 'present' : 'missing'
+            userToken: forgeAccessToken ? 'present' : 'missing',
+            bucketPermissions: 'create,read,update,delete'
         },
         reportData: reportData
     };
@@ -1232,7 +1242,7 @@ async function saveBedQCReportToOSS(reportData) {
     }
 
     const result = await response.json();
-    
+
     if (!result.success) {
         throw new Error(result.error || 'Unknown OSS backend error');
     }
@@ -1370,7 +1380,7 @@ function addReportHistorySection() {
                 <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z"/>
                 </svg>
-                Report History (OSS Backend)
+                Report History (OSS Backend with Bucket Permissions)
                 <button class="btn btn-secondary" onclick="refreshReportHistory()" style="margin-left: auto;">
                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
@@ -1445,7 +1455,7 @@ async function loadBedQCReportsFromOSS(projectId) {
     }
 
     const result = await response.json();
-    
+
     if (!result.success) {
         throw new Error(result.error || 'Failed to load reports from OSS');
     }
@@ -1816,7 +1826,7 @@ function setupUI() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    console.log('Quality Control page loaded with OSS backend integration');
+    console.log('Quality Control page loaded with OSS backend integration and bucket permissions');
     console.log('Requesting scopes:', ACC_SCOPES);
     setupUI();
     setupModalHandlers();

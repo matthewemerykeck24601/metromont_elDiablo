@@ -2,7 +2,7 @@
 const ACC_CLIENT_ID = window.ACC_CLIENT_ID;
 const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 
-// Enhanced scope configuration for full ACC integration
+// Enhanced scope configuration for full ACC integration including OSS bucket management
 const ACC_SCOPES = [
     'data:read',        // View data within ACC
     'data:write',       // Manage data within ACC  
@@ -10,7 +10,11 @@ const ACC_SCOPES = [
     'data:search',      // Search across ACC data
     'account:read',     // View product and service accounts
     'user:read',        // View user profile info
-    'viewables:read'    // View viewable data (for future file previews)
+    'viewables:read',   // View viewable data (for future file previews)
+    'bucket:create',    // Create new buckets
+    'bucket:read',      // View your buckets
+    'bucket:update',    // Update your buckets
+    'bucket:delete'     // Delete your buckets
 ].join(' ');
 
 // Global authentication state
@@ -72,7 +76,7 @@ async function initializeApp() {
 async function startAuthFlow() {
     updateAuthStatus('Redirecting to Login...', 'You will be redirected to Autodesk to sign in...');
 
-    // Enhanced scope configuration with explicit formatting
+    // Enhanced scope configuration with explicit formatting including bucket permissions
     const REQUESTED_SCOPES = [
         'data:read',
         'data:write',
@@ -80,7 +84,11 @@ async function startAuthFlow() {
         'data:search',
         'account:read',
         'user:read',
-        'viewables:read'
+        'viewables:read',
+        'bucket:create',
+        'bucket:read',
+        'bucket:update',
+        'bucket:delete'
     ];
 
     const scopeString = REQUESTED_SCOPES.join(' ');
@@ -157,7 +165,11 @@ async function handleOAuthCallback(authCode) {
             'data:search',
             'account:read',
             'user:read',
-            'viewables:read'
+            'viewables:read',
+            'bucket:create',
+            'bucket:read',
+            'bucket:update',
+            'bucket:delete'
         ];
 
         console.log('=== SCOPE VALIDATION ===');
@@ -171,7 +183,7 @@ async function handleOAuthCallback(authCode) {
 
         console.log('Scope validation results:', scopeValidation);
 
-        const criticalScopes = ['data:write', 'data:create'];
+        const criticalScopes = ['data:write', 'data:create', 'bucket:create', 'bucket:read'];
         const criticalScopesMissing = criticalScopes.filter(scope => !grantedScopes.includes(scope));
 
         // IMPORTANT: Only show scope warning if we actually have empty scopes
@@ -182,9 +194,9 @@ async function handleOAuthCallback(authCode) {
             console.warn('However, the token may still work - testing API access...');
         } else if (criticalScopesMissing.length > 0) {
             console.warn('⚠️ CRITICAL SCOPES MISSING:', criticalScopesMissing);
-            console.warn('This will cause folder/file operations to fail');
+            console.warn('This will cause folder/file/bucket operations to fail');
         } else {
-            console.log('✅ All critical scopes granted');
+            console.log('✅ All critical scopes granted including bucket permissions');
         }
 
         console.log('========================');
@@ -250,13 +262,13 @@ async function completeAuthentication() {
         }
 
         // Test scope permissions with better error handling
-        updateAuthStatus('Testing Permissions...', 'Validating API access capabilities...');
+        updateAuthStatus('Testing Permissions...', 'Validating API access capabilities including OSS bucket access...');
         await testScopePermissions();
 
         isAuthenticated = true;
         authCheckComplete = true;
 
-        updateAuthStatus('Success!', 'Successfully connected to Autodesk Construction Cloud');
+        updateAuthStatus('Success!', 'Successfully connected to Autodesk Construction Cloud with OSS bucket permissions');
 
         // Small delay to show success message
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -333,7 +345,7 @@ async function testScopePermissions() {
                     console.log('      • Project lacks Document Management module');
                     console.log('      • Project is legacy BIM 360 without ACC features');
                     console.log('      • Project admin needs to enable Data Management API');
-                    console.log('   📝 Solution: Reports will save locally with sync capability');
+                    console.log('   📝 Solution: Reports will save via OSS with local fallback');
                 } else if (foldersResponse.status === 403) {
                     console.log('   📝 403 Analysis: Permission issue despite scopes');
                     console.log('   📝 Likely cause: Custom Integration not registered');
@@ -342,6 +354,20 @@ async function testScopePermissions() {
         } catch (error) {
             console.log('❌ Folder access test: FAIL -', error.message);
         }
+    }
+
+    // Test 4: OSS Bucket access (requires bucket:read)
+    try {
+        const bucketsResponse = await fetch('https://developer.api.autodesk.com/oss/v2/buckets', {
+            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+        });
+        console.log('✅ OSS Bucket access test:', bucketsResponse.ok ? 'PASS' : 'FAIL');
+        if (bucketsResponse.ok) {
+            const bucketData = await bucketsResponse.json();
+            console.log('   Accessible buckets:', bucketData.items?.length || 0);
+        }
+    } catch (error) {
+        console.log('❌ OSS Bucket access test: FAIL -', error.message);
     }
 
     console.log('=========================');
