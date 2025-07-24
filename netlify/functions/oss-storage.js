@@ -232,12 +232,12 @@ async function ensureBucket(token, bucketKey) {
     }
 }
 
-// Generate signed URL for upload (NEW - addresses legacy endpoint issue)
-async function generateSignedUploadUrl(token, bucketKey, objectKey) {
+// Start resumable upload (NEW - Modern approach)
+async function startResumableUpload(token, bucketKey, objectKey, fileSize) {
     try {
-        console.log('🔗 Generating signed upload URL for:', objectKey);
+        console.log('🚀 Starting resumable upload for:', objectKey);
 
-        const signedUrlResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3upload`, {
+        const startResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/resumable`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -245,64 +245,67 @@ async function generateSignedUploadUrl(token, bucketKey, objectKey) {
                 'User-Agent': 'MetromontCastLink/2.0'
             },
             body: JSON.stringify({
-                minutesExpiration: 60
+                ossbucketKey: bucketKey,
+                ossSourceFileObjectKey: objectKey,
+                byteSize: fileSize
             })
         });
 
-        console.log('🔗 Signed URL response status:', signedUrlResponse.status);
+        console.log('🚀 Start resumable response status:', startResponse.status);
 
-        if (!signedUrlResponse.ok) {
-            const errorText = await signedUrlResponse.text();
-            throw new Error(`Failed to generate signed URL: ${signedUrlResponse.status} - ${errorText}`);
+        if (!startResponse.ok) {
+            const errorText = await startResponse.text();
+            throw new Error(`Failed to start resumable upload: ${startResponse.status} - ${errorText}`);
         }
 
-        const signedUrlData = await signedUrlResponse.json();
-        console.log('✅ Generated signed upload URL successfully');
+        const startData = await startResponse.json();
+        console.log('✅ Resumable upload started successfully');
 
-        return signedUrlData;
+        return startData;
 
     } catch (error) {
-        console.error('❌ Error generating signed URL:', error);
+        console.error('❌ Error starting resumable upload:', error);
         throw error;
     }
 }
 
-// Upload using signed URL (NEW - modern approach)
-async function uploadWithSignedUrl(signedUrlData, reportJSON) {
+// Upload chunk using resumable upload
+async function uploadChunk(uploadUrl, chunk, chunkStart, chunkEnd, totalSize) {
     try {
-        console.log('⬆️ Uploading using signed URL...');
+        console.log(`📤 Uploading chunk ${chunkStart}-${chunkEnd}/${totalSize}`);
 
-        const uploadResponse = await fetch(signedUrlData.uploadKey, {
+        const uploadResponse = await fetch(uploadUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/octet-stream',
-                'Content-Length': reportJSON.length.toString()
+                'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${totalSize}`,
+                'Content-Length': chunk.length.toString()
             },
-            body: reportJSON
+            body: chunk
         });
 
-        console.log('📤 Signed URL upload response status:', uploadResponse.status);
+        console.log('📤 Chunk upload response status:', uploadResponse.status);
 
-        if (!uploadResponse.ok) {
+        if (!uploadResponse.ok && uploadResponse.status !== 202) {
             const errorText = await uploadResponse.text();
-            throw new Error(`Signed URL upload failed: ${uploadResponse.status} - ${errorText}`);
+            throw new Error(`Chunk upload failed: ${uploadResponse.status} - ${errorText}`);
         }
 
-        console.log('✅ Upload via signed URL successful');
+        console.log('✅ Chunk uploaded successfully');
         return uploadResponse;
 
     } catch (error) {
-        console.error('❌ Error in signed URL upload:', error);
+        console.error('❌ Error uploading chunk:', error);
         throw error;
     }
 }
 
-// Finalize upload (NEW - required for signed URL uploads)
-async function finalizeUpload(token, bucketKey, objectKey, uploadKey) {
+// Complete resumable upload
+async function completeResumableUpload(token, bucketKey, objectKey, uploadKey) {
     try {
-        console.log('🏁 Finalizing upload...');
+        console.log('🏁 Completing resumable upload...');
 
-        const finalizeResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3upload`, {
+        const completeResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/resumable`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -314,25 +317,25 @@ async function finalizeUpload(token, bucketKey, objectKey, uploadKey) {
             })
         });
 
-        console.log('🏁 Finalize response status:', finalizeResponse.status);
+        console.log('🏁 Complete resumable response status:', completeResponse.status);
 
-        if (!finalizeResponse.ok) {
-            const errorText = await finalizeResponse.text();
-            throw new Error(`Failed to finalize upload: ${finalizeResponse.status} - ${errorText}`);
+        if (!completeResponse.ok) {
+            const errorText = await completeResponse.text();
+            throw new Error(`Failed to complete resumable upload: ${completeResponse.status} - ${errorText}`);
         }
 
-        const finalizeData = await finalizeResponse.json();
-        console.log('✅ Upload finalized successfully');
+        const completeData = await completeResponse.json();
+        console.log('✅ Resumable upload completed successfully');
 
-        return finalizeData;
+        return completeData;
 
     } catch (error) {
-        console.error('❌ Error finalizing upload:', error);
+        console.error('❌ Error completing resumable upload:', error);
         throw error;
     }
 }
 
-// Save report to OSS with modern signed URL approach (UPDATED)
+// Save report to OSS with resumable upload approach (COMPLETELY UPDATED)
 async function saveReportToOSS(token, reportData) {
     try {
         console.log('💾 Starting report save process...');
@@ -358,44 +361,43 @@ async function saveReportToOSS(token, reportData) {
         const bedName = reportContent.reportData?.bedName || 'unknown-bed';
         const reportId = reportContent.reportData?.reportId || 'unknown-report';
 
-        // Create sanitized object key
-        const rawObjectKey = `reports/${date}/${bedName}/${reportId}.json`;
-        const sanitizedObjectKey = sanitizeObjectKey(rawObjectKey);
+        // Create sanitized object key (simpler format for compatibility)
+        const simpleObjectKey = `${reportId}_${date}.json`;
 
-        console.log('📁 Raw object key:', rawObjectKey);
-        console.log('📁 Sanitized object key:', sanitizedObjectKey);
+        console.log('📁 Object key:', simpleObjectKey);
 
         // Add OSS metadata to report content
         const ossReportContent = {
             ...reportContent,
             ossMetadata: {
                 bucketKey: bucketKey,
-                objectKey: sanitizedObjectKey,
-                originalKey: rawObjectKey,
+                objectKey: simpleObjectKey,
                 savedAt: new Date().toISOString(),
-                version: '2.1',
-                storageType: 'oss-persistent-signed',
+                version: '2.2',
+                storageType: 'oss-resumable',
                 bucketPermissions: 'create,read,update,delete'
             }
         };
 
         const reportJSON = JSON.stringify(ossReportContent, null, 2);
-        console.log('📊 Report size:', reportJSON.length, 'bytes');
+        const fileSize = Buffer.byteLength(reportJSON, 'utf8');
+        console.log('📊 Report size:', fileSize, 'bytes');
 
-        // Try modern signed URL approach first, then fallback to direct upload
+        // Try resumable upload approach first, then simple fallback
         try {
-            console.log('🔄 Method 1: Signed URL upload (recommended)');
+            console.log('🔄 Method 1: Resumable upload (modern approach)');
 
-            // Generate signed upload URL
-            const signedUrlData = await generateSignedUploadUrl(token, bucketKey, sanitizedObjectKey);
+            // Start resumable upload
+            const uploadSession = await startResumableUpload(token, bucketKey, simpleObjectKey, fileSize);
 
-            // Upload using signed URL
-            await uploadWithSignedUrl(signedUrlData, reportJSON);
+            // For small files, upload in one chunk
+            const chunk = Buffer.from(reportJSON, 'utf8');
+            await uploadChunk(uploadSession.urls[0], chunk, 0, fileSize - 1, fileSize);
 
-            // Finalize the upload
-            const finalizeResult = await finalizeUpload(token, bucketKey, sanitizedObjectKey, signedUrlData.uploadKey);
+            // Complete the upload
+            const completeResult = await completeResumableUpload(token, bucketKey, simpleObjectKey, uploadSession.uploadKey);
 
-            console.log('✅ Saved report to OSS successfully (Method 1 - Signed URL)');
+            console.log('✅ Saved report to OSS successfully (Method 1 - Resumable Upload)');
 
             return {
                 statusCode: 200,
@@ -403,65 +405,82 @@ async function saveReportToOSS(token, reportData) {
                 body: JSON.stringify({
                     success: true,
                     bucketKey: bucketKey,
-                    objectKey: sanitizedObjectKey,
-                    originalKey: rawObjectKey,
-                    size: reportJSON.length,
+                    objectKey: simpleObjectKey,
+                    size: fileSize,
                     reportId: reportId,
-                    uploadResult: finalizeResult,
-                    method: 'oss-storage-signed-url-v2.1',
+                    uploadResult: completeResult,
+                    method: 'oss-storage-resumable-v2.2',
                     bucketPermissions: 'create,read,update,delete'
                 })
             };
 
-        } catch (signedUrlError) {
-            console.log('❌ Signed URL upload failed, trying direct upload fallback...');
-            console.log('Signed URL error:', signedUrlError.message);
+        } catch (resumableError) {
+            console.log('❌ Resumable upload failed, trying simple approach...');
+            console.log('Resumable error:', resumableError.message);
 
-            // Fallback: Try direct PUT upload with simple key
-            const simpleKey = `${reportId}_${date}.json`;
-            console.log('🔄 Method 2: Direct PUT upload fallback:', simpleKey);
+            // FINAL FALLBACK: Try the most basic approach possible
+            console.log('🔄 Method 2: Basic object creation fallback');
 
             try {
-                const directUploadResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${simpleKey}`, {
-                    method: 'PUT',
+                // Try creating object via POST (alternative approach)
+                const basicResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects`, {
+                    method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/octet-stream',
+                        'Content-Type': 'application/json',
                         'User-Agent': 'MetromontCastLink/2.0'
                     },
-                    body: reportJSON
+                    body: JSON.stringify({
+                        objectKey: simpleObjectKey,
+                        contentType: 'application/json',
+                        contentEncoding: 'utf-8'
+                    })
                 });
 
-                console.log('📤 Direct upload response status:', directUploadResponse.status);
+                console.log('📤 Basic object creation response status:', basicResponse.status);
 
-                if (directUploadResponse.ok) {
-                    const uploadResult = await directUploadResponse.json();
-                    console.log('✅ Saved report to OSS successfully (Method 2 - Direct Upload Fallback)');
+                if (basicResponse.ok) {
+                    // If object creation succeeded, now try to upload content
+                    console.log('✅ Basic object created, now uploading content...');
 
-                    return {
-                        statusCode: 200,
-                        headers: { 'Access-Control-Allow-Origin': '*' },
-                        body: JSON.stringify({
-                            success: true,
-                            bucketKey: bucketKey,
-                            objectKey: simpleKey,
-                            originalKey: rawObjectKey,
-                            size: reportJSON.length,
-                            reportId: reportId,
-                            uploadResult: uploadResult,
-                            method: 'oss-storage-direct-fallback',
-                            bucketPermissions: 'create,read,update,delete',
-                            note: 'Used direct upload fallback due to signed URL issue'
-                        })
-                    };
-                } else {
-                    const errorText = await directUploadResponse.text();
-                    throw new Error(`Direct upload failed: ${directUploadResponse.status} - ${errorText}`);
+                    // Store content using simple approach
+                    const contentResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${simpleObjectKey}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json',
+                            'User-Agent': 'MetromontCastLink/2.0'
+                        },
+                        body: reportJSON
+                    });
+
+                    if (contentResponse.ok || contentResponse.status === 200 || contentResponse.status === 201) {
+                        console.log('✅ Content uploaded successfully via basic method');
+
+                        return {
+                            statusCode: 200,
+                            headers: { 'Access-Control-Allow-Origin': '*' },
+                            body: JSON.stringify({
+                                success: true,
+                                bucketKey: bucketKey,
+                                objectKey: simpleObjectKey,
+                                size: fileSize,
+                                reportId: reportId,
+                                method: 'oss-storage-basic-fallback',
+                                bucketPermissions: 'create,read,update,delete',
+                                note: 'Used basic object creation fallback'
+                            })
+                        };
+                    }
                 }
 
-            } catch (directError) {
-                console.log('❌ Direct upload also failed:', directError.message);
-                throw new Error(`All upload methods failed. Signed URL error: ${signedUrlError.message}. Direct upload error: ${directError.message}`);
+                // If all OSS methods fail, this is likely an API compatibility issue
+                console.log('❌ All OSS upload methods failed');
+                throw new Error(`All OSS upload methods failed. This may indicate API compatibility issues. Resumable error: ${resumableError.message}`);
+
+            } catch (basicError) {
+                console.log('❌ Basic upload also failed:', basicError.message);
+                throw new Error(`All upload methods failed. Resumable: ${resumableError.message}. Basic: ${basicError.message}`);
             }
         }
 
