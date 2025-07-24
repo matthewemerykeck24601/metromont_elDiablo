@@ -382,6 +382,9 @@ async function onProjectSelected() {
             projectSource.textContent = `Project Data from ACC (${permissions} permissions, pre-loaded)`;
         }
 
+        // Enable save button when project is selected
+        enableSaveButton();
+
         try {
             projectMembers = await loadProjectMembers(projectId);
 
@@ -757,6 +760,9 @@ function showCalculator() {
         clearFormData();
     }
 
+    // Enable save button when calculator is shown and user is authenticated
+    enableSaveButton();
+
     calculateAll();
 }
 
@@ -771,6 +777,55 @@ function closeCalculator() {
     }
 
     currentCalculation = null;
+}
+
+// NEW: Function to enable save button with proper checks
+function enableSaveButton() {
+    const saveBtn = document.getElementById('saveBtn');
+    const exportBtn = document.getElementById('exportBtn');
+
+    console.log('=== CHECKING SAVE BUTTON CONDITIONS ===');
+    console.log('isACCConnected:', isACCConnected);
+    console.log('projectId:', projectId);
+    console.log('currentReportId:', currentReportId);
+    console.log('forgeAccessToken present:', !!forgeAccessToken);
+
+    if (saveBtn) {
+        if (isACCConnected && projectId && forgeAccessToken) {
+            saveBtn.disabled = false;
+            console.log('✅ Save button enabled');
+
+            // Update button text to show ready status
+            saveBtn.innerHTML = `
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                </svg>
+                Save Report
+            `;
+        } else {
+            saveBtn.disabled = true;
+            console.log('❌ Save button disabled - missing requirements');
+
+            let reason = 'Save Report (';
+            if (!isACCConnected) reason += 'No ACC Connection';
+            else if (!projectId) reason += 'No Project Selected';
+            else if (!forgeAccessToken) reason += 'No Auth Token';
+            reason += ')';
+
+            saveBtn.innerHTML = `
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                </svg>
+                ${reason}
+            `;
+        }
+    }
+
+    if (exportBtn) {
+        exportBtn.disabled = !isACCConnected || !projectId;
+    }
+
+    console.log('=======================================');
 }
 
 function clearFormData() {
@@ -980,10 +1035,19 @@ function calculateAll() {
             outputs: nonSelfStressingResults
         }
     };
+
+    // Check save button status after calculations update
+    enableSaveButton();
 }
 
 // OSS Backend Integration - Save via Netlify Function
 async function saveToACC() {
+    console.log('=== SAVE TO ACC INITIATED ===');
+    console.log('isACCConnected:', isACCConnected);
+    console.log('projectId:', projectId);
+    console.log('currentCalculation:', !!currentCalculation);
+    console.log('forgeAccessToken:', !!forgeAccessToken);
+
     if (!isACCConnected) {
         alert('Not connected to ACC. Please check your connection.');
         return;
@@ -991,6 +1055,11 @@ async function saveToACC() {
 
     if (!projectId) {
         alert('Please select a project before saving.');
+        return;
+    }
+
+    if (!currentCalculation) {
+        alert('Please enter some calculation data before saving.');
         return;
     }
 
@@ -1021,6 +1090,8 @@ async function saveToACC() {
                 ]
             }
         };
+
+        console.log('Attempting to save report:', enhancedCalculation.reportId);
 
         // Try OSS backend first
         try {
@@ -1430,7 +1501,7 @@ function displayReports(reports) {
             status = data.status || 'Draft';
             notes = data.projectMetadata?.notes || '';
             selfStressPull = data.selfStressing?.outputs?.calculatedPullRounded || 0;
-            nonStressPull = data.nonSelfStressing?.outputs?.calculatedPullRounded || 0;
+            nonSelfStressPull = data.nonSelfStressing?.outputs?.calculatedPullRounded || 0;
 
             const date = new Date(data.createdDate || data.timestamp || report.lastModified);
             formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
@@ -1560,14 +1631,13 @@ async function loadExistingReport(objectKey, bucketKey = '', needsDownload = fal
 
         const reportIdElement = document.getElementById('reportId');
         const selectedBedDisplayElement = document.getElementById('selectedBedDisplay');
-        const saveBtn = document.getElementById('saveBtn');
-        const exportBtn = document.getElementById('exportBtn');
 
         const sourceText = source === 'oss-backend' ? '(Loaded from OSS Backend)' : '(Loaded from Local Storage)';
         if (reportIdElement) reportIdElement.textContent = reportData.reportId + ' ' + sourceText;
         if (selectedBedDisplayElement) selectedBedDisplayElement.textContent = reportData.bedName;
-        if (saveBtn) saveBtn.disabled = false;
-        if (exportBtn) exportBtn.disabled = false;
+
+        // Enable buttons after loading report
+        enableSaveButton();
 
     } catch (error) {
         console.error('Error loading existing report:', error);
