@@ -1,6 +1,12 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\assets",
+    "\\netlify",
+    "\\netlify\\functions",
+    "\\scripts",
+    "\\styles"
   ],
+  "SelectedNode": "\\scripts\\quality-control.js",
   "PreviewInSolutionExplorer": false
 }
