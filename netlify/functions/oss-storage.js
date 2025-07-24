@@ -15,30 +15,21 @@
     // Add detailed logging for debugging
     console.log('=== OSS STORAGE FUNCTION START ===');
     console.log('HTTP Method:', event.httpMethod);
-    console.log('Headers:', JSON.stringify(event.headers, null, 2));
 
     // Validate environment variables
     if (!process.env.ACC_CLIENT_ID || !process.env.ACC_CLIENT_SECRET) {
         console.error('❌ Missing environment variables');
-        console.error('ACC_CLIENT_ID present:', !!process.env.ACC_CLIENT_ID);
-        console.error('ACC_CLIENT_SECRET present:', !!process.env.ACC_CLIENT_SECRET);
         return {
             statusCode: 500,
             headers: { 'Access-Control-Allow-Origin': '*' },
             body: JSON.stringify({
                 success: false,
-                error: 'Server configuration error - missing credentials',
-                debug: {
-                    clientId: !!process.env.ACC_CLIENT_ID,
-                    clientSecret: !!process.env.ACC_CLIENT_SECRET
-                }
+                error: 'Server configuration error - missing credentials'
             })
         };
     }
 
     console.log('✅ Environment variables present');
-    console.log('Client ID length:', process.env.ACC_CLIENT_ID.length);
-    console.log('Client Secret length:', process.env.ACC_CLIENT_SECRET.length);
 
     try {
         let requestBody;
@@ -98,8 +89,7 @@
                 timestamp: new Date().toISOString(),
                 debug: {
                     functionTimeout: context.getRemainingTimeInMillis?.() || 'unknown',
-                    errorType: error.constructor.name,
-                    errorStack: error.stack
+                    errorType: error.constructor.name
                 }
             })
         };
@@ -118,14 +108,12 @@ async function get2LeggedToken() {
             client_secret: process.env.ACC_CLIENT_SECRET
         });
 
-        console.log('📤 Token request payload prepared');
-
         const response = await fetch('https://developer.api.autodesk.com/authentication/v2/token', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Accept': 'application/json',
-                'User-Agent': 'MetromontCastLink/1.0'
+                'User-Agent': 'MetromontCastLink/2.0'
             },
             body: tokenBody
         });
@@ -140,7 +128,6 @@ async function get2LeggedToken() {
 
         const tokenData = await response.json();
         console.log('✅ Token received successfully');
-        console.log('🔍 Granted scopes:', tokenData.scope || 'No scope in response');
 
         if (!tokenData.access_token) {
             throw new Error('No access token in response');
@@ -170,6 +157,17 @@ function generateBucketKey(projectId) {
     }
 }
 
+// Sanitize object key to be OSS-compatible
+function sanitizeObjectKey(key) {
+    // Replace spaces and special characters with safe alternatives
+    return key
+        .replace(/\s+/g, '_')           // Replace spaces with underscores
+        .replace(/[#&+%]/g, '_')        // Replace problematic characters
+        .replace(/[^\w\-_./]/g, '')     // Remove any other special characters
+        .replace(/_{2,}/g, '_')         // Replace multiple underscores with single
+        .toLowerCase();                 // Convert to lowercase
+}
+
 // Ensure bucket exists with enhanced error handling
 async function ensureBucket(token, bucketKey) {
     try {
@@ -179,7 +177,7 @@ async function ensureBucket(token, bucketKey) {
         const checkResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/details`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/1.0'
+                'User-Agent': 'MetromontCastLink/2.0'
             }
         });
 
@@ -199,7 +197,7 @@ async function ensureBucket(token, bucketKey) {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
-                    'User-Agent': 'MetromontCastLink/1.0'
+                    'User-Agent': 'MetromontCastLink/2.0'
                 },
                 body: JSON.stringify({
                     bucketKey: bucketKey,
@@ -234,7 +232,107 @@ async function ensureBucket(token, bucketKey) {
     }
 }
 
-// Save report to OSS with enhanced error handling
+// Generate signed URL for upload (NEW - addresses legacy endpoint issue)
+async function generateSignedUploadUrl(token, bucketKey, objectKey) {
+    try {
+        console.log('🔗 Generating signed upload URL for:', objectKey);
+
+        const signedUrlResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3upload`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'MetromontCastLink/2.0'
+            },
+            body: JSON.stringify({
+                minutesExpiration: 60
+            })
+        });
+
+        console.log('🔗 Signed URL response status:', signedUrlResponse.status);
+
+        if (!signedUrlResponse.ok) {
+            const errorText = await signedUrlResponse.text();
+            throw new Error(`Failed to generate signed URL: ${signedUrlResponse.status} - ${errorText}`);
+        }
+
+        const signedUrlData = await signedUrlResponse.json();
+        console.log('✅ Generated signed upload URL successfully');
+
+        return signedUrlData;
+
+    } catch (error) {
+        console.error('❌ Error generating signed URL:', error);
+        throw error;
+    }
+}
+
+// Upload using signed URL (NEW - modern approach)
+async function uploadWithSignedUrl(signedUrlData, reportJSON) {
+    try {
+        console.log('⬆️ Uploading using signed URL...');
+
+        const uploadResponse = await fetch(signedUrlData.uploadKey, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': reportJSON.length.toString()
+            },
+            body: reportJSON
+        });
+
+        console.log('📤 Signed URL upload response status:', uploadResponse.status);
+
+        if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            throw new Error(`Signed URL upload failed: ${uploadResponse.status} - ${errorText}`);
+        }
+
+        console.log('✅ Upload via signed URL successful');
+        return uploadResponse;
+
+    } catch (error) {
+        console.error('❌ Error in signed URL upload:', error);
+        throw error;
+    }
+}
+
+// Finalize upload (NEW - required for signed URL uploads)
+async function finalizeUpload(token, bucketKey, objectKey, uploadKey) {
+    try {
+        console.log('🏁 Finalizing upload...');
+
+        const finalizeResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3upload`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'MetromontCastLink/2.0'
+            },
+            body: JSON.stringify({
+                uploadKey: uploadKey
+            })
+        });
+
+        console.log('🏁 Finalize response status:', finalizeResponse.status);
+
+        if (!finalizeResponse.ok) {
+            const errorText = await finalizeResponse.text();
+            throw new Error(`Failed to finalize upload: ${finalizeResponse.status} - ${errorText}`);
+        }
+
+        const finalizeData = await finalizeResponse.json();
+        console.log('✅ Upload finalized successfully');
+
+        return finalizeData;
+
+    } catch (error) {
+        console.error('❌ Error finalizing upload:', error);
+        throw error;
+    }
+}
+
+// Save report to OSS with modern signed URL approach (UPDATED)
 async function saveReportToOSS(token, reportData) {
     try {
         console.log('💾 Starting report save process...');
@@ -255,23 +353,28 @@ async function saveReportToOSS(token, reportData) {
         // Ensure bucket exists
         await ensureBucket(token, bucketKey);
 
-        // Generate object key with structured path
+        // Generate object key with structured path and sanitization
         const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
         const bedName = reportContent.reportData?.bedName || 'unknown-bed';
         const reportId = reportContent.reportData?.reportId || 'unknown-report';
-        const objectKey = `reports/${date}/${bedName}/${reportId}.json`;
 
-        console.log('📁 Object key:', objectKey);
+        // Create sanitized object key
+        const rawObjectKey = `reports/${date}/${bedName}/${reportId}.json`;
+        const sanitizedObjectKey = sanitizeObjectKey(rawObjectKey);
+
+        console.log('📁 Raw object key:', rawObjectKey);
+        console.log('📁 Sanitized object key:', sanitizedObjectKey);
 
         // Add OSS metadata to report content
         const ossReportContent = {
             ...reportContent,
             ossMetadata: {
                 bucketKey: bucketKey,
-                objectKey: objectKey,
+                objectKey: sanitizedObjectKey,
+                originalKey: rawObjectKey,
                 savedAt: new Date().toISOString(),
-                version: '2.0',
-                storageType: 'oss-persistent',
+                version: '2.1',
+                storageType: 'oss-persistent-signed',
                 bucketPermissions: 'create,read,update,delete'
             }
         };
@@ -279,44 +382,88 @@ async function saveReportToOSS(token, reportData) {
         const reportJSON = JSON.stringify(ossReportContent, null, 2);
         console.log('📊 Report size:', reportJSON.length, 'bytes');
 
-        // Upload to OSS
-        console.log('⬆️ Uploading to OSS...');
-        const uploadResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
-            method: 'PUT',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'Content-Length': reportJSON.length.toString(),
-                'User-Agent': 'MetromontCastLink/1.0'
-            },
-            body: reportJSON
-        });
+        // Try modern signed URL approach first, then fallback to direct upload
+        try {
+            console.log('🔄 Method 1: Signed URL upload (recommended)');
 
-        console.log('📤 Upload response status:', uploadResponse.status);
+            // Generate signed upload URL
+            const signedUrlData = await generateSignedUploadUrl(token, bucketKey, sanitizedObjectKey);
 
-        if (!uploadResponse.ok) {
-            const errorText = await uploadResponse.text();
-            console.error('❌ Upload failed:', errorText);
-            throw new Error(`Failed to upload to OSS: ${uploadResponse.status} - ${errorText}`);
+            // Upload using signed URL
+            await uploadWithSignedUrl(signedUrlData, reportJSON);
+
+            // Finalize the upload
+            const finalizeResult = await finalizeUpload(token, bucketKey, sanitizedObjectKey, signedUrlData.uploadKey);
+
+            console.log('✅ Saved report to OSS successfully (Method 1 - Signed URL)');
+
+            return {
+                statusCode: 200,
+                headers: { 'Access-Control-Allow-Origin': '*' },
+                body: JSON.stringify({
+                    success: true,
+                    bucketKey: bucketKey,
+                    objectKey: sanitizedObjectKey,
+                    originalKey: rawObjectKey,
+                    size: reportJSON.length,
+                    reportId: reportId,
+                    uploadResult: finalizeResult,
+                    method: 'oss-storage-signed-url-v2.1',
+                    bucketPermissions: 'create,read,update,delete'
+                })
+            };
+
+        } catch (signedUrlError) {
+            console.log('❌ Signed URL upload failed, trying direct upload fallback...');
+            console.log('Signed URL error:', signedUrlError.message);
+
+            // Fallback: Try direct PUT upload with simple key
+            const simpleKey = `${reportId}_${date}.json`;
+            console.log('🔄 Method 2: Direct PUT upload fallback:', simpleKey);
+
+            try {
+                const directUploadResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${simpleKey}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/octet-stream',
+                        'User-Agent': 'MetromontCastLink/2.0'
+                    },
+                    body: reportJSON
+                });
+
+                console.log('📤 Direct upload response status:', directUploadResponse.status);
+
+                if (directUploadResponse.ok) {
+                    const uploadResult = await directUploadResponse.json();
+                    console.log('✅ Saved report to OSS successfully (Method 2 - Direct Upload Fallback)');
+
+                    return {
+                        statusCode: 200,
+                        headers: { 'Access-Control-Allow-Origin': '*' },
+                        body: JSON.stringify({
+                            success: true,
+                            bucketKey: bucketKey,
+                            objectKey: simpleKey,
+                            originalKey: rawObjectKey,
+                            size: reportJSON.length,
+                            reportId: reportId,
+                            uploadResult: uploadResult,
+                            method: 'oss-storage-direct-fallback',
+                            bucketPermissions: 'create,read,update,delete',
+                            note: 'Used direct upload fallback due to signed URL issue'
+                        })
+                    };
+                } else {
+                    const errorText = await directUploadResponse.text();
+                    throw new Error(`Direct upload failed: ${directUploadResponse.status} - ${errorText}`);
+                }
+
+            } catch (directError) {
+                console.log('❌ Direct upload also failed:', directError.message);
+                throw new Error(`All upload methods failed. Signed URL error: ${signedUrlError.message}. Direct upload error: ${directError.message}`);
+            }
         }
-
-        const uploadResult = await uploadResponse.json();
-        console.log('✅ Saved report to OSS successfully');
-
-        return {
-            statusCode: 200,
-            headers: { 'Access-Control-Allow-Origin': '*' },
-            body: JSON.stringify({
-                success: true,
-                bucketKey: bucketKey,
-                objectKey: objectKey,
-                size: reportJSON.length,
-                reportId: reportId,
-                uploadResult: uploadResult,
-                method: 'oss-storage',
-                bucketPermissions: 'create,read,update,delete'
-            })
-        };
 
     } catch (error) {
         console.error('❌ Error in saveReportToOSS:', error);
@@ -340,7 +487,7 @@ async function loadReportsFromOSS(token, projectId) {
         const listResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/1.0'
+                'User-Agent': 'MetromontCastLink/2.0'
             }
         });
 
@@ -370,9 +517,8 @@ async function loadReportsFromOSS(token, projectId) {
 
         // Filter and format report objects
         for (const item of objectsList.items || []) {
-            if (item.objectKey.endsWith('.json') && item.objectKey.includes('reports/')) {
-                const pathParts = item.objectKey.split('/');
-                const fileName = pathParts[pathParts.length - 1].replace('.json', '');
+            if (item.objectKey.endsWith('.json')) {
+                const fileName = item.objectKey.replace('.json', '');
 
                 reports.push({
                     bucketKey: bucketKey,
@@ -414,7 +560,7 @@ async function loadSingleReportFromOSS(token, bucketKey, objectKey) {
         const downloadResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/1.0'
+                'User-Agent': 'MetromontCastLink/2.0'
             }
         });
 
@@ -453,7 +599,7 @@ async function deleteReportFromOSS(token, bucketKey, objectKey) {
             method: 'DELETE',
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/1.0'
+                'User-Agent': 'MetromontCastLink/2.0'
             }
         });
 
