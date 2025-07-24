@@ -12,7 +12,6 @@
         };
     }
 
-    // Add detailed logging for debugging
     console.log('=== OSS STORAGE FUNCTION START ===');
     console.log('HTTP Method:', event.httpMethod);
 
@@ -49,7 +48,7 @@
 
         console.log('🔄 Getting 2-legged token...');
 
-        // Get 2-legged token for OSS access with timeout
+        // Get 2-legged token for OSS access
         const ossToken = await Promise.race([
             get2LeggedToken(),
             new Promise((_, reject) =>
@@ -96,7 +95,7 @@
     }
 };
 
-// Get 2-legged OAuth token for OSS access with enhanced error handling
+// Get 2-legged OAuth token for OSS access
 async function get2LeggedToken() {
     try {
         console.log('🔐 Requesting 2-legged token from Autodesk...');
@@ -113,7 +112,7 @@ async function get2LeggedToken() {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Accept': 'application/json',
-                'User-Agent': 'MetromontCastLink/2.5'
+                'User-Agent': 'MetromontCastLink/3.0'
             },
             body: tokenBody
         });
@@ -142,10 +141,9 @@ async function get2LeggedToken() {
     }
 }
 
-// Generate bucket key for project - SIMPLIFIED
+// Generate bucket key for project
 function generateBucketKey(projectId) {
     try {
-        // Create a simpler, more reliable bucket key
         const projectClean = projectId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substr(0, 10);
         const timestamp = Date.now().toString().substr(-6);
         const bucketKey = `metromont-${projectClean}-${timestamp}`.toLowerCase();
@@ -158,17 +156,16 @@ function generateBucketKey(projectId) {
     }
 }
 
-// Test OSS API access with detailed endpoint testing
+// Test OSS API access
 async function testOSSAccess(token) {
     try {
-        console.log('🧪 Testing detailed OSS API access...');
+        console.log('🧪 Testing OSS API access...');
 
-        // Test 1: List buckets (most basic OSS call)
         const listResponse = await fetch('https://developer.api.autodesk.com/oss/v2/buckets', {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/2.5'
+                'User-Agent': 'MetromontCastLink/3.0'
             }
         });
 
@@ -177,30 +174,6 @@ async function testOSSAccess(token) {
         if (listResponse.ok) {
             const bucketsList = await listResponse.json();
             console.log('✅ OSS API access confirmed, found', bucketsList.items?.length || 0, 'buckets');
-
-            // Test 2: Try to access an existing bucket to test permissions
-            if (bucketsList.items && bucketsList.items.length > 0) {
-                const testBucket = bucketsList.items[0];
-                console.log('🧪 Testing access to existing bucket:', testBucket.bucketKey);
-
-                const bucketTestResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${testBucket.bucketKey}/details`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'User-Agent': 'MetromontCastLink/2.5'
-                    }
-                });
-
-                console.log('🧪 Bucket details test:', bucketTestResponse.status);
-
-                if (bucketTestResponse.ok) {
-                    console.log('✅ Bucket access permissions confirmed');
-                } else {
-                    const errorText = await bucketTestResponse.text();
-                    console.log('❌ Bucket access failed:', bucketTestResponse.status, errorText);
-                }
-            }
-
             return true;
         } else {
             const errorText = await listResponse.text();
@@ -214,7 +187,7 @@ async function testOSSAccess(token) {
     }
 }
 
-// Ensure bucket exists with enhanced error handling
+// Ensure bucket exists
 async function ensureBucket(token, bucketKey) {
     try {
         console.log('🔍 Checking if bucket exists:', bucketKey);
@@ -224,7 +197,7 @@ async function ensureBucket(token, bucketKey) {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/2.5'
+                'User-Agent': 'MetromontCastLink/3.0'
             }
         });
 
@@ -244,7 +217,7 @@ async function ensureBucket(token, bucketKey) {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
-                    'User-Agent': 'MetromontCastLink/2.5'
+                    'User-Agent': 'MetromontCastLink/3.0'
                 },
                 body: JSON.stringify({
                     bucketKey: bucketKey,
@@ -258,7 +231,6 @@ async function ensureBucket(token, bucketKey) {
                 const errorText = await createResponse.text();
                 console.error('❌ Bucket creation failed:', errorText);
 
-                // Check if bucket already exists error
                 if (errorText.includes('already exists')) {
                     console.log('ℹ️ Bucket already exists (race condition)');
                     return { exists: true, bucketKey };
@@ -272,7 +244,6 @@ async function ensureBucket(token, bucketKey) {
             return { exists: true, bucketKey, created: true, result: createResult };
         }
 
-        // Handle other errors
         const errorText = await checkResponse.text();
         throw new Error(`Bucket check failed: ${checkResponse.status} - ${errorText}`);
 
@@ -282,10 +253,10 @@ async function ensureBucket(token, bucketKey) {
     }
 }
 
-// CORRECTED APPROACH - Using Data Management v2 API with octet-stream
+// FIXED: Use correct signed S3 upload workflow
 async function saveReportToOSS(token, reportData) {
     try {
-        console.log('💾 Starting upload using CORRECT Data Management v2 with octet-stream...');
+        console.log('💾 Starting CORRECT signed S3 upload workflow...');
 
         const { projectId, reportContent } = reportData;
 
@@ -297,34 +268,32 @@ async function saveReportToOSS(token, reportData) {
             throw new Error('Missing reportContent in report data');
         }
 
-        // First, test detailed OSS access
+        // Test OSS access
         const ossAccessOk = await testOSSAccess(token);
         if (!ossAccessOk) {
             throw new Error('Basic OSS API access failed - check token permissions');
         }
 
-        // Generate bucket key
+        // Generate bucket key and ensure bucket exists
         const bucketKey = generateBucketKey(projectId);
-
-        // Ensure bucket exists
         const bucketResult = await ensureBucket(token, bucketKey);
 
-        // Generate simple object key (avoid special characters completely)
+        // Generate object key
         const reportId = reportContent.reportData?.reportId || 'unknown-report';
-        const date = new Date().toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
-        const simpleObjectKey = `report_${reportId}_${date}.json`;
+        const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        const objectKey = `report_${reportId}_${date}.json`;
 
-        console.log('📁 Object key:', simpleObjectKey);
+        console.log('📁 Object key:', objectKey);
 
         // Add OSS metadata to report content
         const ossReportContent = {
             ...reportContent,
             ossMetadata: {
                 bucketKey: bucketKey,
-                objectKey: simpleObjectKey,
+                objectKey: objectKey,
                 savedAt: new Date().toISOString(),
-                version: '2.6',
-                storageType: 'data-v2-octet-stream',
+                version: '3.0',
+                storageType: 'signed-s3-upload',
                 bucketPermissions: 'create,read,update,delete'
             }
         };
@@ -333,153 +302,97 @@ async function saveReportToOSS(token, reportData) {
         const fileSize = Buffer.byteLength(reportJSON, 'utf8');
         console.log('📊 Report size:', fileSize, 'bytes');
 
-        console.log('🔄 Method 1: Data Management v2 with octet-stream FormData...');
+        // STEP 1: Request signed upload URL
+        console.log('🔗 Step 1: Requesting signed upload URL...');
+        const signedUrlResponse = await fetch(
+            `https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3upload?parts=1`,
+            {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'User-Agent': 'MetromontCastLink/3.0'
+                }
+            }
+        );
 
-        // METHOD 1: Use Data Management v2 API with octet-stream FormData
-        const formData = new FormData();
-        formData.append('file', new Blob([reportJSON], { type: 'application/octet-stream' }), simpleObjectKey);
-        formData.append('bucketKey', bucketKey);
-        formData.append('objectKey', simpleObjectKey);
-        formData.append('contentType', 'application/octet-stream');
+        console.log('📡 Signed URL response status:', signedUrlResponse.status);
 
-        console.log('📤 Uploading to: https://developer.api.autodesk.com/data/v2/objects');
-        console.log('🔧 FormData fields: file (octet-stream), bucketKey, objectKey, contentType');
+        if (!signedUrlResponse.ok) {
+            const errorText = await signedUrlResponse.text();
+            throw new Error(`Failed to get signed upload URL: ${signedUrlResponse.status} - ${errorText}`);
+        }
 
-        try {
-            const uploadResponse = await fetch('https://developer.api.autodesk.com/data/v2/objects', {
+        const signedUrlData = await signedUrlResponse.json();
+        const { urls, uploadKey } = signedUrlData;
+        const uploadUrl = urls[0]; // URL for part 1
+
+        console.log('✅ Got signed upload URL and uploadKey');
+
+        // STEP 2: Upload file to S3 signed URL
+        console.log('☁️ Step 2: Uploading to S3...');
+        const s3UploadResponse = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/octet-stream'
+            },
+            body: reportJSON
+        });
+
+        console.log('📤 S3 upload response status:', s3UploadResponse.status);
+
+        if (!s3UploadResponse.ok) {
+            const errorText = await s3UploadResponse.text();
+            throw new Error(`S3 upload failed: ${s3UploadResponse.status} - ${errorText}`);
+        }
+
+        console.log('✅ File uploaded to S3 successfully');
+
+        // STEP 3: Finalize the upload
+        console.log('✔️ Step 3: Finalizing upload...');
+        const finalizeResponse = await fetch(
+            `https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3upload`,
+            {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'User-Agent': 'MetromontCastLink/2.6'
-                    // Note: No Content-Type header - let browser set it for FormData
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'MetromontCastLink/3.0'
                 },
-                body: formData
-            });
-
-            console.log('📤 Data v2 upload response status:', uploadResponse.status);
-
-            if (uploadResponse.ok) {
-                const uploadResult = await uploadResponse.json();
-                console.log('✅ Saved report to OSS successfully (Data Management v2 - octet-stream)');
-
-                return {
-                    statusCode: 200,
-                    headers: { 'Access-Control-Allow-Origin': '*' },
-                    body: JSON.stringify({
-                        success: true,
-                        bucketKey: bucketKey,
-                        objectKey: simpleObjectKey,
-                        size: fileSize,
-                        reportId: reportId,
-                        uploadResult: uploadResult,
-                        method: 'data-management-v2-octet-stream',
-                        bucketPermissions: 'create,read,update,delete',
-                        endpoint: 'https://developer.api.autodesk.com/data/v2/objects'
-                    })
-                };
-            } else {
-                const errorText = await uploadResponse.text();
-                console.log('❌ Data v2 FormData upload failed:', uploadResponse.status, errorText);
-                throw new Error(`Data v2 FormData upload failed: ${uploadResponse.status} - ${errorText}`);
+                body: JSON.stringify({ uploadKey: uploadKey })
             }
+        );
 
-        } catch (formDataError) {
-            console.log('❌ FormData method failed:', formDataError.message);
+        console.log('🏁 Finalize response status:', finalizeResponse.status);
 
-            // METHOD 2: Try OSS v2 direct upload as fallback
-            console.log('🔄 Method 2: Fallback to OSS v2 direct upload...');
-
-            try {
-                const ossDirectResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${simpleObjectKey}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/octet-stream',
-                        'Content-Length': fileSize.toString(),
-                        'User-Agent': 'MetromontCastLink/2.6'
-                    },
-                    body: reportJSON
-                });
-
-                console.log('📤 OSS v2 direct upload response status:', ossDirectResponse.status);
-
-                if (ossDirectResponse.ok) {
-                    let uploadResult;
-                    try {
-                        uploadResult = await ossDirectResponse.json();
-                    } catch (jsonError) {
-                        uploadResult = { status: 'uploaded', objectKey: simpleObjectKey };
-                    }
-
-                    console.log('✅ Saved report to OSS successfully (OSS v2 Direct Upload Fallback)');
-
-                    return {
-                        statusCode: 200,
-                        headers: { 'Access-Control-Allow-Origin': '*' },
-                        body: JSON.stringify({
-                            success: true,
-                            bucketKey: bucketKey,
-                            objectKey: simpleObjectKey,
-                            size: fileSize,
-                            reportId: reportId,
-                            uploadResult: uploadResult,
-                            method: 'oss-v2-direct-octet-stream-fallback',
-                            bucketPermissions: 'create,read,update,delete',
-                            note: 'Used OSS v2 direct upload as Data v2 failed'
-                        })
-                    };
-                } else {
-                    const errorText = await ossDirectResponse.text();
-                    throw new Error(`OSS v2 direct upload failed: ${ossDirectResponse.status} - ${errorText}`);
-                }
-
-            } catch (ossDirectError) {
-                console.log('❌ OSS v2 direct upload also failed:', ossDirectError.message);
-
-                // METHOD 3: Try a completely different approach - Object Storage API v1
-                console.log('🔄 Method 3: Try Object Storage v1 API...');
-
-                try {
-                    const osV1Response = await fetch(`https://developer.api.autodesk.com/oss/v1/buckets/${bucketKey}/objects/${simpleObjectKey}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/octet-stream',
-                            'User-Agent': 'MetromontCastLink/2.6'
-                        },
-                        body: reportJSON
-                    });
-
-                    console.log('📤 OSS v1 upload response status:', osV1Response.status);
-
-                    if (osV1Response.ok) {
-                        console.log('✅ Saved report to OSS successfully (OSS v1 API)');
-
-                        return {
-                            statusCode: 200,
-                            headers: { 'Access-Control-Allow-Origin': '*' },
-                            body: JSON.stringify({
-                                success: true,
-                                bucketKey: bucketKey,
-                                objectKey: simpleObjectKey,
-                                size: fileSize,
-                                reportId: reportId,
-                                method: 'oss-v1-octet-stream',
-                                bucketPermissions: 'create,read,update,delete',
-                                note: 'Used OSS v1 API as v2 methods failed'
-                            })
-                        };
-                    } else {
-                        const errorText = await osV1Response.text();
-                        throw new Error(`OSS v1 upload failed: ${osV1Response.status} - ${errorText}`);
-                    }
-
-                } catch (osV1Error) {
-                    // All methods failed
-                    throw new Error(`All upload methods failed. Data v2: ${formDataError.message}. OSS v2: ${ossDirectError.message}. OSS v1: ${osV1Error.message}`);
-                }
-            }
+        if (!finalizeResponse.ok) {
+            const errorText = await finalizeResponse.text();
+            throw new Error(`Failed to finalize upload: ${finalizeResponse.status} - ${errorText}`);
         }
+
+        let finalizeResult;
+        try {
+            finalizeResult = await finalizeResponse.json();
+        } catch (jsonError) {
+            finalizeResult = { status: 'completed', objectKey: objectKey };
+        }
+
+        console.log('🎉 Report saved to OSS successfully using signed S3 upload!');
+
+        return {
+            statusCode: 200,
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: JSON.stringify({
+                success: true,
+                bucketKey: bucketKey,
+                objectKey: objectKey,
+                size: fileSize,
+                reportId: reportId,
+                uploadResult: finalizeResult,
+                method: 'signed-s3-upload',
+                bucketPermissions: 'create,read,update,delete',
+                endpoint: 'OSS v2 with signed S3 URLs'
+            })
+        };
 
     } catch (error) {
         console.error('❌ Error in saveReportToOSS:', error);
@@ -487,7 +400,7 @@ async function saveReportToOSS(token, reportData) {
     }
 }
 
-// Load reports from OSS with enhanced error handling
+// Load reports from OSS
 async function loadReportsFromOSS(token, projectId) {
     try {
         console.log('📂 Loading reports for project:', projectId);
@@ -498,13 +411,12 @@ async function loadReportsFromOSS(token, projectId) {
 
         const bucketKey = generateBucketKey(projectId);
 
-        // Try to get bucket contents
         console.log('📋 Listing bucket contents...');
         const listResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/2.5'
+                'User-Agent': 'MetromontCastLink/3.0'
             }
         });
 
@@ -569,42 +481,48 @@ async function loadReportsFromOSS(token, projectId) {
     }
 }
 
-// Load single report from OSS with enhanced error handling
+// Load single report from OSS using signed download URL
 async function loadSingleReportFromOSS(token, bucketKey, objectKey) {
     try {
-        console.log('📄 Loading single report:', objectKey);
-        console.log('🔄 Using CORRECT endpoint: https://developer.api.autodesk.com/data/v2/objects');
+        console.log('📄 Loading single report using signed download URL:', objectKey);
 
-        // Try Data Management v2 API first
-        let downloadResponse = await fetch(`https://developer.api.autodesk.com/data/v2/objects/${encodeURIComponent(objectKey)}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/2.5'
-            }
-        });
-
-        console.log('📥 Data v2 download response status:', downloadResponse.status);
-
-        // If Data v2 fails, fallback to OSS v2 (for backwards compatibility)
-        if (!downloadResponse.ok) {
-            console.log('🔄 Fallback to OSS v2 endpoint...');
-            downloadResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
+        // Get signed download URL
+        const signedDownloadResponse = await fetch(
+            `https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3download`,
+            {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'User-Agent': 'MetromontCastLink/2.5'
+                    'User-Agent': 'MetromontCastLink/3.0'
                 }
-            });
-            console.log('📥 OSS v2 fallback download response status:', downloadResponse.status);
+            }
+        );
+
+        console.log('📥 Signed download URL response status:', signedDownloadResponse.status);
+
+        if (!signedDownloadResponse.ok) {
+            const errorText = await signedDownloadResponse.text();
+            throw new Error(`Failed to get signed download URL: ${signedDownloadResponse.status} - ${errorText}`);
         }
 
-        if (!downloadResponse.ok) {
-            const errorText = await downloadResponse.text();
-            throw new Error(`Failed to download report: ${downloadResponse.status} - ${errorText}`);
+        const downloadUrlData = await signedDownloadResponse.json();
+        const downloadUrl = downloadUrlData.url;
+
+        console.log('✅ Got signed download URL');
+
+        // Download file from S3
+        const fileResponse = await fetch(downloadUrl, {
+            method: 'GET'
+        });
+
+        console.log('📥 File download response status:', fileResponse.status);
+
+        if (!fileResponse.ok) {
+            const errorText = await fileResponse.text();
+            throw new Error(`Failed to download file: ${fileResponse.status} - ${errorText}`);
         }
 
-        const reportContent = await downloadResponse.json();
+        const reportContent = await fileResponse.json();
         console.log('✅ Downloaded report successfully');
 
         return {
@@ -623,35 +541,20 @@ async function loadSingleReportFromOSS(token, bucketKey, objectKey) {
     }
 }
 
-// Delete report from OSS with enhanced error handling
+// Delete report from OSS
 async function deleteReportFromOSS(token, bucketKey, objectKey) {
     try {
         console.log('🗑️ Deleting report:', objectKey);
-        console.log('🔄 Using CORRECT endpoint: https://developer.api.autodesk.com/data/v2/objects');
 
-        // Try Data Management v2 API first
-        let deleteResponse = await fetch(`https://developer.api.autodesk.com/data/v2/objects/${encodeURIComponent(objectKey)}`, {
+        const deleteResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/2.5'
+                'User-Agent': 'MetromontCastLink/3.0'
             }
         });
 
-        console.log('🗑️ Data v2 delete response status:', deleteResponse.status);
-
-        // If Data v2 fails, fallback to OSS v2 (for backwards compatibility)
-        if (!deleteResponse.ok && deleteResponse.status !== 404) {
-            console.log('🔄 Fallback to OSS v2 endpoint...');
-            deleteResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'User-Agent': 'MetromontCastLink/2.5'
-                }
-            });
-            console.log('🗑️ OSS v2 fallback delete response status:', deleteResponse.status);
-        }
+        console.log('🗑️ Delete response status:', deleteResponse.status);
 
         if (!deleteResponse.ok && deleteResponse.status !== 404) {
             const errorText = await deleteResponse.text();

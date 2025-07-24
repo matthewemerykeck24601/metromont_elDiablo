@@ -211,7 +211,7 @@ async function handleMissingHubData() {
             <div style="color: #f59e0b;">
                 <strong>Hub Data Not Available:</strong> Pre-loaded project data not found<br>
                 <small>You can still use the calculator by entering project details manually</small><br>
-                <small><em>Reports will be saved to OSS backend via server function with bucket permissions</em></small><br>
+                <small><em>Reports will be saved to OSS backend via signed S3 upload with bucket permissions</em></small><br>
                 <small><strong>Tip:</strong> Go back to main dashboard and reload to connect to hub</small>
             </div>
         `;
@@ -344,7 +344,7 @@ function updateACCDetailsDisplay(projectCount) {
         <strong>Projects Found:</strong> ${projectCount} active ACC projects<br>
         <strong>Hub:</strong> ${accountInfo ? accountInfo.description : 'ACC Account'}<br>
         <strong>Data Loaded:</strong> ${loadedAt} (pre-loaded during main authentication)<br>
-        <strong>Storage Method:</strong> OSS Backend with bucket permissions (via server function) with local fallback<br>
+        <strong>Storage Method:</strong> OSS Backend with signed S3 upload workflow (v3.0)<br>
         <strong>Client ID:</strong> <code style="font-size: 0.75rem;">${ACC_CLIENT_ID}</code><br>
         <strong>Bucket Scopes:</strong> <code style="font-size: 0.75rem;">bucket:create, bucket:read, bucket:update, bucket:delete</code>
     `;
@@ -779,7 +779,7 @@ function closeCalculator() {
     currentCalculation = null;
 }
 
-// NEW: Function to enable save button with proper checks
+// IMPROVED: Function to enable save button with proper checks
 function enableSaveButton() {
     const saveBtn = document.getElementById('saveBtn');
     const exportBtn = document.getElementById('exportBtn');
@@ -800,7 +800,7 @@ function enableSaveButton() {
                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
                 </svg>
-                Save Report
+                Save Report (v3.0)
             `;
         } else {
             saveBtn.disabled = true;
@@ -1040,9 +1040,9 @@ function calculateAll() {
     enableSaveButton();
 }
 
-// OSS Backend Integration - Save via Netlify Function
+// IMPROVED: OSS Backend Integration - Save via Netlify Function with better error handling
 async function saveToACC() {
-    console.log('=== SAVE TO ACC INITIATED ===');
+    console.log('=== SAVE TO ACC INITIATED (v3.0) ===');
     console.log('isACCConnected:', isACCConnected);
     console.log('projectId:', projectId);
     console.log('currentCalculation:', !!currentCalculation);
@@ -1067,7 +1067,10 @@ async function saveToACC() {
         const saveBtn = document.getElementById('saveBtn');
         if (saveBtn) {
             saveBtn.disabled = true;
-            saveBtn.innerHTML = '<div class="loading"></div> Saving to OSS Backend with bucket permissions...';
+            saveBtn.innerHTML = `
+                <div class="loading"></div> 
+                Saving via signed S3 upload...
+            `;
         }
 
         const enhancedCalculation = {
@@ -1075,6 +1078,7 @@ async function saveToACC() {
             status: 'Completed',
             createdDate: currentCalculation.timestamp,
             savedToOSS: true,
+            version: '3.0',
             permissions: {
                 scopesUsed: ACC_SCOPES,
                 enhancedPermissions: true,
@@ -1091,9 +1095,9 @@ async function saveToACC() {
             }
         };
 
-        console.log('Attempting to save report:', enhancedCalculation.reportId);
+        console.log('Attempting to save report via signed S3 upload:', enhancedCalculation.reportId);
 
-        // Try OSS backend first
+        // Try OSS backend with improved error handling
         try {
             const result = await saveBedQCReportToOSS(enhancedCalculation);
 
@@ -1103,16 +1107,18 @@ async function saveToACC() {
                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
                     </svg>
-                    Saved to OSS
+                    Saved via S3 ✅
                 `;
             }
 
             let successMessage = `Report saved successfully!\nReport ID: ${result.reportId}`;
-            successMessage += `\n\n☁️ Storage: OSS Backend (Object Storage Service)`;
+            successMessage += `\n\n☁️ Storage: OSS Backend (Signed S3 Upload Workflow)`;
             successMessage += `\nBucket: ${result.bucketKey}`;
             successMessage += `\nPath: ${result.objectKey}`;
             successMessage += `\nSize: ${(result.size / 1024).toFixed(1)} KB`;
-            successMessage += `\nBucket Permissions: create, read, update, delete`;
+            successMessage += `\nMethod: ${result.method}`;
+            successMessage += `\nEndpoint: ${result.endpoint}`;
+            successMessage += `\nBucket Permissions: ${result.bucketPermissions}`;
 
             showSaveSuccessDialog(result, successMessage);
             await refreshReportHistory();
@@ -1120,7 +1126,7 @@ async function saveToACC() {
         } catch (ossError) {
             console.log('OSS backend failed, falling back to local storage:', ossError);
 
-            // Fallback to local storage
+            // Fallback to local storage with improved error info
             const localResult = await saveBedQCReportToLocal(enhancedCalculation);
 
             if (saveBtn) {
@@ -1129,14 +1135,14 @@ async function saveToACC() {
                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
                     </svg>
-                    Saved Locally (OSS Unavailable)
+                    Saved Locally (OSS Error)
                 `;
             }
 
             let fallbackMessage = `Report saved successfully!\nReport ID: ${localResult.reportId}`;
-            fallbackMessage += `\n\n💾 Storage: Local browser storage (OSS backend unavailable)`;
-            fallbackMessage += `\nNote: OSS backend error - ${ossError.message}`;
-            fallbackMessage += `\nReport can be synced to OSS when backend is available`;
+            fallbackMessage += `\n\n💾 Storage: Local browser storage (OSS backend error)`;
+            fallbackMessage += `\nOSS Error: ${ossError.message}`;
+            fallbackMessage += `\nNote: Report can be synced to OSS when backend is available`;
 
             showSaveSuccessDialog(localResult, fallbackMessage);
             await refreshReportHistory();
@@ -1152,7 +1158,7 @@ async function saveToACC() {
                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
                 </svg>
-                Save Report
+                Save Report (Error)
             `;
         }
 
@@ -1164,22 +1170,25 @@ async function saveToACC() {
 async function saveBedQCReportToOSS(reportData) {
     const reportContent = {
         type: 'bedqc-report',
-        version: '2.0',
+        version: '3.0',
         timestamp: new Date().toISOString(),
         application: 'MetromontCastLink',
         module: 'QualityControl',
-        schema: 'BedQCReport-v2.0',
-        storageMethod: 'oss-backend',
+        schema: 'BedQCReport-v3.0',
+        storageMethod: 'oss-backend-signed-s3',
         metadata: {
             saveAttempt: new Date().toISOString(),
             projectId: projectId,
             hubId: hubId,
             userToken: forgeAccessToken ? 'present' : 'missing',
             bucketPermissions: 'create,read,update,delete',
-            dataSource: 'pre-loaded-hub-data'
+            dataSource: 'pre-loaded-hub-data',
+            uploadWorkflow: 'signed-s3-upload'
         },
         reportData: reportData
     };
+
+    console.log('Making OSS storage request with signed S3 upload...');
 
     const response = await fetch('/.netlify/functions/oss-storage', {
         method: 'POST',
@@ -1196,8 +1205,11 @@ async function saveBedQCReportToOSS(reportData) {
         })
     });
 
+    console.log('OSS storage response status:', response.status);
+
     if (!response.ok) {
         const errorText = await response.text();
+        console.error('OSS Backend Error Response:', errorText);
         throw new Error(`OSS Backend Error: ${response.status} - ${errorText}`);
     }
 
@@ -1206,6 +1218,8 @@ async function saveBedQCReportToOSS(reportData) {
     if (!result.success) {
         throw new Error(result.error || 'Unknown OSS backend error');
     }
+
+    console.log('✅ OSS save successful:', result);
 
     return {
         success: true,
@@ -1216,24 +1230,26 @@ async function saveBedQCReportToOSS(reportData) {
         bucketKey: result.bucketKey,
         objectKey: result.objectKey,
         size: result.size,
-        method: 'oss-backend'
+        method: result.method,
+        endpoint: result.endpoint,
+        bucketPermissions: result.bucketPermissions
     };
 }
 
 async function saveBedQCReportToLocal(reportData) {
     const reportContent = {
         type: 'bedqc-report',
-        version: '2.0',
+        version: '3.0',
         timestamp: new Date().toISOString(),
         application: 'MetromontCastLink',
         module: 'QualityControl',
-        schema: 'BedQCReport-v2.0',
+        schema: 'BedQCReport-v3.0',
         storageMethod: 'local-fallback',
         metadata: {
             saveAttempt: new Date().toISOString(),
             projectId: projectId,
             hubId: hubId,
-            fallbackReason: 'OSS backend unavailable'
+            fallbackReason: 'OSS backend unavailable or error'
         },
         reportData: reportData
     };
@@ -1269,7 +1285,7 @@ function showSaveSuccessDialog(result, message) {
     let statusIcon = '';
     let statusColor = '';
 
-    if (result.method === 'oss-backend') {
+    if (result.method && result.method.includes('s3')) {
         statusIcon = '☁️';
         statusColor = '#059669';
     } else {
@@ -1278,10 +1294,10 @@ function showSaveSuccessDialog(result, message) {
     }
 
     successModal.innerHTML = `
-        <div class="modal" style="max-width: 500px;">
+        <div class="modal" style="max-width: 600px;">
             <div class="modal-header">
                 <h3 class="modal-title" style="color: ${statusColor};">
-                    ${statusIcon} Report Saved Successfully
+                    ${statusIcon} Report Saved Successfully (v3.0)
                 </h3>
                 <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
             </div>
@@ -1308,7 +1324,7 @@ ${message}
         if (document.body.contains(successModal)) {
             successModal.remove();
         }
-    }, 15000);
+    }, 20000);
 }
 
 async function exportToACCDocs() {
@@ -1340,7 +1356,7 @@ function addReportHistorySection() {
                 <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z"/>
                 </svg>
-                Report History (OSS Backend with Bucket Permissions)
+                Report History (OSS v3.0 - Signed S3 Upload)
                 <button class="btn btn-secondary" onclick="refreshReportHistory()" style="margin-left: auto;">
                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
@@ -1526,7 +1542,7 @@ function displayReports(reports) {
             sourceIndicator = '💾 Local';
             sourceClass = 'background: #fef3c7; color: #92400e;';
         } else {
-            sourceIndicator = '☁️ OSS';
+            sourceIndicator = '☁️ OSS v3.0';
             sourceClass = 'background: #dcfce7; color: #166534;';
         }
 
@@ -1632,7 +1648,7 @@ async function loadExistingReport(objectKey, bucketKey = '', needsDownload = fal
         const reportIdElement = document.getElementById('reportId');
         const selectedBedDisplayElement = document.getElementById('selectedBedDisplay');
 
-        const sourceText = source === 'oss-backend' ? '(Loaded from OSS Backend)' : '(Loaded from Local Storage)';
+        const sourceText = source === 'oss-backend' ? '(Loaded from OSS v3.0)' : '(Loaded from Local Storage)';
         if (reportIdElement) reportIdElement.textContent = reportData.reportId + ' ' + sourceText;
         if (selectedBedDisplayElement) selectedBedDisplayElement.textContent = reportData.bedName;
 
@@ -1785,7 +1801,7 @@ function setupUI() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    console.log('Quality Control page loaded with pre-loaded hub data integration and bucket permissions');
+    console.log('Quality Control page loaded with v3.0 signed S3 upload integration');
     console.log('Requesting scopes:', ACC_SCOPES);
     setupUI();
     setupModalHandlers();
