@@ -50,141 +50,168 @@
     </header>
 
     <div class="container">
-        <!-- Control Panel -->
-        <div class="control-panel">
-            <div class="control-section">
-                <h3>Schedule Controls</h3>
-                <div class="control-group">
-                    <label for="projectSelect">Project</label>
-                    <select id="projectSelect" onchange="onProjectChange()">
-                        <option value="">Loading projects...</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label for="dateSelect">Schedule Date</label>
-                    <input type="date" id="dateSelect" onchange="onDateChange()">
-                </div>
-                <div class="control-group">
-                    <label for="bedSelect">Production Bed</label>
-                    <select id="bedSelect" onchange="onBedChange()">
-                        <option value="">Select a bed...</option>
-                        <option value="beam">Beam Bed</option>
-                        <option value="deck1">Deck Bed #1</option>
-                        <option value="deck2">Deck Bed #2</option>
-                        <option value="flatbed1">Flat Bed #1</option>
-                        <option value="flatbed2">Flat Bed #2</option>
-                        <option value="flatbed3">Flat Bed #3</option>
-                        <option value="flatbed4">Flat Bed #4</option>
-                        <option value="flatbed5">Flat Bed #5</option>
-                        <option value="flatbed6">Flat Bed #6</option>
-                        <option value="flatbed7">Flat Bed #7</option>
-                    </select>
-                </div>
-                <div class="control-actions">
-                    <button class="btn btn-primary" onclick="saveBedSchedule()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" />
-                        </svg>
-                        Save Schedule
-                    </button>
-                    <button class="btn btn-secondary" onclick="toggleViewMode()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34 3-3-3z" />
-                        </svg>
-                        Toggle View
-                    </button>
-                </div>
-            </div>
-
-            <div class="control-section">
-                <h3>Bed Information</h3>
-                <div class="bed-info" id="bedInfo">
-                    <div class="info-item">
-                        <span class="info-label">Type:</span>
-                        <span class="info-value" id="bedType">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Length:</span>
-                        <span class="info-value" id="bedLength">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Width:</span>
-                        <span class="info-value" id="bedWidth">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Status:</span>
-                        <span class="info-value status-badge" id="bedStatus">Available</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Design #:</span>
-                        <span class="info-value" id="currentDesignNumber">None</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Pieces:</span>
-                        <span class="info-value" id="pieceCount">0</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="control-section">
-                <h3>Schedule Status</h3>
-                <div class="schedule-status">
-                    <div class="status-item">
-                        <label>Date Scheduled:</label>
-                        <input type="datetime-local" id="dateScheduled" onchange="updateScheduleStatus()">
-                    </div>
-                    <div class="status-item">
-                        <label>Date Poured:</label>
-                        <input type="datetime-local" id="datePoured" onchange="updateScheduleStatus()">
-                    </div>
-                    <div class="status-item">
-                        <label>Pour Status:</label>
-                        <select id="pourStatus" onchange="updateScheduleStatus()">
-                            <option value="scheduled">Scheduled</option>
-                            <option value="setup">Setup Complete</option>
-                            <option value="poured">Poured</option>
-                            <option value="curing">Curing</option>
-                            <option value="stripped">Stripped</option>
+        <!-- Top Layout with Controls and 3D Viewer -->
+        <div class="top-layout">
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <div class="control-section">
+                    <h3>Schedule Controls</h3>
+                    <div class="control-group">
+                        <label for="projectSelect">Project</label>
+                        <select id="projectSelect" onchange="onProjectChange()">
+                            <option value="">Loading projects...</option>
                         </select>
                     </div>
+                    <div class="control-group">
+                        <label for="dateSelect">Schedule Date</label>
+                        <input type="date" id="dateSelect" onchange="onDateChange()">
+                    </div>
+                    <div class="control-group">
+                        <label for="bedSelect">Production Bed</label>
+                        <select id="bedSelect" onchange="onBedChange()">
+                            <option value="">Select a bed...</option>
+                            <option value="beam">Beam Bed</option>
+                            <option value="deck1">Deck Bed #1</option>
+                            <option value="deck2">Deck Bed #2</option>
+                            <option value="flatbed1">Flat Bed #1</option>
+                            <option value="flatbed2">Flat Bed #2</option>
+                            <option value="flatbed3">Flat Bed #3</option>
+                            <option value="flatbed4">Flat Bed #4</option>
+                            <option value="flatbed5">Flat Bed #5</option>
+                            <option value="flatbed6">Flat Bed #6</option>
+                            <option value="flatbed7">Flat Bed #7</option>
+                        </select>
+                    </div>
+                    <div class="control-actions">
+                        <button class="btn btn-primary" onclick="saveBedSchedule()">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" />
+                            </svg>
+                            Save Schedule
+                        </button>
+                        <button class="btn btn-secondary" onclick="toggleViewMode()">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34 3-3-3z" />
+                            </svg>
+                            Toggle View
+                        </button>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h3>Bed Information</h3>
+                    <div class="bed-info" id="bedInfo">
+                        <div class="info-item">
+                            <span class="info-label">Type:</span>
+                            <span class="info-value" id="bedType">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Length:</span>
+                            <span class="info-value" id="bedLength">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Width:</span>
+                            <span class="info-value" id="bedWidth">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Status:</span>
+                            <span class="info-value status-badge" id="bedStatus">Available</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Design #:</span>
+                            <span class="info-value" id="currentDesignNumber">None</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Pieces:</span>
+                            <span class="info-value" id="pieceCount">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h3>Schedule Status</h3>
+                    <div class="schedule-status">
+                        <div class="status-item">
+                            <label>Date Scheduled:</label>
+                            <input type="datetime-local" id="dateScheduled" onchange="updateScheduleStatus()">
+                        </div>
+                        <div class="status-item">
+                            <label>Date Poured:</label>
+                            <input type="datetime-local" id="datePoured" onchange="updateScheduleStatus()">
+                        </div>
+                        <div class="status-item">
+                            <label>Pour Status:</label>
+                            <select id="pourStatus" onchange="updateScheduleStatus()">
+                                <option value="scheduled">Scheduled</option>
+                                <option value="setup">Setup Complete</option>
+                                <option value="poured">Poured</option>
+                                <option value="curing">Curing</option>
+                                <option value="stripped">Stripped</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3D Viewer with Piece Controls -->
+            <div class="viewer-section">
+                <div class="viewer-container" id="viewerContainer">
+                    <div class="viewer-toolbar">
+                        <button class="viewer-btn" onclick="resetCamera()" title="Reset View">
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                            </svg>
+                        </button>
+                        <button class="viewer-btn" onclick="toggleGrid()" title="Toggle Grid">
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 4v1.45l2 2V4h4v4h-3.45l2 2H14v1.45l2 2V10h4v4h-3.45l2 2H20v1.45l2 2V4c0-1.1-.9-2-2-2H4.55l2 2H8zm8 0h4v4h-4V4zM1.27 1.27L0 2.55l2 2V20c0 1.1.9 2 2 2h15.46l2 2 1.27-1.27L1.27 1.27zM10 12.55L11.45 14H10v-1.45zm-6-6L5.45 8H4V6.55zM8 20H4v-4h4v4zm0-6H4v-4h3.45l.55.55V14zm6 6h-4v-4h3.45l.55.55V20zm2 0v-1.46L17.46 20H16z" />
+                            </svg>
+                        </button>
+                        <button class="viewer-btn" onclick="toggleStrandPattern()" title="Toggle Strand Pattern">
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M7 2v11h3v9l7-12h-4l4-8z" />
+                            </svg>
+                        </button>
+                        <div class="viewer-separator"></div>
+                        <button class="viewer-btn" onclick="rotateSelectedPiece(90)" title="Rotate 90°">
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11c-.17-1.39-.72-2.73-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z" />
+                            </svg>
+                        </button>
+                        <button class="viewer-btn" onclick="flipSelectedPiece()" title="Flip Piece">
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M15 21h2v-2h-2v2zm4 0h2v-2h-2v2zM7 21h2v-2H7v2zm4 0h2v-2h-2v2zm8-4h2v-2h-2v2zm0-4h2v-2h-2v2zM3 3v18h2V5h16V3H3zm16 6h2V7h-2v2zm0 4h2v-2h-2v2z" />
+                            </svg>
+                        </button>
+                        <button class="viewer-btn" onclick="deleteSelectedPiece()" title="Delete Piece">
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                            </svg>
+                        </button>
+                        <div class="viewer-info">
+                            <span id="viewerStatus">Ready</span>
+                        </div>
+                    </div>
+                    <div id="threejsContainer" ondrop="handleDrop(event)" ondragover="handleDragOver(event)"></div>
+                </div>
+
+                <!-- Validation Panel (moved to side of viewer) -->
+                <div class="validation-panel" id="validationPanel" style="display: none;">
+                    <h3>Validation Issues</h3>
+                    <div id="validationMessages"></div>
                 </div>
             </div>
         </div>
 
-        <!-- Main Content Area -->
-        <div class="main-content">
-            <!-- 3D Viewer -->
-            <div class="viewer-container" id="viewerContainer">
-                <div class="viewer-toolbar">
-                    <button class="viewer-btn" onclick="resetCamera()" title="Reset View">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                        </svg>
-                    </button>
-                    <button class="viewer-btn" onclick="toggleGrid()" title="Toggle Grid">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M8 4v1.45l2 2V4h4v4h-3.45l2 2H14v1.45l2 2V10h4v4h-3.45l2 2H20v1.45l2 2V4c0-1.1-.9-2-2-2H4.55l2 2H8zm8 0h4v4h-4V4zM1.27 1.27L0 2.55l2 2V20c0 1.1.9 2 2 2h15.46l2 2 1.27-1.27L1.27 1.27zM10 12.55L11.45 14H10v-1.45zm-6-6L5.45 8H4V6.55zM8 20H4v-4h4v4zm0-6H4v-4h3.45l.55.55V14zm6 6h-4v-4h3.45l.55.55V20zm2 0v-1.46L17.46 20H16z" />
-                        </svg>
-                    </button>
-                    <button class="viewer-btn" onclick="toggleStrandPattern()" title="Toggle Strand Pattern">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M7 2v11h3v9l7-12h-4l4-8z" />
-                        </svg>
-                    </button>
-                    <div class="viewer-info">
-                        <span id="viewerStatus">Ready</span>
-                    </div>
-                </div>
-                <div id="threejsContainer"></div>
-            </div>
-
-            <!-- Assets Panel -->
-            <div class="assets-panel">
-                <div class="assets-header">
-                    <h3>Available Pieces</h3>
+        <!-- Bottom Assets Panel -->
+        <div class="bottom-assets-panel">
+            <div class="assets-header">
+                <h3>Available Pieces</h3>
+                <div class="assets-controls">
                     <input type="text" id="assetSearch" placeholder="Search by mark or design..." onkeyup="filterAssets()">
-                </div>
-                <div class="assets-filter">
+                    <select id="modelSelect" onchange="onModelChange()">
+                        <option value="">Select Model...</option>
+                    </select>
                     <select id="designFilter" onchange="filterAssets()">
                         <option value="">All Designs</option>
                     </select>
@@ -197,16 +224,12 @@
                         <option value="slab">Slabs</option>
                     </select>
                 </div>
-                <div class="assets-list" id="assetsList">
-                    <div class="loading-message">Loading ACC Assets...</div>
+            </div>
+            <div class="assets-scroll-container">
+                <div class="assets-grid" id="assetsList">
+                    <div class="loading-message">Select a model to load ACC Assets...</div>
                 </div>
             </div>
-        </div>
-
-        <!-- Validation Messages -->
-        <div class="validation-panel" id="validationPanel" style="display: none;">
-            <h3>Validation Issues</h3>
-            <div id="validationMessages"></div>
         </div>
     </div>
 

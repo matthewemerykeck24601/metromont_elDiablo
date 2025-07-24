@@ -32,9 +32,20 @@ let showStrandPattern = false;
 // Production Data
 let currentBed = null;
 let currentSchedule = null;
+let currentModel = null;
 let availableAssets = [];
 let placedPieces = [];
 let validationIssues = [];
+
+// ACC Custom Field Mappings
+const CUSTOM_FIELD_MAPPINGS = {
+    DateScheduled: 'DateScheduled',
+    DatePoured: 'DatePoured',
+    BedId: 'ProductionBedId',
+    PourStatus: 'PourStatus',
+    BedPosition: 'BedPosition',
+    BedRotation: 'BedRotation'
+};
 
 // Bed Configurations
 const BED_CONFIGS = {
@@ -179,6 +190,7 @@ function populateProjectDropdown(projects) {
         const option = document.createElement('option');
         option.value = project.id;
         option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ' (' + project.number + ')' : ''}`;
+        option.dataset.projectData = JSON.stringify(project);
         projectSelect.appendChild(option);
     });
 
@@ -308,20 +320,33 @@ function onMouseMove(event) {
     if (!isDragging) {
         // Highlight pieces on hover
         raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(Array.from(pieceMeshes.values()));
+
+        // Get all piece meshes (first child of each group)
+        const pieceObjects = [];
+        pieceMeshes.forEach(group => {
+            if (group.children[0]) {
+                pieceObjects.push(group.children[0]);
+            }
+        });
+
+        const intersects = raycaster.intersectObjects(pieceObjects);
 
         // Reset all piece materials
-        pieceMeshes.forEach((mesh, assetId) => {
-            const piece = placedPieces.find(p => p.assetId === assetId);
-            if (piece && !piece.validationErrors) {
-                mesh.material.emissive = new THREE.Color(0x000000);
+        pieceMeshes.forEach((group, assetId) => {
+            const mesh = group.children[0];
+            if (mesh && mesh.material) {
+                const piece = placedPieces.find(p => p.assetId === assetId);
+                if (piece && !piece.validationErrors) {
+                    mesh.material.emissive = new THREE.Color(0x000000);
+                }
             }
         });
 
         // Highlight hovered piece
         if (intersects.length > 0) {
             const hoveredMesh = intersects[0].object;
-            if (hoveredMesh.userData.assetId) {
+            const hoveredGroup = hoveredMesh.parent;
+            if (hoveredGroup && hoveredGroup.userData.assetId) {
                 hoveredMesh.material.emissive = new THREE.Color(0x444444);
                 document.body.style.cursor = 'pointer';
             }
@@ -335,17 +360,36 @@ function onMouseDown(event) {
     if (event.button !== 0) return; // Only left click
 
     raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(Array.from(pieceMeshes.values()));
+
+    const pieceObjects = [];
+    pieceMeshes.forEach(group => {
+        if (group.children[0]) {
+            pieceObjects.push(group.children[0]);
+        }
+    });
+
+    const intersects = raycaster.intersectObjects(pieceObjects);
 
     if (intersects.length > 0) {
         const clickedMesh = intersects[0].object;
-        if (clickedMesh.userData.assetId) {
-            selectedPiece = clickedMesh;
+        const clickedGroup = clickedMesh.parent;
+
+        if (clickedGroup && clickedGroup.userData.assetId) {
+            selectPiece(clickedGroup);
             isDragging = true;
             controls.enabled = false;
 
             // Store initial position
             selectedPiece.userData.startPosition = selectedPiece.position.clone();
+        }
+    } else {
+        // Deselect if clicking empty space
+        if (selectedPiece) {
+            const mesh = selectedPiece.children[0];
+            if (mesh && mesh.material) {
+                mesh.material.emissive = new THREE.Color(0x000000);
+            }
+            selectedPiece = null;
         }
     }
 }
@@ -367,19 +411,26 @@ function onMouseUp(event) {
                 z: selectedPiece.position.z
             };
         }
-
-        selectedPiece = null;
     }
 }
 
 function onDoubleClick(event) {
     raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(Array.from(pieceMeshes.values()));
+
+    const pieceObjects = [];
+    pieceMeshes.forEach(group => {
+        if (group.children[0]) {
+            pieceObjects.push(group.children[0]);
+        }
+    });
+
+    const intersects = raycaster.intersectObjects(pieceObjects);
 
     if (intersects.length > 0) {
         const clickedMesh = intersects[0].object;
-        if (clickedMesh.userData.assetId) {
-            showPieceDetails(clickedMesh.userData.assetId);
+        const clickedGroup = clickedMesh.parent;
+        if (clickedGroup && clickedGroup.userData.assetId) {
+            showPieceDetails(clickedGroup.userData.assetId);
         }
     }
 }
@@ -452,18 +503,22 @@ function createBedVisualization() {
         shininess: 30
     });
 
-    bedMesh = new THREE.Mesh(geometry, material);
-    bedMesh.position.y = config.height / 2;
-    bedMesh.receiveShadow = true;
-    bedMesh.userData.type = 'bed';
-
-    scene.add(bedMesh);
+    const bedBox = new THREE.Mesh(geometry, material);
+    bedBox.position.y = config.height / 2;
+    bedBox.receiveShadow = true;
 
     // Add bed outline
     const edges = new THREE.EdgesGeometry(geometry);
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-    line.position.copy(bedMesh.position);
-    scene.add(line);
+    line.position.copy(bedBox.position);
+
+    // Create group for bed
+    bedMesh = new THREE.Group();
+    bedMesh.add(bedBox);
+    bedMesh.add(line);
+    bedMesh.userData.type = 'bed';
+
+    scene.add(bedMesh);
 
     // Reset camera
     resetCamera();
@@ -476,12 +531,16 @@ function clearViewer() {
         bedMesh = null;
     }
 
-    // Remove all pieces
-    pieceMeshes.forEach(mesh => {
-        scene.remove(mesh);
+    // Remove all pieces and their strand patterns
+    pieceMeshes.forEach(group => {
+        if (group.userData.strandLines) {
+            group.userData.strandLines.forEach(line => scene.remove(line));
+        }
+        scene.remove(group);
     });
     pieceMeshes.clear();
     placedPieces = [];
+    selectedPiece = null;
 }
 
 // Asset Management
@@ -494,18 +553,138 @@ async function onProjectChange() {
         return;
     }
 
-    // Load ACC Assets for this project
-    await loadProjectAssets();
+    // Load models for this project
+    await loadProjectModels();
 }
 
-async function loadProjectAssets() {
+async function loadProjectModels() {
+    try {
+        updateViewerStatus('Loading project models...');
+
+        // Get project folder contents
+        const foldersUrl = `https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${projectId}/topFolders`;
+        const foldersResponse = await fetch(foldersUrl, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!foldersResponse.ok) {
+            throw new Error('Failed to load project folders');
+        }
+
+        const foldersData = await foldersResponse.json();
+
+        // Find Project Files folder
+        const projectFilesFolder = foldersData.data.find(folder =>
+            folder.attributes.displayName === 'Project Files' ||
+            folder.attributes.name === 'Project Files'
+        );
+
+        if (projectFilesFolder) {
+            await loadFolderContents(projectFilesFolder.id);
+        } else {
+            // Load first available folder
+            if (foldersData.data.length > 0) {
+                await loadFolderContents(foldersData.data[0].id);
+            }
+        }
+
+        updateViewerStatus('Ready');
+
+    } catch (error) {
+        console.error('Error loading models:', error);
+        updateViewerStatus('Error loading models');
+        updateModelDropdown([]);
+    }
+}
+
+async function loadFolderContents(folderId) {
+    try {
+        const contentsUrl = `https://developer.api.autodesk.com/data/v1/projects/${projectId}/folders/${folderId}/contents`;
+        const response = await fetch(contentsUrl, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load folder contents');
+        }
+
+        const data = await response.json();
+
+        // Filter for Revit models
+        const revitModels = data.data.filter(item =>
+            item.type === 'items' &&
+            (item.attributes.displayName.endsWith('.rvt') ||
+                item.attributes.fileType === 'rvt')
+        );
+
+        updateModelDropdown(revitModels);
+
+    } catch (error) {
+        console.error('Error loading folder contents:', error);
+        updateModelDropdown([]);
+    }
+}
+
+function updateModelDropdown(models) {
+    const modelSelect = document.getElementById('modelSelect');
+    if (!modelSelect) return;
+
+    modelSelect.innerHTML = '<option value="">Select Model...</option>';
+
+    models.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.attributes.displayName;
+        option.dataset.modelData = JSON.stringify(model);
+        modelSelect.appendChild(option);
+    });
+
+    modelSelect.disabled = models.length === 0;
+}
+
+async function onModelChange() {
+    const modelSelect = document.getElementById('modelSelect');
+    currentModel = modelSelect.value;
+
+    if (!currentModel) {
+        clearAssetsList();
+        return;
+    }
+
+    // Load ACC Assets mapped to this model
+    await loadModelAssets();
+}
+
+async function loadModelAssets() {
     try {
         updateViewerStatus('Loading ACC Assets...');
 
-        // Mock assets for now - replace with actual ACC API call
-        availableAssets = generateMockAssets();
+        // Get assets for the project
+        const assetsUrl = `https://developer.api.autodesk.com/construction/assets/v1/projects/${projectId.replace('b.', '')}/assets?filter[status.name]=active`;
 
-        // Populate design filter
+        const response = await fetch(assetsUrl, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load ACC Assets');
+        }
+
+        const data = await response.json();
+
+        // Process assets to extract piece information
+        availableAssets = await processAssetsWithModelData(data.results || []);
+
+        // Update filters
         updateDesignFilter();
 
         // Display assets
@@ -516,7 +695,83 @@ async function loadProjectAssets() {
     } catch (error) {
         console.error('Error loading assets:', error);
         updateViewerStatus('Error loading assets');
+
+        // Fall back to mock data for testing
+        availableAssets = generateMockAssets();
+        updateDesignFilter();
+        displayAssets(availableAssets);
     }
+}
+
+async function processAssetsWithModelData(assets) {
+    const processedAssets = [];
+
+    for (const asset of assets) {
+        try {
+            // Extract custom attributes
+            const customAttributes = asset.customAttributes || {};
+
+            // Get linked element data if available
+            let elementData = null;
+            if (asset.linkedDocumentUrn && asset.externalId) {
+                elementData = await getElementProperties(asset.linkedDocumentUrn, asset.externalId);
+            }
+
+            // Determine piece type from category or name
+            let pieceType = 'beam'; // default
+            const displayName = asset.displayName || asset.name || '';
+
+            if (displayName.toLowerCase().includes('column')) pieceType = 'column';
+            else if (displayName.toLowerCase().includes('wall')) pieceType = 'wall';
+            else if (displayName.toLowerCase().includes('double') || displayName.toLowerCase().includes('tee')) pieceType = 'doubletee';
+            else if (displayName.toLowerCase().includes('slab')) pieceType = 'slab';
+
+            // Extract dimensions from element properties or use defaults
+            const dimensions = extractDimensions(elementData) || PIECE_CONFIGS[pieceType];
+
+            processedAssets.push({
+                id: asset.id,
+                displayName: displayName,
+                attributes: {
+                    displayName: displayName,
+                    pieceType: pieceType,
+                    DESIGN_NUMBER: customAttributes.DESIGN_NUMBER || customAttributes.designNumber || null,
+                    length: dimensions.defaultLength || dimensions.length || 20,
+                    width: dimensions.defaultWidth || dimensions.width || 8,
+                    height: dimensions.defaultHeight || dimensions.height || 2,
+                    weight: customAttributes.weight || Math.round(Math.random() * 5000 + 1000),
+                    status: asset.status?.name || 'active',
+                    externalId: asset.externalId,
+                    linkedDocumentUrn: asset.linkedDocumentUrn
+                },
+                originalAsset: asset
+            });
+
+        } catch (error) {
+            console.error('Error processing asset:', asset.id, error);
+        }
+    }
+
+    return processedAssets;
+}
+
+async function getElementProperties(documentUrn, externalId) {
+    try {
+        // This would call the Model Derivative API to get element properties
+        // For now, return null as this requires additional setup
+        return null;
+    } catch (error) {
+        console.error('Error getting element properties:', error);
+        return null;
+    }
+}
+
+function extractDimensions(elementData) {
+    if (!elementData) return null;
+
+    // Extract dimensions from element properties
+    // This would parse the actual Revit element data
+    return null;
 }
 
 function generateMockAssets() {
@@ -594,8 +849,8 @@ function createAssetCard(asset) {
     card.innerHTML = `
         <div class="asset-header">
             <span class="asset-name">${asset.attributes.displayName}</span>
-            <span class="asset-type ${asset.attributes.pieceType}">${asset.attributes.pieceType}</span>
         </div>
+        <div class="asset-type ${asset.attributes.pieceType}">${asset.attributes.pieceType.toUpperCase()}</div>
         <div class="asset-details">
             <div class="detail-item">
                 <span class="detail-label">Design:</span>
@@ -603,30 +858,64 @@ function createAssetCard(asset) {
             </div>
             <div class="detail-item">
                 <span class="detail-label">Dimensions:</span>
-                <span class="detail-value">${asset.attributes.length}'×${asset.attributes.width}'×${asset.attributes.height}'</span>
+                <span class="detail-value">${asset.attributes.length.toFixed(1)}'×${asset.attributes.width.toFixed(1)}'×${asset.attributes.height.toFixed(1)}'</span>
             </div>
             <div class="detail-item">
                 <span class="detail-label">Weight:</span>
                 <span class="detail-value">${asset.attributes.weight} lbs</span>
             </div>
         </div>
-        ${isPlaced ? '<div class="asset-status">Placed on bed</div>' : ''}
     `;
 
     // Add drag event listeners
     card.addEventListener('dragstart', (e) => handleDragStart(e, asset));
-    card.addEventListener('click', () => {
-        if (!isPlaced && currentBed) {
-            addPieceToBed(asset);
-        }
-    });
+    card.addEventListener('dragend', handleDragEnd);
 
     return card;
 }
 
 function handleDragStart(event, asset) {
     event.dataTransfer.effectAllowed = 'copy';
-    event.dataTransfer.setData('assetId', asset.id);
+    event.dataTransfer.setData('assetData', JSON.stringify(asset));
+    event.target.classList.add('dragging');
+}
+
+function handleDragEnd(event) {
+    event.target.classList.remove('dragging');
+}
+
+function handleDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+}
+
+function handleDrop(event) {
+    event.preventDefault();
+
+    if (!currentBed) {
+        alert('Please select a bed first');
+        return;
+    }
+
+    try {
+        const assetData = JSON.parse(event.dataTransfer.getData('assetData'));
+
+        // Check if already placed
+        if (placedPieces.some(p => p.assetId === assetData.id)) {
+            alert('This piece is already placed on the bed');
+            return;
+        }
+
+        // Add piece to bed at drop position
+        const rect = event.target.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        addPieceToBedAtPosition(assetData, x, y);
+
+    } catch (error) {
+        console.error('Error handling drop:', error);
+    }
 }
 
 // Piece Placement
@@ -642,29 +931,68 @@ function addPieceToBed(asset) {
         return;
     }
 
-    // Create piece visualization
-    const pieceConfig = PIECE_CONFIGS[asset.attributes.pieceType];
+    const bedConfig = BED_CONFIGS[currentBed];
+    const position = findAvailablePosition(asset, bedConfig);
+
+    addPieceToBedAtPosition(asset, position.x, position.z);
+}
+
+function addPieceToBedAtPosition(asset, dropX, dropZ) {
+    const bedConfig = BED_CONFIGS[currentBed];
+
+    // Create piece visualization with actual dimensions
     const geometry = new THREE.BoxGeometry(
         asset.attributes.length,
         asset.attributes.height,
         asset.attributes.width
     );
 
+    // Add edge geometry for better visibility
+    const edges = new THREE.EdgesGeometry(geometry);
+    const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+    const edgeLines = new THREE.LineSegments(edges, edgeMaterial);
+
+    // Create material based on piece type
+    const pieceConfig = PIECE_CONFIGS[asset.attributes.pieceType];
     const material = new THREE.MeshPhongMaterial({
         color: pieceConfig.color,
         specular: 0x111111,
-        shininess: 30
+        shininess: 30,
+        opacity: 0.9,
+        transparent: true
     });
 
     const pieceMesh = new THREE.Mesh(geometry, material);
 
     // Position on bed
-    const bedConfig = BED_CONFIGS[currentBed];
     const yPosition = bedConfig.height + asset.attributes.height / 2;
 
-    // Find available position
-    const position = findAvailablePosition(asset, bedConfig);
-    pieceMesh.position.set(position.x, yPosition, position.z);
+    // Convert drop coordinates to world position
+    let position;
+    if (dropX !== undefined && dropZ !== undefined) {
+        // Use raycaster to find exact position on bed
+        raycaster.setFromCamera(new THREE.Vector2(dropX, dropZ), camera);
+
+        // Get the bed box mesh (first child of bedMesh group)
+        const bedBox = bedMesh ? bedMesh.children[0] : null;
+        const intersects = bedBox ? raycaster.intersectObject(bedBox) : [];
+
+        if (intersects.length > 0) {
+            position = {
+                x: intersects[0].point.x,
+                y: yPosition,
+                z: intersects[0].point.z
+            };
+        } else {
+            position = findAvailablePosition(asset, bedConfig);
+            position.y = yPosition;
+        }
+    } else {
+        position = findAvailablePosition(asset, bedConfig);
+        position.y = yPosition;
+    }
+
+    pieceMesh.position.set(position.x, position.y, position.z);
 
     // Add metadata
     pieceMesh.userData = {
@@ -674,26 +1002,35 @@ function addPieceToBed(asset) {
             length: asset.attributes.length,
             width: asset.attributes.width,
             height: asset.attributes.height
-        }
+        },
+        rotation: 0,
+        flipped: false
     };
 
     pieceMesh.castShadow = true;
     pieceMesh.receiveShadow = true;
 
-    scene.add(pieceMesh);
-    pieceMeshes.set(asset.id, pieceMesh);
+    // Create group for piece and edges
+    const pieceGroup = new THREE.Group();
+    pieceGroup.add(pieceMesh);
+    pieceGroup.add(edgeLines);
+    pieceGroup.userData = pieceMesh.userData;
+
+    scene.add(pieceGroup);
+    pieceMeshes.set(asset.id, pieceGroup);
 
     // Add to placed pieces
     placedPieces.push({
         assetId: asset.id,
         asset: asset,
-        position: position,
+        position: { x: position.x, y: 0, z: position.z },
         rotation: 0,
+        flipped: false,
         designNumber: asset.attributes.DESIGN_NUMBER
     });
 
     // Validate placement
-    validatePiecePlacement(pieceMesh);
+    validatePiecePlacement(pieceGroup);
 
     // Update UI
     updatePieceCount();
@@ -701,7 +1038,79 @@ function addPieceToBed(asset) {
 
     // Show strand pattern if enabled
     if (showStrandPattern) {
-        addStrandPattern(pieceMesh, asset);
+        addStrandPattern(pieceGroup, asset);
+    }
+
+    // Select the newly placed piece
+    selectPiece(pieceGroup);
+}
+
+// Piece Manipulation Functions
+function rotateSelectedPiece(degrees) {
+    if (!selectedPiece) {
+        alert('Please select a piece first');
+        return;
+    }
+
+    const radians = THREE.MathUtils.degToRad(degrees);
+    selectedPiece.rotation.y += radians;
+
+    // Update stored rotation
+    const piece = placedPieces.find(p => p.assetId === selectedPiece.userData.assetId);
+    if (piece) {
+        piece.rotation = THREE.MathUtils.radToDeg(selectedPiece.rotation.y) % 360;
+    }
+
+    // Revalidate placement
+    validatePiecePlacement(selectedPiece);
+}
+
+function flipSelectedPiece() {
+    if (!selectedPiece) {
+        alert('Please select a piece first');
+        return;
+    }
+
+    // Flip around the Z axis
+    selectedPiece.scale.z *= -1;
+
+    // Update stored flip state
+    const piece = placedPieces.find(p => p.assetId === selectedPiece.userData.assetId);
+    if (piece) {
+        piece.flipped = !piece.flipped;
+    }
+
+    selectedPiece.userData.flipped = !selectedPiece.userData.flipped;
+
+    // Revalidate placement
+    validatePiecePlacement(selectedPiece);
+}
+
+function deleteSelectedPiece() {
+    if (!selectedPiece) {
+        alert('Please select a piece first');
+        return;
+    }
+
+    removePiece(selectedPiece.userData.assetId);
+    selectedPiece = null;
+}
+
+function selectPiece(pieceGroup) {
+    // Deselect previous piece
+    if (selectedPiece) {
+        const prevMesh = selectedPiece.children[0];
+        if (prevMesh && prevMesh.material) {
+            prevMesh.material.emissive = new THREE.Color(0x000000);
+        }
+    }
+
+    selectedPiece = pieceGroup;
+
+    // Highlight selected piece
+    const mesh = pieceGroup.children[0];
+    if (mesh && mesh.material) {
+        mesh.material.emissive = new THREE.Color(0x444444);
     }
 }
 
@@ -752,10 +1161,10 @@ function checkOverlap(rect1, rect2) {
 }
 
 // Validation
-function validatePiecePlacement(pieceMesh) {
-    if (!pieceMesh || !currentBed) return;
+function validatePiecePlacement(pieceGroup) {
+    if (!pieceGroup || !currentBed) return;
 
-    const piece = placedPieces.find(p => p.assetId === pieceMesh.userData.assetId);
+    const piece = placedPieces.find(p => p.assetId === pieceGroup.userData.assetId);
     if (!piece) return;
 
     const bedConfig = BED_CONFIGS[currentBed];
@@ -804,20 +1213,20 @@ function validatePiecePlacement(pieceMesh) {
         }
     }
 
-    // Check if piece is skewed (not aligned with bed)
-    // For now, we assume all pieces are aligned
-
     // Update piece validation status
     piece.validationErrors = issues;
 
     // Update visual feedback
-    if (issues.length > 0) {
-        pieceMesh.material.color = new THREE.Color(0xFF0000);
-        pieceMesh.material.emissive = new THREE.Color(0x440000);
-    } else {
-        const pieceConfig = PIECE_CONFIGS[piece.asset.attributes.pieceType];
-        pieceMesh.material.color = new THREE.Color(pieceConfig.color);
-        pieceMesh.material.emissive = new THREE.Color(0x000000);
+    const mesh = pieceGroup.children[0]; // Get the mesh from the group
+    if (mesh && mesh.material) {
+        if (issues.length > 0) {
+            mesh.material.color = new THREE.Color(0xFF0000);
+            mesh.material.emissive = new THREE.Color(0x440000);
+        } else {
+            const pieceConfig = PIECE_CONFIGS[piece.asset.attributes.pieceType];
+            mesh.material.color = new THREE.Color(pieceConfig.color);
+            mesh.material.emissive = selectedPiece === pieceGroup ? new THREE.Color(0x444444) : new THREE.Color(0x000000);
+        }
     }
 
     // Update validation panel
@@ -855,7 +1264,7 @@ function updateValidationPanel() {
 }
 
 // Strand Pattern Visualization
-function addStrandPattern(pieceMesh, asset) {
+function addStrandPattern(pieceGroup, asset) {
     // Default strand pattern - will be replaced with actual design data later
     const strandSpacing = 2; // 2 feet spacing
     const strandDiameter = 0.5; // 0.5 inch diameter
@@ -866,6 +1275,8 @@ function addStrandPattern(pieceMesh, asset) {
     // Create strand lines
     const strandMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
 
+    pieceGroup.userData.strandLines = [];
+
     for (let i = -width / 2 + 1; i <= width / 2 - 1; i += strandSpacing) {
         const points = [];
         points.push(new THREE.Vector3(-length / 2 + 1, 0.1, i));
@@ -874,12 +1285,10 @@ function addStrandPattern(pieceMesh, asset) {
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const line = new THREE.Line(geometry, strandMaterial);
 
-        line.position.copy(pieceMesh.position);
-        line.position.y = pieceMesh.position.y + asset.attributes.height / 2 + 0.1;
+        line.position.copy(pieceGroup.position);
+        line.position.y = pieceGroup.position.y + asset.attributes.height / 2 + 0.1;
 
-        pieceMesh.userData.strandLines = pieceMesh.userData.strandLines || [];
-        pieceMesh.userData.strandLines.push(line);
-
+        pieceGroup.userData.strandLines.push(line);
         scene.add(line);
     }
 }
@@ -887,19 +1296,19 @@ function addStrandPattern(pieceMesh, asset) {
 function toggleStrandPattern() {
     showStrandPattern = !showStrandPattern;
 
-    pieceMeshes.forEach((mesh, assetId) => {
+    pieceMeshes.forEach((group, assetId) => {
         if (showStrandPattern) {
             const piece = placedPieces.find(p => p.assetId === assetId);
             if (piece) {
-                addStrandPattern(mesh, piece.asset);
+                addStrandPattern(group, piece.asset);
             }
         } else {
             // Remove strand lines
-            if (mesh.userData.strandLines) {
-                mesh.userData.strandLines.forEach(line => {
+            if (group.userData.strandLines) {
+                group.userData.strandLines.forEach(line => {
                     scene.remove(line);
                 });
-                mesh.userData.strandLines = [];
+                group.userData.strandLines = [];
             }
         }
     });
@@ -926,27 +1335,40 @@ async function saveBedSchedule() {
                 assetId: p.assetId,
                 position: p.position,
                 rotation: p.rotation,
+                flipped: p.flipped,
                 designNumber: p.designNumber
             }))
         };
 
         // Update ACC Assets with schedule data
+        const updatePromises = [];
+
         for (const piece of placedPieces) {
-            await updateAssetScheduleData(piece.assetId, {
-                DateScheduled: schedule.dateScheduled,
-                DatePoured: schedule.datePoured,
-                BedId: currentBed,
-                PourStatus: schedule.pourStatus
-            });
+            const customAttributes = {
+                [CUSTOM_FIELD_MAPPINGS.DateScheduled]: schedule.dateScheduled,
+                [CUSTOM_FIELD_MAPPINGS.DatePoured]: schedule.datePoured,
+                [CUSTOM_FIELD_MAPPINGS.BedId]: currentBed,
+                [CUSTOM_FIELD_MAPPINGS.PourStatus]: schedule.pourStatus,
+                [CUSTOM_FIELD_MAPPINGS.BedPosition]: JSON.stringify({
+                    x: piece.position.x,
+                    y: piece.position.y,
+                    z: piece.position.z
+                }),
+                [CUSTOM_FIELD_MAPPINGS.BedRotation]: piece.rotation
+            };
+
+            updatePromises.push(updateAssetCustomAttributes(piece.assetId, customAttributes));
         }
 
-        // Save to local storage for now
+        await Promise.all(updatePromises);
+
+        // Save to local storage as backup
         const scheduleKey = `schedule_${projectId}_${currentBed}_${schedule.date}`;
         localStorage.setItem(scheduleKey, JSON.stringify(schedule));
 
         updateViewerStatus('Schedule saved successfully');
 
-        alert('Schedule saved successfully!');
+        alert('Schedule saved successfully to ACC!');
 
     } catch (error) {
         console.error('Error saving schedule:', error);
@@ -955,13 +1377,32 @@ async function saveBedSchedule() {
     }
 }
 
-async function updateAssetScheduleData(assetId, scheduleData) {
-    // This would update the ACC Asset custom attributes
-    // For now, we'll simulate this
-    console.log('Updating asset:', assetId, 'with schedule data:', scheduleData);
+async function updateAssetCustomAttributes(assetId, customAttributes) {
+    try {
+        const updateUrl = `https://developer.api.autodesk.com/construction/assets/v1/projects/${projectId.replace('b.', '')}/assets/${assetId}`;
 
-    // In production, this would be:
-    // await updateACCAssetAttributes(assetId, scheduleData);
+        const response = await fetch(updateUrl, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                customAttributes: customAttributes
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to update asset ${assetId}`);
+        }
+
+        return response.json();
+
+    } catch (error) {
+        console.error('Error updating asset:', assetId, error);
+        // Continue with other assets even if one fails
+        return null;
+    }
 }
 
 async function loadBedSchedule() {
@@ -978,7 +1419,12 @@ async function loadBedSchedule() {
             currentSchedule = JSON.parse(savedSchedule);
 
             // Clear current pieces
-            pieceMeshes.forEach(mesh => scene.remove(mesh));
+            pieceMeshes.forEach(group => {
+                if (group.userData.strandLines) {
+                    group.userData.strandLines.forEach(line => scene.remove(line));
+                }
+                scene.remove(group);
+            });
             pieceMeshes.clear();
             placedPieces = [];
 
@@ -986,16 +1432,27 @@ async function loadBedSchedule() {
             for (const pieceData of currentSchedule.pieces) {
                 const asset = availableAssets.find(a => a.id === pieceData.assetId);
                 if (asset) {
-                    addPieceToBed(asset);
+                    // Add piece at saved position
+                    addPieceToBedAtPosition(asset, pieceData.position.x, pieceData.position.z);
 
-                    // Update position if different
-                    const mesh = pieceMeshes.get(asset.id);
-                    if (mesh && pieceData.position) {
-                        mesh.position.set(pieceData.position.x, mesh.position.y, pieceData.position.z);
+                    // Update position, rotation, and flip state
+                    const group = pieceMeshes.get(asset.id);
+                    if (group) {
+                        group.position.set(pieceData.position.x, group.position.y, pieceData.position.z);
+
+                        if (pieceData.rotation) {
+                            group.rotation.y = THREE.MathUtils.degToRad(pieceData.rotation);
+                        }
+
+                        if (pieceData.flipped) {
+                            group.scale.z = -1;
+                        }
 
                         const piece = placedPieces.find(p => p.assetId === asset.id);
                         if (piece) {
                             piece.position = pieceData.position;
+                            piece.rotation = pieceData.rotation || 0;
+                            piece.flipped = pieceData.flipped || false;
                         }
                     }
                 }
@@ -1148,9 +1605,9 @@ function savePieceChanges() {
     if (!assetId) return;
 
     const piece = placedPieces.find(p => p.assetId === assetId);
-    const mesh = pieceMeshes.get(assetId);
+    const group = pieceMeshes.get(assetId);
 
-    if (piece && mesh) {
+    if (piece && group) {
         const newX = parseFloat(document.getElementById('pieceX').value);
         const newZ = parseFloat(document.getElementById('pieceZ').value);
         const newRotation = parseFloat(document.getElementById('pieceRotation').value);
@@ -1160,12 +1617,21 @@ function savePieceChanges() {
         piece.position.z = newZ;
         piece.rotation = newRotation;
 
-        mesh.position.x = newX;
-        mesh.position.z = newZ;
-        mesh.rotation.y = THREE.MathUtils.degToRad(newRotation);
+        group.position.x = newX;
+        group.position.z = newZ;
+        group.rotation.y = THREE.MathUtils.degToRad(newRotation);
+
+        // Update strand pattern positions if visible
+        if (group.userData.strandLines) {
+            group.userData.strandLines.forEach(line => {
+                line.position.x = newX;
+                line.position.z = newZ;
+                line.rotation.y = group.rotation.y;
+            });
+        }
 
         // Revalidate
-        validatePiecePlacement(mesh);
+        validatePiecePlacement(group);
     }
 
     closePieceDetails();
@@ -1212,14 +1678,15 @@ function handleKeyPress(event) {
 }
 
 function removePiece(assetId) {
-    const mesh = pieceMeshes.get(assetId);
-    if (mesh) {
+    const pieceGroup = pieceMeshes.get(assetId);
+    if (pieceGroup) {
         // Remove strand pattern if exists
-        if (mesh.userData.strandLines) {
-            mesh.userData.strandLines.forEach(line => scene.remove(line));
+        if (pieceGroup.userData.strandLines) {
+            pieceGroup.userData.strandLines.forEach(line => scene.remove(line));
         }
 
-        scene.remove(mesh);
+        // Remove the group and all its children
+        scene.remove(pieceGroup);
         pieceMeshes.delete(assetId);
 
         const index = placedPieces.findIndex(p => p.assetId === assetId);
