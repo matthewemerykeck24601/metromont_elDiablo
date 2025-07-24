@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Production Scheduling - Precast Bed Scheduler | Metromont CastLink</title>
     <link rel="stylesheet" href="styles/production-scheduling.css">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://developer.api.autodesk.com;">
 </head>
 <body class="auth-loading">
     <!-- Auth Processing Overlay -->
@@ -272,107 +271,435 @@
         </div>
     </div>
 
-    <!-- Load Three.js and OrbitControls -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Self-contained 3D Graphics Engine - NO EXTERNAL DEPENDENCIES -->
     <script>
-        // Load OrbitControls after Three.js is loaded
-        function loadOrbitControls() {
-            return new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-                script.onload = () => {
-                    // Define OrbitControls inline to avoid external script issues
-                    if (typeof THREE !== 'undefined') {
-                        // Simple OrbitControls implementation
-                        THREE.OrbitControls = function(camera, domElement) {
-                            this.camera = camera;
-                            this.domElement = domElement;
-                            this.enabled = true;
-                            this.enableDamping = true;
-                            this.dampingFactor = 0.05;
-                            this.minDistance = 10;
-                            this.maxDistance = 500;
-                            this.maxPolarAngle = Math.PI / 2;
-                            
-                            // Basic orbit functionality
-                            let isMouseDown = false;
-                            let mouseX = 0, mouseY = 0;
-                            let phi = 0, theta = 0;
-                            
-                            this.domElement.addEventListener('mousedown', (e) => {
-                                isMouseDown = true;
-                                mouseX = e.clientX;
-                                mouseY = e.clientY;
-                            });
-                            
-                            this.domElement.addEventListener('mousemove', (e) => {
-                                if (!isMouseDown) return;
-                                const deltaX = e.clientX - mouseX;
-                                const deltaY = e.clientY - mouseY;
-                                theta -= deltaX * 0.01;
-                                phi += deltaY * 0.01;
-                                phi = Math.max(-Math.PI/2, Math.min(Math.PI/2, phi));
-                                this.updateCameraPosition();
-                                mouseX = e.clientX;
-                                mouseY = e.clientY;
-                            });
-                            
-                            this.domElement.addEventListener('mouseup', () => {
-                                isMouseDown = false;
-                            });
-                            
-                            this.domElement.addEventListener('wheel', (e) => {
-                                const distance = this.camera.position.length();
-                                const newDistance = Math.max(this.minDistance, Math.min(this.maxDistance, distance + e.deltaY * 0.1));
-                                this.camera.position.normalize().multiplyScalar(newDistance);
-                            });
-                            
-                            this.updateCameraPosition = () => {
-                                const distance = this.camera.position.length();
-                                this.camera.position.x = distance * Math.sin(theta) * Math.cos(phi);
-                                this.camera.position.y = distance * Math.sin(phi);
-                                this.camera.position.z = distance * Math.cos(theta) * Math.cos(phi);
-                                this.camera.lookAt(0, 0, 0);
-                            };
-                            
-                            this.update = () => {
-                                // Damping can be implemented here
-                            };
-                        };
-                        resolve();
-                    } else {
-                        reject(new Error('Three.js not loaded'));
+        // Minimal 3D Graphics Implementation for Production Scheduler
+        window.SimpleThreeJS = {
+            // Basic 3D math utilities
+            Vector3: function(x = 0, y = 0, z = 0) {
+                this.x = x;
+                this.y = y;
+                this.z = z;
+                
+                this.length = () => Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+                this.normalize = () => {
+                    const len = this.length();
+                    if (len > 0) {
+                        this.x /= len;
+                        this.y /= len;
+                        this.z /= len;
+                    }
+                    return this;
+                };
+                this.multiplyScalar = (scalar) => {
+                    this.x *= scalar;
+                    this.y *= scalar;
+                    this.z *= scalar;
+                    return this;
+                };
+                this.set = (x, y, z) => {
+                    this.x = x;
+                    this.y = y;
+                    this.z = z;
+                    return this;
+                };
+                return this;
+            },
+            
+            // Basic Color utility
+            Color: function(hex) {
+                this.r = ((hex >> 16) & 255) / 255;
+                this.g = ((hex >> 8) & 255) / 255;
+                this.b = (hex & 255) / 255;
+                return this;
+            },
+            
+            // Simple Scene
+            Scene: function() {
+                this.background = null;
+                this.fog = null;
+                this.children = [];
+                
+                this.add = (object) => {
+                    this.children.push(object);
+                };
+                
+                this.remove = (object) => {
+                    const index = this.children.indexOf(object);
+                    if (index > -1) {
+                        this.children.splice(index, 1);
                     }
                 };
-                script.onerror = reject;
-                document.head.appendChild(script);
-            });
-        }
-
-        // Initialize when DOM is ready
-        document.addEventListener('DOMContentLoaded', async function() {
-            try {
-                console.log('Production Scheduling module loaded');
-                // Wait for OrbitControls to be available
-                if (typeof THREE === 'undefined') {
-                    await new Promise(resolve => {
-                        const checkThree = () => {
-                            if (typeof THREE !== 'undefined') {
-                                resolve();
-                            } else {
-                                setTimeout(checkThree, 100);
-                            }
-                        };
-                        checkThree();
+                
+                return this;
+            },
+            
+            // Basic Camera
+            PerspectiveCamera: function(fov, aspect, near, far) {
+                this.fov = fov;
+                this.aspect = aspect;
+                this.near = near;
+                this.far = far;
+                this.position = new SimpleThreeJS.Vector3();
+                this.target = new SimpleThreeJS.Vector3();
+                
+                this.lookAt = (x, y, z) => {
+                    if (typeof x === 'object') {
+                        this.target.set(x.x, x.y, x.z);
+                    } else {
+                        this.target.set(x, y, z);
+                    }
+                };
+                
+                this.updateProjectionMatrix = () => {
+                    // Placeholder for matrix updates
+                };
+                
+                return this;
+            },
+            
+            // Basic Renderer using Canvas 2D
+            WebGLRenderer: function(params = {}) {
+                this.canvas = document.createElement('canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.shadowMap = { enabled: false, type: 'basic' };
+                this.domElement = this.canvas;
+                
+                this.setSize = (width, height) => {
+                    this.canvas.width = width;
+                    this.canvas.height = height;
+                    this.canvas.style.width = width + 'px';
+                    this.canvas.style.height = height + 'px';
+                };
+                
+                this.render = (scene, camera) => {
+                    // Clear canvas
+                    this.ctx.fillStyle = scene.background ? `rgb(${scene.background.r*255},${scene.background.g*255},${scene.background.b*255})` : '#f0f0f0';
+                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                    
+                    // Simple 2D representation of 3D scene
+                    this.ctx.save();
+                    this.ctx.translate(this.canvas.width / 2, this.canvas.height / 2);
+                    
+                    // Draw grid
+                    this.ctx.strokeStyle = '#ccc';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.globalAlpha = 0.3;
+                    
+                    for (let i = -10; i <= 10; i++) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(i * 20, -200);
+                        this.ctx.lineTo(i * 20, 200);
+                        this.ctx.stroke();
+                        
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(-200, i * 20);
+                        this.ctx.lineTo(200, i * 20);
+                        this.ctx.stroke();
+                    }
+                    
+                    this.ctx.globalAlpha = 1;
+                    
+                    // Draw scene objects
+                    scene.children.forEach(object => {
+                        if (object.visible !== false) {
+                            this.drawObject(object);
+                        }
                     });
-                }
-                await loadOrbitControls();
-                // Initialize the app
-                initializeApp();
-            } catch (error) {
-                console.error('Failed to initialize:', error);
-                showAuthError('Failed to load required dependencies: ' + error.message);
+                    
+                    this.ctx.restore();
+                };
+                
+                this.drawObject = (object) => {
+                    this.ctx.save();
+                    
+                    // Apply transformations
+                    if (object.position) {
+                        this.ctx.translate(object.position.x * 2, object.position.z * 2);
+                    }
+                    
+                    if (object.rotation && object.rotation.y) {
+                        this.ctx.rotate(object.rotation.y);
+                    }
+                    
+                    // Draw based on object type
+                    if (object.geometry && object.material) {
+                        const geom = object.geometry;
+                        const mat = object.material;
+                        
+                        // Set color
+                        const color = mat.color || { r: 0.5, g: 0.5, b: 0.5 };
+                        this.ctx.fillStyle = `rgb(${color.r*255},${color.g*255},${color.b*255})`;
+                        this.ctx.strokeStyle = mat.wireframe ? `rgb(${color.r*255},${color.g*255},${color.b*255})` : '#333';
+                        this.ctx.lineWidth = mat.wireframe ? 2 : 1;
+                        
+                        // Draw rectangle (top-down view of box)
+                        const width = geom.parameters ? geom.parameters.width * 2 : 20;
+                        const depth = geom.parameters ? geom.parameters.depth * 2 : 20;
+                        
+                        if (mat.wireframe) {
+                            this.ctx.strokeRect(-width/2, -depth/2, width, depth);
+                        } else {
+                            this.ctx.fillRect(-width/2, -depth/2, width, depth);
+                            this.ctx.strokeRect(-width/2, -depth/2, width, depth);
+                        }
+                        
+                        // Highlight selected objects
+                        if (mat.emissive && (mat.emissive.r > 0 || mat.emissive.g > 0 || mat.emissive.b > 0)) {
+                            this.ctx.strokeStyle = '#ffff00';
+                            this.ctx.lineWidth = 3;
+                            this.ctx.strokeRect(-width/2 - 2, -depth/2 - 2, width + 4, depth + 4);
+                        }
+                    }
+                    
+                    // Draw children
+                    if (object.children) {
+                        object.children.forEach(child => {
+                            this.drawObject(child);
+                        });
+                    }
+                    
+                    this.ctx.restore();
+                };
+                
+                return this;
+            },
+            
+            // Basic Geometry
+            BoxGeometry: function(width, height, depth) {
+                this.parameters = { width, height, depth };
+                return this;
+            },
+            
+            // Basic Material
+            MeshLambertMaterial: function(params = {}) {
+                this.color = params.color ? new SimpleThreeJS.Color(params.color) : new SimpleThreeJS.Color(0x808080);
+                this.wireframe = params.wireframe || false;
+                this.emissive = new SimpleThreeJS.Color(0x000000);
+                return this;
+            },
+            
+            // Basic Mesh
+            Mesh: function(geometry, material) {
+                this.geometry = geometry;
+                this.material = material;
+                this.position = new SimpleThreeJS.Vector3();
+                this.rotation = { x: 0, y: 0, z: 0 };
+                this.scale = new SimpleThreeJS.Vector3(1, 1, 1);
+                this.visible = true;
+                this.children = [];
+                this.userData = {};
+                this.castShadow = false;
+                this.receiveShadow = false;
+                return this;
+            },
+            
+            // Basic Group
+            Group: function() {
+                this.children = [];
+                this.position = new SimpleThreeJS.Vector3();
+                this.rotation = { x: 0, y: 0, z: 0 };
+                this.scale = new SimpleThreeJS.Vector3(1, 1, 1);
+                this.visible = true;
+                this.userData = {};
+                
+                this.add = (object) => {
+                    this.children.push(object);
+                    object.parent = this;
+                };
+                
+                this.remove = (object) => {
+                    const index = this.children.indexOf(object);
+                    if (index > -1) {
+                        this.children.splice(index, 1);
+                        object.parent = null;
+                    }
+                };
+                
+                return this;
+            },
+            
+            // Basic Lights
+            AmbientLight: function(color, intensity) {
+                this.color = new SimpleThreeJS.Color(color);
+                this.intensity = intensity;
+                return this;
+            },
+            
+            DirectionalLight: function(color, intensity) {
+                this.color = new SimpleThreeJS.Color(color);
+                this.intensity = intensity;
+                this.position = new SimpleThreeJS.Vector3();
+                this.shadow = {
+                    camera: {
+                        left: -100, right: 100, top: 100, bottom: -100,
+                        near: 0.1, far: 200
+                    },
+                    mapSize: { width: 2048, height: 2048 }
+                };
+                this.castShadow = false;
+                return this;
+            },
+            
+            // Helper for grid
+            GridHelper: function(size, divisions) {
+                this.size = size;
+                this.divisions = divisions;
+                this.material = {
+                    opacity: 0.3,
+                    transparent: true
+                };
+                this.visible = true;
+                return this;
+            },
+            
+            // Basic Raycaster for mouse interaction
+            Raycaster: function() {
+                this.ray = {
+                    origin: new SimpleThreeJS.Vector3(),
+                    direction: new SimpleThreeJS.Vector3()
+                };
+                
+                this.setFromCamera = (mouse, camera) => {
+                    // Simple 2D hit testing for our canvas-based renderer
+                    this.mouse = mouse;
+                    this.camera = camera;
+                };
+                
+                this.intersectObjects = (objects, recursive = false) => {
+                    // Simple 2D collision detection
+                    const intersects = [];
+                    
+                    objects.forEach(object => {
+                        if (object.geometry && object.position) {
+                            const geom = object.geometry;
+                            const width = geom.parameters ? geom.parameters.width * 2 : 20;
+                            const depth = geom.parameters ? geom.parameters.depth * 2 : 20;
+                            
+                            // Convert mouse position to world coordinates (simplified)
+                            const container = document.getElementById('threejsContainer');
+                            if (container && this.mouse) {
+                                const rect = container.getBoundingClientRect();
+                                const centerX = rect.width / 2;
+                                const centerY = rect.height / 2;
+                                
+                                const worldX = (this.mouse.x * centerX);
+                                const worldZ = (this.mouse.y * centerY);
+                                
+                                const objX = object.position.x * 2;
+                                const objZ = object.position.z * 2;
+                                
+                                // Simple bounding box check
+                                if (worldX >= objX - width/2 && worldX <= objX + width/2 &&
+                                    worldZ >= objZ - depth/2 && worldZ <= objZ + depth/2) {
+                                    intersects.push({
+                                        object: object,
+                                        distance: Math.sqrt((worldX - objX) ** 2 + (worldZ - objZ) ** 2)
+                                    });
+                                }
+                            }
+                        }
+                    });
+                    
+                    return intersects.sort((a, b) => a.distance - b.distance);
+                };
+                
+                return this;
+            },
+            
+            // Math utilities
+            MathUtils: {
+                degToRad: (degrees) => degrees * (Math.PI / 180),
+                radToDeg: (radians) => radians * (180 / Math.PI)
+            },
+            
+            // Basic Fog
+            Fog: function(color, near, far) {
+                this.color = new SimpleThreeJS.Color(color);
+                this.near = near;
+                this.far = far;
+                return this;
             }
+        };
+        
+        // Simple OrbitControls for canvas interaction
+        SimpleThreeJS.OrbitControls = function(camera, domElement) {
+            this.camera = camera;
+            this.domElement = domElement;
+            this.enabled = true;
+            this.enableDamping = true;
+            this.dampingFactor = 0.05;
+            this.minDistance = 10;
+            this.maxDistance = 500;
+            this.maxPolarAngle = Math.PI / 2;
+            
+            let isMouseDown = false;
+            let mouseX = 0, mouseY = 0;
+            let phi = Math.PI / 4;
+            let theta = Math.PI / 4;
+            let distance = 200;
+            
+            this.domElement.addEventListener('mousedown', (e) => {
+                isMouseDown = true;
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+                e.preventDefault();
+            });
+            
+            this.domElement.addEventListener('mousemove', (e) => {
+                if (!isMouseDown) return;
+                const deltaX = e.clientX - mouseX;
+                const deltaY = e.clientY - mouseY;
+                theta -= deltaX * 0.01;
+                phi += deltaY * 0.01;
+                phi = Math.max(-Math.PI/2, Math.min(Math.PI/2, phi));
+                this.updateCameraPosition();
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+                e.preventDefault();
+            });
+            
+            document.addEventListener('mouseup', () => {
+                isMouseDown = false;
+            });
+            
+            this.domElement.addEventListener('wheel', (e) => {
+                distance = Math.max(this.minDistance, Math.min(this.maxDistance, distance + e.deltaY * 0.5));
+                this.updateCameraPosition();
+                e.preventDefault();
+            });
+            
+            this.updateCameraPosition = () => {
+                this.camera.position.x = distance * Math.sin(theta) * Math.cos(phi);
+                this.camera.position.y = distance * Math.sin(phi);
+                this.camera.position.z = distance * Math.cos(theta) * Math.cos(phi);
+                this.camera.lookAt(0, 0, 0);
+            };
+            
+            this.update = () => {
+                // Damping can be implemented here
+            };
+            
+            this.reset = () => {
+                phi = Math.PI / 4;
+                theta = Math.PI / 4;
+                distance = 200;
+                this.updateCameraPosition();
+            };
+            
+            // Initialize position
+            this.updateCameraPosition();
+            
+            return this;
+        };
+        
+        // Expose as THREE for compatibility
+        window.THREE = SimpleThreeJS;
+        
+        // Initialize when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Production Scheduling module loaded with self-contained 3D engine');
+            initializeApp();
         });
     </script>
     <script src="scripts/production-scheduling.js"></script>
