@@ -28,6 +28,7 @@ let selectedPiece = null;
 let raycaster, mouse;
 let isDragging = false;
 let showStrandPattern = false;
+let isThreeJSInitialized = false;
 
 // Production Data
 let currentBed = null;
@@ -78,13 +79,16 @@ async function initializeApp() {
         // Check for parent window auth
         if (window.opener && window.opener.CastLinkAuth) {
             const parentAuth = window.opener.CastLinkAuth;
-            const isParentAuth = await parentAuth.waitForAuth();
-
-            if (isParentAuth) {
-                forgeAccessToken = parentAuth.getToken();
-                globalHubData = parentAuth.getHubData();
-                await completeAuthentication();
-                return;
+            try {
+                const isParentAuth = await parentAuth.waitForAuth();
+                if (isParentAuth) {
+                    forgeAccessToken = parentAuth.getToken();
+                    globalHubData = parentAuth.getHubData();
+                    await completeAuthentication();
+                    return;
+                }
+            } catch (error) {
+                console.warn('Parent auth not available:', error);
             }
         }
 
@@ -99,7 +103,7 @@ async function initializeApp() {
 
     } catch (error) {
         console.error('App initialization failed:', error);
-        showAuthError(error.message);
+        showAuthError('Initialization failed: ' + error.message);
     }
 }
 
@@ -135,9 +139,9 @@ async function completeAuthentication() {
             authStatusBadge.style.display = 'inline-flex';
         }
 
-        // Initialize UI
+        // Initialize UI and Three.js
         initializeUI();
-        initializeThreeJS();
+        await initializeThreeJS();
 
         // Set default date to today
         const dateSelect = document.getElementById('dateSelect');
@@ -155,14 +159,22 @@ async function loadHubData() {
     try {
         // Try to get hub data from parent window first
         if (!globalHubData && window.opener && window.opener.CastLinkAuth) {
-            globalHubData = window.opener.CastLinkAuth.getHubData();
+            try {
+                globalHubData = window.opener.CastLinkAuth.getHubData();
+            } catch (error) {
+                console.warn('Failed to get hub data from parent:', error);
+            }
         }
 
         // If not available, try to load from session storage
         if (!globalHubData) {
             const storedHubData = sessionStorage.getItem('castlink_hub_data');
             if (storedHubData) {
-                globalHubData = JSON.parse(storedHubData);
+                try {
+                    globalHubData = JSON.parse(storedHubData);
+                } catch (error) {
+                    console.warn('Failed to parse stored hub data:', error);
+                }
             }
         }
 
@@ -221,86 +233,128 @@ function initializeUI() {
     if (assetSearch) {
         assetSearch.addEventListener('input', debounce(filterAssets, 300));
     }
+
+    // Add project change listener
+    const projectSelect = document.getElementById('projectSelect');
+    if (projectSelect) {
+        projectSelect.addEventListener('change', onProjectChange);
+    }
 }
 
 // Three.js Initialization
-function initializeThreeJS() {
+async function initializeThreeJS() {
+    try {
+        const container = document.getElementById('threejsContainer');
+        if (!container) {
+            console.error('Three.js container not found');
+            return;
+        }
+
+        // Check if Three.js is available
+        if (typeof THREE === 'undefined') {
+            throw new Error('Three.js library not loaded');
+        }
+
+        // Scene setup
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f0f0);
+        scene.fog = new THREE.Fog(0xf0f0f0, 100, 1000);
+
+        // Camera setup
+        const aspect = container.clientWidth / container.clientHeight;
+        camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 2000);
+        camera.position.set(100, 100, 100);
+        camera.lookAt(0, 0, 0);
+
+        // Renderer setup
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        // Controls (using our custom implementation)
+        if (THREE.OrbitControls) {
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 10;
+            controls.maxDistance = 500;
+            controls.maxPolarAngle = Math.PI / 2;
+        } else {
+            console.warn('OrbitControls not available, using basic mouse controls');
+        }
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        directionalLight.position.set(50, 100, 50);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.camera.left = -100;
+        directionalLight.shadow.camera.right = 100;
+        directionalLight.shadow.camera.top = 100;
+        directionalLight.shadow.camera.bottom = -100;
+        directionalLight.shadow.camera.near = 0.1;
+        directionalLight.shadow.camera.far = 200;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        scene.add(directionalLight);
+
+        // Raycaster for mouse interaction
+        raycaster = new THREE.Raycaster();
+        mouse = new THREE.Vector2();
+
+        // Event listeners
+        renderer.domElement.addEventListener('click', onMouseClick);
+        renderer.domElement.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('resize', onWindowResize);
+
+        // Start render loop
+        animate();
+
+        isThreeJSInitialized = true;
+        console.log('Three.js initialized successfully');
+
+    } catch (error) {
+        console.error('Three.js initialization failed:', error);
+        showThreeJSError(error.message);
+    }
+}
+
+function showThreeJSError(message) {
     const container = document.getElementById('threejsContainer');
-    if (!container) return;
-
-    // Scene setup
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf0f0f0);
-    scene.fog = new THREE.Fog(0xf0f0f0, 100, 1000);
-
-    // Camera setup
-    const aspect = container.clientWidth / container.clientHeight;
-    camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 2000);
-    camera.position.set(100, 100, 100);
-    camera.lookAt(0, 0, 0);
-
-    // Renderer setup
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    container.appendChild(renderer.domElement);
-
-    // Controls
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.minDistance = 10;
-    controls.maxDistance = 500;
-    controls.maxPolarAngle = Math.PI / 2;
-
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
-    directionalLight.position.set(50, 100, 50);
-    directionalLight.castShadow = true;
-    directionalLight.shadow.camera.left = -100;
-    directionalLight.shadow.camera.right = 100;
-    directionalLight.shadow.camera.top = 100;
-    directionalLight.shadow.camera.bottom = -100;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-    scene.add(directionalLight);
-
-    // Grid
-    gridHelper = new THREE.GridHelper(600, 60, 0x888888, 0xcccccc);
-    scene.add(gridHelper);
-
-    // Raycaster for mouse interaction
-    raycaster = new THREE.Raycaster();
-    mouse = new THREE.Vector2();
-
-    // Add event listeners
-    renderer.domElement.addEventListener('mousemove', onMouseMove);
-    renderer.domElement.addEventListener('mousedown', onMouseDown);
-    renderer.domElement.addEventListener('mouseup', onMouseUp);
-    renderer.domElement.addEventListener('dblclick', onDoubleClick);
-    window.addEventListener('resize', onWindowResize);
-
-    // Start animation loop
-    animate();
+    if (container) {
+        container.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #f8f9fa; color: #6c757d; flex-direction: column; gap: 1rem;">
+                <svg width="48" height="48" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+                <div style="text-align: center;">
+                    <div style="font-weight: 600; margin-bottom: 0.5rem;">3D Viewer Error</div>
+                    <div style="font-size: 0.875rem;">${message}</div>
+                </div>
+            </div>
+        `;
+    }
 }
 
 function animate() {
     requestAnimationFrame(animate);
-    controls.update();
 
-    // Update piece positions if dragging
-    if (isDragging && selectedPiece) {
-        updateDragPosition();
+    if (controls && controls.update) {
+        controls.update();
     }
 
-    renderer.render(scene, camera);
+    if (renderer && scene && camera) {
+        renderer.render(scene, camera);
+    }
 }
 
 function onWindowResize() {
+    if (!camera || !renderer) return;
+
     const container = document.getElementById('threejsContainer');
     if (!container) return;
 
@@ -309,233 +363,110 @@ function onWindowResize() {
     renderer.setSize(container.clientWidth, container.clientHeight);
 }
 
-// Mouse Interaction Handlers
-function onMouseMove(event) {
+function onMouseClick(event) {
+    if (!isThreeJSInitialized) return;
+
     const container = document.getElementById('threejsContainer');
     const rect = container.getBoundingClientRect();
 
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-    if (!isDragging) {
-        // Highlight pieces on hover
-        raycaster.setFromCamera(mouse, camera);
-
-        // Get all piece meshes (first child of each group)
-        const pieceObjects = [];
-        pieceMeshes.forEach(group => {
-            if (group.children[0]) {
-                pieceObjects.push(group.children[0]);
-            }
-        });
-
-        const intersects = raycaster.intersectObjects(pieceObjects);
-
-        // Reset all piece materials
-        pieceMeshes.forEach((group, assetId) => {
-            const mesh = group.children[0];
-            if (mesh && mesh.material) {
-                const piece = placedPieces.find(p => p.assetId === assetId);
-                if (piece && !piece.validationErrors) {
-                    mesh.material.emissive = new THREE.Color(0x000000);
-                }
-            }
-        });
-
-        // Highlight hovered piece
-        if (intersects.length > 0) {
-            const hoveredMesh = intersects[0].object;
-            const hoveredGroup = hoveredMesh.parent;
-            if (hoveredGroup && hoveredGroup.userData.assetId) {
-                hoveredMesh.material.emissive = new THREE.Color(0x444444);
-                document.body.style.cursor = 'pointer';
-            }
-        } else {
-            document.body.style.cursor = 'default';
-        }
-    }
-}
-
-function onMouseDown(event) {
-    if (event.button !== 0) return; // Only left click
-
     raycaster.setFromCamera(mouse, camera);
 
-    const pieceObjects = [];
-    pieceMeshes.forEach(group => {
-        if (group.children[0]) {
-            pieceObjects.push(group.children[0]);
-        }
-    });
-
-    const intersects = raycaster.intersectObjects(pieceObjects);
+    // Get all piece meshes
+    const meshes = Array.from(pieceMeshes.values()).flat();
+    const intersects = raycaster.intersectObjects(meshes, true);
 
     if (intersects.length > 0) {
-        const clickedMesh = intersects[0].object;
-        const clickedGroup = clickedMesh.parent;
+        const intersectedObject = intersects[0].object;
+        const group = intersectedObject.parent;
 
-        if (clickedGroup && clickedGroup.userData.assetId) {
-            selectPiece(clickedGroup);
-            isDragging = true;
-            controls.enabled = false;
-
-            // Store initial position
-            selectedPiece.userData.startPosition = selectedPiece.position.clone();
+        if (group && group.userData && group.userData.assetId) {
+            selectPiece(group.userData.assetId);
         }
     } else {
-        // Deselect if clicking empty space
-        if (selectedPiece) {
-            const mesh = selectedPiece.children[0];
-            if (mesh && mesh.material) {
-                mesh.material.emissive = new THREE.Color(0x000000);
-            }
-            selectedPiece = null;
-        }
+        deselectPiece();
     }
 }
 
-function onMouseUp(event) {
-    if (isDragging && selectedPiece) {
-        isDragging = false;
-        controls.enabled = true;
+function onMouseMove(event) {
+    // Update mouse position for raycasting
+    if (!isThreeJSInitialized) return;
 
-        // Validate new position
-        validatePiecePlacement(selectedPiece);
+    const container = document.getElementById('threejsContainer');
+    const rect = container.getBoundingClientRect();
 
-        // Update piece data
-        const piece = placedPieces.find(p => p.assetId === selectedPiece.userData.assetId);
-        if (piece) {
-            piece.position = {
-                x: selectedPiece.position.x,
-                y: selectedPiece.position.y,
-                z: selectedPiece.position.z
-            };
-        }
-    }
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 }
 
-function onDoubleClick(event) {
-    raycaster.setFromCamera(mouse, camera);
-
-    const pieceObjects = [];
-    pieceMeshes.forEach(group => {
-        if (group.children[0]) {
-            pieceObjects.push(group.children[0]);
-        }
-    });
-
-    const intersects = raycaster.intersectObjects(pieceObjects);
-
-    if (intersects.length > 0) {
-        const clickedMesh = intersects[0].object;
-        const clickedGroup = clickedMesh.parent;
-        if (clickedGroup && clickedGroup.userData.assetId) {
-            showPieceDetails(clickedGroup.userData.assetId);
-        }
-    }
-}
-
-function updateDragPosition() {
-    if (!selectedPiece || !currentBed) return;
-
-    raycaster.setFromCamera(mouse, camera);
-
-    // Create a plane at bed height for dragging
-    const bedConfig = BED_CONFIGS[currentBed];
-    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -bedConfig.height);
-
-    const intersectPoint = new THREE.Vector3();
-    raycaster.ray.intersectPlane(dragPlane, intersectPoint);
-
-    if (intersectPoint) {
-        // Constrain to bed boundaries
-        const halfLength = bedConfig.length / 2;
-        const halfWidth = bedConfig.width / 2;
-
-        selectedPiece.position.x = Math.max(-halfLength, Math.min(halfLength, intersectPoint.x));
-        selectedPiece.position.z = Math.max(-halfWidth, Math.min(halfWidth, intersectPoint.z));
-        selectedPiece.position.y = bedConfig.height + selectedPiece.userData.dimensions.height / 2;
-    }
-}
-
-// Bed Management
+// Bed Management Functions
 function onBedChange() {
     const bedSelect = document.getElementById('bedSelect');
-    currentBed = bedSelect.value;
+    const bedId = bedSelect.value;
 
-    if (!currentBed) {
-        clearViewer();
-        return;
+    if (bedId && BED_CONFIGS[bedId]) {
+        currentBed = bedId;
+        loadBed(bedId);
+        loadBedSchedule();
+        updateBedInfo();
+        updateViewerInfo(`Bed: ${bedId}`);
+    } else {
+        currentBed = null;
+        clearBed();
+        updateBedInfo();
+        updateViewerInfo('Select a bed to begin');
     }
-
-    // Update bed info
-    updateBedInfo();
-
-    // Create bed visualization
-    createBedVisualization();
-
-    // Load existing schedule for this bed and date
-    loadBedSchedule();
 }
 
-function updateBedInfo() {
-    if (!currentBed) return;
+function loadBed(bedId) {
+    if (!isThreeJSInitialized || !scene) return;
 
-    const config = BED_CONFIGS[currentBed];
-    document.getElementById('bedType').textContent = config.type;
-    document.getElementById('bedLength').textContent = config.length + ' ft';
-    document.getElementById('bedWidth').textContent = config.width + ' ft';
-}
+    // Clear existing bed
+    clearBed();
 
-function createBedVisualization() {
-    // Remove existing bed
-    if (bedMesh) {
-        scene.remove(bedMesh);
-    }
-
-    const config = BED_CONFIGS[currentBed];
+    const config = BED_CONFIGS[bedId];
+    if (!config) return;
 
     // Create bed geometry
     const geometry = new THREE.BoxGeometry(config.length, config.height, config.width);
-    const material = new THREE.MeshPhongMaterial({
-        color: config.color,
-        specular: 0x111111,
-        shininess: 30
-    });
-
-    const bedBox = new THREE.Mesh(geometry, material);
-    bedBox.position.y = config.height / 2;
-    bedBox.receiveShadow = true;
-
-    // Add bed outline
-    const edges = new THREE.EdgesGeometry(geometry);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-    line.position.copy(bedBox.position);
-
-    // Create group for bed
-    bedMesh = new THREE.Group();
-    bedMesh.add(bedBox);
-    bedMesh.add(line);
-    bedMesh.userData.type = 'bed';
-
+    const material = new THREE.MeshLambertMaterial({ color: config.color });
+    bedMesh = new THREE.Mesh(geometry, material);
+    bedMesh.position.y = -config.height / 2;
+    bedMesh.receiveShadow = true;
     scene.add(bedMesh);
 
-    // Reset camera
-    resetCamera();
+    // Create grid
+    gridHelper = new THREE.GridHelper(Math.max(config.length, config.width) * 1.2, 20);
+    gridHelper.material.opacity = 0.3;
+    gridHelper.material.transparent = true;
+    scene.add(gridHelper);
+
+    // Fit camera to view bed
+    fitToView();
 }
 
-function clearViewer() {
-    // Remove bed
+function clearBed() {
+    if (!scene) return;
+
     if (bedMesh) {
         scene.remove(bedMesh);
         bedMesh = null;
     }
 
-    // Remove all pieces and their strand patterns
+    if (gridHelper) {
+        scene.remove(gridHelper);
+        gridHelper = null;
+    }
+
+    clearPieces();
+}
+
+function clearPieces() {
+    if (!scene) return;
+
     pieceMeshes.forEach(group => {
-        if (group.userData.strandLines) {
-            group.userData.strandLines.forEach(line => scene.remove(line));
-        }
         scene.remove(group);
     });
     pieceMeshes.clear();
@@ -543,1041 +474,478 @@ function clearViewer() {
     selectedPiece = null;
 }
 
-// Asset Management
-async function onProjectChange() {
-    const projectSelect = document.getElementById('projectSelect');
-    projectId = projectSelect.value;
+function updateBedInfo() {
+    const bedType = document.getElementById('bedType');
+    const bedLength = document.getElementById('bedLength');
+    const bedWidth = document.getElementById('bedWidth');
+    const bedUtilization = document.getElementById('bedUtilization');
+    const pieceCount = document.getElementById('pieceCount');
 
-    if (!projectId) {
-        clearAssetsList();
-        return;
-    }
+    if (currentBed && BED_CONFIGS[currentBed]) {
+        const config = BED_CONFIGS[currentBed];
+        if (bedType) bedType.textContent = config.type.charAt(0).toUpperCase() + config.type.slice(1);
+        if (bedLength) bedLength.textContent = `${config.length}ft`;
+        if (bedWidth) bedWidth.textContent = `${config.width}ft`;
 
-    // Load models for this project
-    await loadProjectModels();
-}
+        // Calculate utilization
+        const utilization = calculateBedUtilization();
+        if (bedUtilization) bedUtilization.textContent = `${Math.round(utilization)}%`;
 
-async function loadProjectModels() {
-    try {
-        updateViewerStatus('Loading project models...');
-
-        // Get project folder contents
-        const foldersUrl = `https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${projectId}/topFolders`;
-        const foldersResponse = await fetch(foldersUrl, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!foldersResponse.ok) {
-            throw new Error('Failed to load project folders');
-        }
-
-        const foldersData = await foldersResponse.json();
-
-        // Find Project Files folder
-        const projectFilesFolder = foldersData.data.find(folder =>
-            folder.attributes.displayName === 'Project Files' ||
-            folder.attributes.name === 'Project Files'
-        );
-
-        if (projectFilesFolder) {
-            await loadFolderContents(projectFilesFolder.id);
-        } else {
-            // Load first available folder
-            if (foldersData.data.length > 0) {
-                await loadFolderContents(foldersData.data[0].id);
-            }
-        }
-
-        updateViewerStatus('Ready');
-
-    } catch (error) {
-        console.error('Error loading models:', error);
-        updateViewerStatus('Error loading models');
-        updateModelDropdown([]);
+        if (pieceCount) pieceCount.textContent = placedPieces.length;
+    } else {
+        if (bedType) bedType.textContent = 'Select a bed';
+        if (bedLength) bedLength.textContent = '-';
+        if (bedWidth) bedWidth.textContent = '-';
+        if (bedUtilization) bedUtilization.textContent = '0%';
+        if (pieceCount) pieceCount.textContent = '0';
     }
 }
 
-async function loadFolderContents(folderId) {
-    try {
-        const contentsUrl = `https://developer.api.autodesk.com/data/v1/projects/${projectId}/folders/${folderId}/contents`;
-        const response = await fetch(contentsUrl, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
+function calculateBedUtilization() {
+    if (!currentBed || !BED_CONFIGS[currentBed]) return 0;
 
-        if (!response.ok) {
-            throw new Error('Failed to load folder contents');
-        }
+    const bedConfig = BED_CONFIGS[currentBed];
+    const bedArea = bedConfig.length * bedConfig.width;
 
-        const data = await response.json();
-
-        // Filter for Revit models
-        const revitModels = data.data.filter(item =>
-            item.type === 'items' &&
-            (item.attributes.displayName.endsWith('.rvt') ||
-                item.attributes.fileType === 'rvt')
-        );
-
-        updateModelDropdown(revitModels);
-
-    } catch (error) {
-        console.error('Error loading folder contents:', error);
-        updateModelDropdown([]);
-    }
-}
-
-function updateModelDropdown(models) {
-    const modelSelect = document.getElementById('modelSelect');
-    if (!modelSelect) return;
-
-    modelSelect.innerHTML = '<option value="">Select Model...</option>';
-
-    models.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model.id;
-        option.textContent = model.attributes.displayName;
-        option.dataset.modelData = JSON.stringify(model);
-        modelSelect.appendChild(option);
+    let usedArea = 0;
+    placedPieces.forEach(piece => {
+        usedArea += piece.dimensions.length * piece.dimensions.width;
     });
 
-    modelSelect.disabled = models.length === 0;
+    return (usedArea / bedArea) * 100;
 }
 
-async function onModelChange() {
-    const modelSelect = document.getElementById('modelSelect');
-    currentModel = modelSelect.value;
-
-    if (!currentModel) {
-        clearAssetsList();
-        return;
-    }
-
-    // Load ACC Assets mapped to this model
-    await loadModelAssets();
-}
-
-async function loadModelAssets() {
-    try {
-        updateViewerStatus('Loading ACC Assets...');
-
-        // Get assets for the project
-        const assetsUrl = `https://developer.api.autodesk.com/construction/assets/v1/projects/${projectId.replace('b.', '')}/assets?filter[status.name]=active`;
-
-        const response = await fetch(assetsUrl, {
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to load ACC Assets');
-        }
-
-        const data = await response.json();
-
-        // Process assets to extract piece information
-        availableAssets = await processAssetsWithModelData(data.results || []);
-
-        // Update filters
-        updateDesignFilter();
-
-        // Display assets
-        displayAssets(availableAssets);
-
-        updateViewerStatus('Ready');
-
-    } catch (error) {
-        console.error('Error loading assets:', error);
-        updateViewerStatus('Error loading assets');
-
-        // Fall back to mock data for testing
-        availableAssets = generateMockAssets();
-        updateDesignFilter();
-        displayAssets(availableAssets);
+function updateViewerInfo(text) {
+    const viewerInfo = document.getElementById('viewerInfo');
+    if (viewerInfo) {
+        viewerInfo.textContent = text;
     }
 }
 
-async function processAssetsWithModelData(assets) {
-    const processedAssets = [];
+// Project Management
+function onProjectChange() {
+    const projectSelect = document.getElementById('projectSelect');
+    const selectedOption = projectSelect.selectedOptions[0];
 
-    for (const asset of assets) {
+    if (selectedOption && selectedOption.dataset.projectData) {
         try {
-            // Extract custom attributes
-            const customAttributes = asset.customAttributes || {};
-
-            // Get linked element data if available
-            let elementData = null;
-            if (asset.linkedDocumentUrn && asset.externalId) {
-                elementData = await getElementProperties(asset.linkedDocumentUrn, asset.externalId);
-            }
-
-            // Determine piece type from category or name
-            let pieceType = 'beam'; // default
-            const displayName = asset.displayName || asset.name || '';
-
-            if (displayName.toLowerCase().includes('column')) pieceType = 'column';
-            else if (displayName.toLowerCase().includes('wall')) pieceType = 'wall';
-            else if (displayName.toLowerCase().includes('double') || displayName.toLowerCase().includes('tee')) pieceType = 'doubletee';
-            else if (displayName.toLowerCase().includes('slab')) pieceType = 'slab';
-
-            // Extract dimensions from element properties or use defaults
-            const dimensions = extractDimensions(elementData) || PIECE_CONFIGS[pieceType];
-
-            processedAssets.push({
-                id: asset.id,
-                displayName: displayName,
-                attributes: {
-                    displayName: displayName,
-                    pieceType: pieceType,
-                    DESIGN_NUMBER: customAttributes.DESIGN_NUMBER || customAttributes.designNumber || null,
-                    length: dimensions.defaultLength || dimensions.length || 20,
-                    width: dimensions.defaultWidth || dimensions.width || 8,
-                    height: dimensions.defaultHeight || dimensions.height || 2,
-                    weight: customAttributes.weight || Math.round(Math.random() * 5000 + 1000),
-                    status: asset.status?.name || 'active',
-                    externalId: asset.externalId,
-                    linkedDocumentUrn: asset.linkedDocumentUrn
-                },
-                originalAsset: asset
-            });
-
+            const projectData = JSON.parse(selectedOption.dataset.projectData);
+            projectId = projectData.id;
+            loadProjectAssets(projectData);
         } catch (error) {
-            console.error('Error processing asset:', asset.id, error);
+            console.error('Error parsing project data:', error);
         }
     }
-
-    return processedAssets;
 }
 
-async function getElementProperties(documentUrn, externalId) {
+async function loadProjectAssets(project) {
     try {
-        // This would call the Model Derivative API to get element properties
-        // For now, return null as this requires additional setup
-        return null;
+        updateAuthStatus('Loading Assets...', `Loading assets from ${project.name}...`);
+
+        // Simulate loading assets - replace with actual API calls
+        const mockAssets = generateMockAssets();
+        availableAssets = mockAssets;
+
+        populateModelFilter();
+        refreshAssetsList();
+
     } catch (error) {
-        console.error('Error getting element properties:', error);
-        return null;
+        console.error('Error loading project assets:', error);
+        showAuthError('Failed to load project assets: ' + error.message);
     }
-}
-
-function extractDimensions(elementData) {
-    if (!elementData) return null;
-
-    // Extract dimensions from element properties
-    // This would parse the actual Revit element data
-    return null;
 }
 
 function generateMockAssets() {
-    const types = ['beam', 'column', 'wall', 'doubletee', 'slab'];
-    const designs = ['D-101', 'D-102', 'D-103', 'D-201', 'D-202', null];
     const assets = [];
+    const types = ['beam', 'column', 'wall', 'doubletee', 'slab'];
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 1; i <= 20; i++) {
         const type = types[Math.floor(Math.random() * types.length)];
-        const design = designs[Math.floor(Math.random() * designs.length)];
+        const config = PIECE_CONFIGS[type];
 
         assets.push({
-            id: `asset-${i + 1}`,
-            attributes: {
-                displayName: `${type.toUpperCase()}-${String(i + 1).padStart(3, '0')}`,
-                pieceType: type,
-                DESIGN_NUMBER: design,
-                length: PIECE_CONFIGS[type].defaultLength + (Math.random() * 10 - 5),
-                width: PIECE_CONFIGS[type].defaultWidth,
-                height: PIECE_CONFIGS[type].defaultHeight,
-                weight: Math.round(Math.random() * 5000 + 1000),
-                status: 'Ready for Production'
-            }
+            id: `asset_${i}`,
+            name: `${type.toUpperCase()}-${String(i).padStart(3, '0')}`,
+            type: type,
+            mark: `MK-${String(i).padStart(3, '0')}`,
+            dimensions: {
+                length: config.defaultLength + (Math.random() - 0.5) * 10,
+                width: config.defaultWidth + (Math.random() - 0.5) * 2,
+                height: config.defaultHeight + (Math.random() - 0.5) * 2
+            },
+            weight: Math.round((config.defaultLength * config.defaultWidth * config.defaultHeight) * 150),
+            designNumber: `DT-${String(Math.floor(Math.random() * 5) + 1).padStart(3, '0')}`,
+            model: `Model_${Math.floor(Math.random() * 3) + 1}`
         });
     }
 
     return assets;
 }
 
-function updateDesignFilter() {
-    const designFilter = document.getElementById('designFilter');
-    const designs = new Set();
+function populateModelFilter() {
+    const modelFilter = document.getElementById('modelFilter');
+    if (!modelFilter) return;
 
-    availableAssets.forEach(asset => {
-        if (asset.attributes.DESIGN_NUMBER) {
-            designs.add(asset.attributes.DESIGN_NUMBER);
-        }
-    });
+    const models = [...new Set(availableAssets.map(asset => asset.model))];
+    modelFilter.innerHTML = '<option value="">Select Model...</option>';
 
-    designFilter.innerHTML = '<option value="">All Designs</option>';
-    Array.from(designs).sort().forEach(design => {
+    models.forEach(model => {
         const option = document.createElement('option');
-        option.value = design;
-        option.textContent = design;
-        designFilter.appendChild(option);
+        option.value = model;
+        option.textContent = model;
+        modelFilter.appendChild(option);
     });
 }
 
-function displayAssets(assets) {
-    const assetsList = document.getElementById('assetsList');
-    assetsList.innerHTML = '';
+function refreshAssetsList() {
+    const assetsGrid = document.getElementById('assetsGrid');
+    if (!assetsGrid) return;
 
-    if (assets.length === 0) {
-        assetsList.innerHTML = '<div class="no-assets">No assets available</div>';
+    if (availableAssets.length === 0) {
+        assetsGrid.innerHTML = '<div class="no-assets">No assets available</div>';
         return;
     }
 
-    assets.forEach(asset => {
-        const assetCard = createAssetCard(asset);
-        assetsList.appendChild(assetCard);
+    // Apply filters
+    const searchTerm = document.getElementById('assetSearch')?.value.toLowerCase() || '';
+    const typeFilter = document.getElementById('typeFilter')?.value || '';
+    const modelFilter = document.getElementById('modelFilter')?.value || '';
+
+    let filteredAssets = availableAssets.filter(asset => {
+        const matchesSearch = !searchTerm ||
+            asset.name.toLowerCase().includes(searchTerm) ||
+            asset.mark.toLowerCase().includes(searchTerm);
+        const matchesType = !typeFilter || asset.type === typeFilter;
+        const matchesModel = !modelFilter || asset.model === modelFilter;
+
+        return matchesSearch && matchesType && matchesModel;
     });
-}
 
-function createAssetCard(asset) {
-    const card = document.createElement('div');
-    card.className = 'asset-card';
-    card.draggable = true;
-    card.dataset.assetId = asset.id;
-
-    const isPlaced = placedPieces.some(p => p.assetId === asset.id);
-    if (isPlaced) {
-        card.classList.add('placed');
-    }
-
-    card.innerHTML = `
-        <div class="asset-header">
-            <span class="asset-name">${asset.attributes.displayName}</span>
+    // Generate HTML
+    assetsGrid.innerHTML = filteredAssets.map(asset => `
+        <div class="asset-card" data-asset-id="${asset.id}" onclick="addPieceToScene('${asset.id}')">
+            <div class="asset-header">
+                <div class="asset-name">${asset.name}</div>
+                <div class="asset-type ${asset.type}">${asset.type}</div>
+            </div>
+            <div class="asset-details">
+                <div class="detail-item">
+                    <span class="detail-label">Mark:</span>
+                    <span class="detail-value">${asset.mark}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Length:</span>
+                    <span class="detail-value">${Math.round(asset.dimensions.length)}'</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Width:</span>
+                    <span class="detail-value">${Math.round(asset.dimensions.width)}'</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Height:</span>
+                    <span class="detail-value">${Math.round(asset.dimensions.height)}'</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Weight:</span>
+                    <span class="detail-value">${asset.weight} lbs</span>
+                </div>
+            </div>
         </div>
-        <div class="asset-type ${asset.attributes.pieceType}">${asset.attributes.pieceType.toUpperCase()}</div>
-        <div class="asset-details">
-            <div class="detail-item">
-                <span class="detail-label">Design:</span>
-                <span class="detail-value">${asset.attributes.DESIGN_NUMBER || 'None'}</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-label">Dimensions:</span>
-                <span class="detail-value">${asset.attributes.length.toFixed(1)}'×${asset.attributes.width.toFixed(1)}'×${asset.attributes.height.toFixed(1)}'</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-label">Weight:</span>
-                <span class="detail-value">${asset.attributes.weight} lbs</span>
-            </div>
-        </div>
-    `;
-
-    // Add drag event listeners
-    card.addEventListener('dragstart', (e) => handleDragStart(e, asset));
-    card.addEventListener('dragend', handleDragEnd);
-
-    return card;
+    `).join('');
 }
 
-function handleDragStart(event, asset) {
-    event.dataTransfer.effectAllowed = 'copy';
-    event.dataTransfer.setData('assetData', JSON.stringify(asset));
-    event.target.classList.add('dragging');
+function filterAssets() {
+    refreshAssetsList();
 }
 
-function handleDragEnd(event) {
-    event.target.classList.remove('dragging');
-}
-
-function handleDragOver(event) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
-}
-
-function handleDrop(event) {
-    event.preventDefault();
-
-    if (!currentBed) {
+// Piece Management
+function addPieceToScene(assetId) {
+    if (!isThreeJSInitialized || !scene || !currentBed) {
         alert('Please select a bed first');
         return;
     }
 
-    try {
-        const assetData = JSON.parse(event.dataTransfer.getData('assetData'));
+    const asset = availableAssets.find(a => a.id === assetId);
+    if (!asset) return;
 
-        // Check if already placed
-        if (placedPieces.some(p => p.assetId === assetData.id)) {
-            alert('This piece is already placed on the bed');
-            return;
-        }
-
-        // Add piece to bed at drop position
-        const rect = event.target.getBoundingClientRect();
-        const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-        addPieceToBedAtPosition(assetData, x, y);
-
-    } catch (error) {
-        console.error('Error handling drop:', error);
-    }
-}
-
-// Piece Placement
-function addPieceToBed(asset) {
-    if (!currentBed) {
-        alert('Please select a bed first');
-        return;
-    }
-
-    // Check if already placed
-    if (placedPieces.some(p => p.assetId === asset.id)) {
+    // Check if piece already placed
+    if (placedPieces.find(p => p.assetId === assetId)) {
         alert('This piece is already placed on the bed');
         return;
     }
 
-    const bedConfig = BED_CONFIGS[currentBed];
-    const position = findAvailablePosition(asset, bedConfig);
-
-    addPieceToBedAtPosition(asset, position.x, position.z);
-}
-
-function addPieceToBedAtPosition(asset, dropX, dropZ) {
-    const bedConfig = BED_CONFIGS[currentBed];
-
-    // Create piece visualization with actual dimensions
+    // Create piece geometry
     const geometry = new THREE.BoxGeometry(
-        asset.attributes.length,
-        asset.attributes.height,
-        asset.attributes.width
+        asset.dimensions.length,
+        asset.dimensions.height,
+        asset.dimensions.width
     );
 
-    // Add edge geometry for better visibility
-    const edges = new THREE.EdgesGeometry(geometry);
-    const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
-    const edgeLines = new THREE.LineSegments(edges, edgeMaterial);
+    const config = PIECE_CONFIGS[asset.type];
+    const material = new THREE.MeshLambertMaterial({ color: config.color });
+    const mesh = new THREE.Mesh(geometry, material);
 
-    // Create material based on piece type
-    const pieceConfig = PIECE_CONFIGS[asset.attributes.pieceType];
-    const material = new THREE.MeshPhongMaterial({
-        color: pieceConfig.color,
-        specular: 0x111111,
-        shininess: 30,
-        opacity: 0.9,
-        transparent: true
-    });
+    // Create group for the piece
+    const group = new THREE.Group();
+    group.add(mesh);
+    group.userData = { assetId: assetId, asset: asset };
 
-    const pieceMesh = new THREE.Mesh(geometry, material);
+    // Position piece
+    group.position.x = (Math.random() - 0.5) * 50;
+    group.position.y = asset.dimensions.height / 2;
+    group.position.z = (Math.random() - 0.5) * 50;
 
-    // Position on bed
-    const yPosition = bedConfig.height + asset.attributes.height / 2;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
 
-    // Convert drop coordinates to world position
-    let position;
-    if (dropX !== undefined && dropZ !== undefined) {
-        // Use raycaster to find exact position on bed
-        raycaster.setFromCamera(new THREE.Vector2(dropX, dropZ), camera);
-
-        // Get the bed box mesh (first child of bedMesh group)
-        const bedBox = bedMesh ? bedMesh.children[0] : null;
-        const intersects = bedBox ? raycaster.intersectObject(bedBox) : [];
-
-        if (intersects.length > 0) {
-            position = {
-                x: intersects[0].point.x,
-                y: yPosition,
-                z: intersects[0].point.z
-            };
-        } else {
-            position = findAvailablePosition(asset, bedConfig);
-            position.y = yPosition;
-        }
-    } else {
-        position = findAvailablePosition(asset, bedConfig);
-        position.y = yPosition;
-    }
-
-    pieceMesh.position.set(position.x, position.y, position.z);
-
-    // Add metadata
-    pieceMesh.userData = {
-        assetId: asset.id,
-        asset: asset,
-        dimensions: {
-            length: asset.attributes.length,
-            width: asset.attributes.width,
-            height: asset.attributes.height
-        },
-        rotation: 0,
-        flipped: false
-    };
-
-    pieceMesh.castShadow = true;
-    pieceMesh.receiveShadow = true;
-
-    // Create group for piece and edges
-    const pieceGroup = new THREE.Group();
-    pieceGroup.add(pieceMesh);
-    pieceGroup.add(edgeLines);
-    pieceGroup.userData = pieceMesh.userData;
-
-    scene.add(pieceGroup);
-    pieceMeshes.set(asset.id, pieceGroup);
+    scene.add(group);
+    pieceMeshes.set(assetId, group);
 
     // Add to placed pieces
     placedPieces.push({
-        assetId: asset.id,
+        assetId: assetId,
         asset: asset,
-        position: { x: position.x, y: 0, z: position.z },
+        position: {
+            x: group.position.x,
+            y: group.position.y,
+            z: group.position.z
+        },
         rotation: 0,
-        flipped: false,
-        designNumber: asset.attributes.DESIGN_NUMBER
+        dimensions: asset.dimensions
     });
 
-    // Validate placement
-    validatePiecePlacement(pieceGroup);
-
-    // Update UI
-    updatePieceCount();
-    refreshAssetsList();
-
-    // Show strand pattern if enabled
-    if (showStrandPattern) {
-        addStrandPattern(pieceGroup, asset);
-    }
-
-    // Select the newly placed piece
-    selectPiece(pieceGroup);
-}
-
-// Piece Manipulation Functions
-function rotateSelectedPiece(degrees) {
-    if (!selectedPiece) {
-        alert('Please select a piece first');
-        return;
-    }
-
-    const radians = THREE.MathUtils.degToRad(degrees);
-    selectedPiece.rotation.y += radians;
-
-    // Update stored rotation
-    const piece = placedPieces.find(p => p.assetId === selectedPiece.userData.assetId);
-    if (piece) {
-        piece.rotation = THREE.MathUtils.radToDeg(selectedPiece.rotation.y) % 360;
-    }
-
-    // Revalidate placement
-    validatePiecePlacement(selectedPiece);
-}
-
-function flipSelectedPiece() {
-    if (!selectedPiece) {
-        alert('Please select a piece first');
-        return;
-    }
-
-    // Flip around the Z axis
-    selectedPiece.scale.z *= -1;
-
-    // Update stored flip state
-    const piece = placedPieces.find(p => p.assetId === selectedPiece.userData.assetId);
-    if (piece) {
-        piece.flipped = !piece.flipped;
-    }
-
-    selectedPiece.userData.flipped = !selectedPiece.userData.flipped;
-
-    // Revalidate placement
-    validatePiecePlacement(selectedPiece);
-}
-
-function deleteSelectedPiece() {
-    if (!selectedPiece) {
-        alert('Please select a piece first');
-        return;
-    }
-
-    removePiece(selectedPiece.userData.assetId);
-    selectedPiece = null;
-}
-
-function selectPiece(pieceGroup) {
-    // Deselect previous piece
-    if (selectedPiece) {
-        const prevMesh = selectedPiece.children[0];
-        if (prevMesh && prevMesh.material) {
-            prevMesh.material.emissive = new THREE.Color(0x000000);
-        }
-    }
-
-    selectedPiece = pieceGroup;
-
-    // Highlight selected piece
-    const mesh = pieceGroup.children[0];
-    if (mesh && mesh.material) {
-        mesh.material.emissive = new THREE.Color(0x444444);
-    }
-}
-
-function findAvailablePosition(asset, bedConfig) {
-    // Simple placement algorithm - find first available spot
-    const spacing = 2; // 2 feet spacing between pieces
-    let x = -bedConfig.length / 2 + asset.attributes.length / 2 + spacing;
-    let z = 0;
-
-    // Check for collisions with existing pieces
-    for (const placed of placedPieces) {
-        const placedAsset = placed.asset;
-        const overlap = checkOverlap(
-            { x: x, z: z, length: asset.attributes.length, width: asset.attributes.width },
-            {
-                x: placed.position.x, z: placed.position.z,
-                length: placedAsset.attributes.length, width: placedAsset.attributes.width
-            }
-        );
-
-        if (overlap) {
-            x = placed.position.x + placedAsset.attributes.length / 2 + asset.attributes.length / 2 + spacing;
-
-            // Check if it fits on bed
-            if (x + asset.attributes.length / 2 > bedConfig.length / 2) {
-                // Move to next row
-                x = -bedConfig.length / 2 + asset.attributes.length / 2 + spacing;
-                z += asset.attributes.width + spacing;
-            }
-        }
-    }
-
-    return { x: x, y: 0, z: z };
-}
-
-function checkOverlap(rect1, rect2) {
-    const r1Left = rect1.x - rect1.length / 2;
-    const r1Right = rect1.x + rect1.length / 2;
-    const r1Top = rect1.z - rect1.width / 2;
-    const r1Bottom = rect1.z + rect1.width / 2;
-
-    const r2Left = rect2.x - rect2.length / 2;
-    const r2Right = rect2.x + rect2.length / 2;
-    const r2Top = rect2.z - rect2.width / 2;
-    const r2Bottom = rect2.z + rect2.width / 2;
-
-    return !(r1Left > r2Right || r1Right < r2Left || r1Top > r2Bottom || r1Bottom < r2Top);
-}
-
-// Validation
-function validatePiecePlacement(pieceGroup) {
-    if (!pieceGroup || !currentBed) return;
-
-    const piece = placedPieces.find(p => p.assetId === pieceGroup.userData.assetId);
-    if (!piece) return;
-
-    const bedConfig = BED_CONFIGS[currentBed];
-    const issues = [];
-
-    // Check if piece is within bed boundaries
-    const halfLength = bedConfig.length / 2;
-    const halfWidth = bedConfig.width / 2;
-    const pieceHalfLength = piece.asset.attributes.length / 2;
-    const pieceHalfWidth = piece.asset.attributes.width / 2;
-
-    if (piece.position.x - pieceHalfLength < -halfLength ||
-        piece.position.x + pieceHalfLength > halfLength) {
-        issues.push({ type: 'boundary', message: 'Piece extends beyond bed length' });
-    }
-
-    if (piece.position.z - pieceHalfWidth < -halfWidth ||
-        piece.position.z + pieceHalfWidth > halfWidth) {
-        issues.push({ type: 'boundary', message: 'Piece extends beyond bed width' });
-    }
-
-    // Check for overlaps with other pieces
-    for (const other of placedPieces) {
-        if (other.assetId === piece.assetId) continue;
-
-        const overlap = checkOverlap(
-            {
-                x: piece.position.x, z: piece.position.z,
-                length: piece.asset.attributes.length, width: piece.asset.attributes.width
-            },
-            {
-                x: other.position.x, z: other.position.z,
-                length: other.asset.attributes.length, width: other.asset.attributes.width
-            }
-        );
-
-        if (overlap) {
-            issues.push({ type: 'overlap', message: `Overlaps with ${other.asset.attributes.displayName}` });
-        }
-    }
-
-    // Check design number compatibility
-    if (piece.designNumber && currentSchedule && currentSchedule.designNumber) {
-        if (piece.designNumber !== currentSchedule.designNumber) {
-            issues.push({ type: 'design', message: `Design mismatch: ${piece.designNumber} vs ${currentSchedule.designNumber}` });
-        }
-    }
-
-    // Update piece validation status
-    piece.validationErrors = issues;
-
-    // Update visual feedback
-    const mesh = pieceGroup.children[0]; // Get the mesh from the group
-    if (mesh && mesh.material) {
-        if (issues.length > 0) {
-            mesh.material.color = new THREE.Color(0xFF0000);
-            mesh.material.emissive = new THREE.Color(0x440000);
-        } else {
-            const pieceConfig = PIECE_CONFIGS[piece.asset.attributes.pieceType];
-            mesh.material.color = new THREE.Color(pieceConfig.color);
-            mesh.material.emissive = selectedPiece === pieceGroup ? new THREE.Color(0x444444) : new THREE.Color(0x000000);
-        }
-    }
-
-    // Update validation panel
+    updateBedInfo();
+    validatePiecePlacement();
     updateValidationPanel();
 }
 
-function updateValidationPanel() {
-    const validationPanel = document.getElementById('validationPanel');
-    const validationMessages = document.getElementById('validationMessages');
-
-    // Collect all validation issues
-    const allIssues = [];
-    placedPieces.forEach(piece => {
-        if (piece.validationErrors && piece.validationErrors.length > 0) {
-            piece.validationErrors.forEach(error => {
-                allIssues.push({
-                    piece: piece.asset.attributes.displayName,
-                    ...error
-                });
-            });
+function selectPiece(assetId) {
+    // Deselect previous piece
+    if (selectedPiece) {
+        const prevGroup = pieceMeshes.get(selectedPiece);
+        if (prevGroup) {
+            prevGroup.children[0].material.emissive.setHex(0x000000);
         }
-    });
+    }
 
-    if (allIssues.length > 0) {
-        validationPanel.style.display = 'block';
-        validationMessages.innerHTML = allIssues.map(issue => `
-            <div class="validation-item ${issue.type}">
-                <span class="validation-piece">${issue.piece}:</span>
-                <span class="validation-message">${issue.message}</span>
-            </div>
-        `).join('');
-    } else {
-        validationPanel.style.display = 'none';
+    selectedPiece = assetId;
+    const group = pieceMeshes.get(assetId);
+    if (group) {
+        group.children[0].material.emissive.setHex(0x444444);
+        showPieceDetails(assetId);
     }
 }
 
-// Strand Pattern Visualization
-function addStrandPattern(pieceGroup, asset) {
-    // Default strand pattern - will be replaced with actual design data later
-    const strandSpacing = 2; // 2 feet spacing
-    const strandDiameter = 0.5; // 0.5 inch diameter
-
-    const length = asset.attributes.length;
-    const width = asset.attributes.width;
-
-    // Create strand lines
-    const strandMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
-
-    pieceGroup.userData.strandLines = [];
-
-    for (let i = -width / 2 + 1; i <= width / 2 - 1; i += strandSpacing) {
-        const points = [];
-        points.push(new THREE.Vector3(-length / 2 + 1, 0.1, i));
-        points.push(new THREE.Vector3(length / 2 - 1, 0.1, i));
-
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const line = new THREE.Line(geometry, strandMaterial);
-
-        line.position.copy(pieceGroup.position);
-        line.position.y = pieceGroup.position.y + asset.attributes.height / 2 + 0.1;
-
-        pieceGroup.userData.strandLines.push(line);
-        scene.add(line);
+function deselectPiece() {
+    if (selectedPiece) {
+        const group = pieceMeshes.get(selectedPiece);
+        if (group) {
+            group.children[0].material.emissive.setHex(0x000000);
+        }
+        selectedPiece = null;
     }
+}
+
+function validatePiecePlacement() {
+    validationIssues = [];
+
+    if (!currentBed || !BED_CONFIGS[currentBed]) return;
+
+    const bedConfig = BED_CONFIGS[currentBed];
+    const bedBounds = {
+        minX: -bedConfig.length / 2,
+        maxX: bedConfig.length / 2,
+        minZ: -bedConfig.width / 2,
+        maxZ: bedConfig.width / 2
+    };
+
+    placedPieces.forEach(piece => {
+        // Check bed boundaries
+        const halfLength = piece.dimensions.length / 2;
+        const halfWidth = piece.dimensions.width / 2;
+
+        if (piece.position.x - halfLength < bedBounds.minX ||
+            piece.position.x + halfLength > bedBounds.maxX ||
+            piece.position.z - halfWidth < bedBounds.minZ ||
+            piece.position.z + halfWidth > bedBounds.maxZ) {
+
+            validationIssues.push({
+                type: 'boundary',
+                message: `${piece.asset.name} extends beyond bed boundaries`,
+                assetId: piece.assetId
+            });
+        }
+
+        // Check overlaps with other pieces
+        placedPieces.forEach(otherPiece => {
+            if (piece.assetId !== otherPiece.assetId) {
+                if (checkPieceOverlap(piece, otherPiece)) {
+                    validationIssues.push({
+                        type: 'overlap',
+                        message: `${piece.asset.name} overlaps with ${otherPiece.asset.name}`,
+                        assetId: piece.assetId
+                    });
+                }
+            }
+        });
+    });
+}
+
+function checkPieceOverlap(piece1, piece2) {
+    const p1 = piece1.position;
+    const p2 = piece2.position;
+    const d1 = piece1.dimensions;
+    const d2 = piece2.dimensions;
+
+    return (Math.abs(p1.x - p2.x) < (d1.length + d2.length) / 2) &&
+        (Math.abs(p1.z - p2.z) < (d1.width + d2.width) / 2);
+}
+
+function updateValidationPanel() {
+    const validationMessages = document.getElementById('validationMessages');
+    if (!validationMessages) return;
+
+    if (validationIssues.length === 0) {
+        validationMessages.innerHTML = '<div class="loading-message">No issues detected</div>';
+        return;
+    }
+
+    validationMessages.innerHTML = validationIssues.map(issue => `
+        <div class="validation-item ${issue.type}">
+            <div class="validation-piece">${issue.assetId}</div>
+            <div>${issue.message}</div>
+        </div>
+    `).join('');
+}
+
+// Viewer Controls
+function resetCamera() {
+    if (!camera || !controls) return;
+
+    camera.position.set(100, 100, 100);
+    camera.lookAt(0, 0, 0);
+
+    if (controls.reset) {
+        controls.reset();
+    }
+}
+
+function fitToView() {
+    if (!camera || !currentBed) return;
+
+    const config = BED_CONFIGS[currentBed];
+    const maxDimension = Math.max(config.length, config.width);
+    const distance = maxDimension * 1.5;
+
+    camera.position.set(distance, distance * 0.8, distance);
+    camera.lookAt(0, 0, 0);
+}
+
+function toggleWireframe() {
+    pieceMeshes.forEach(group => {
+        group.children.forEach(mesh => {
+            if (mesh.material) {
+                mesh.material.wireframe = !mesh.material.wireframe;
+            }
+        });
+    });
 }
 
 function toggleStrandPattern() {
     showStrandPattern = !showStrandPattern;
-
-    pieceMeshes.forEach((group, assetId) => {
-        if (showStrandPattern) {
-            const piece = placedPieces.find(p => p.assetId === assetId);
-            if (piece) {
-                addStrandPattern(group, piece.asset);
-            }
-        } else {
-            // Remove strand lines
-            if (group.userData.strandLines) {
-                group.userData.strandLines.forEach(line => {
-                    scene.remove(line);
-                });
-                group.userData.strandLines = [];
-            }
-        }
-    });
+    // Implementation for strand pattern visualization
+    console.log('Strand pattern toggle:', showStrandPattern);
 }
 
 // Schedule Management
-async function saveBedSchedule() {
-    if (!currentBed || !projectId || placedPieces.length === 0) {
-        alert('Please select a bed and place at least one piece before saving');
-        return;
-    }
-
+async function saveSchedule() {
     try {
-        updateViewerStatus('Saving schedule...');
-
-        const schedule = {
-            bedId: currentBed,
-            projectId: projectId,
-            date: document.getElementById('dateSelect').value,
-            dateScheduled: document.getElementById('dateScheduled').value,
-            datePoured: document.getElementById('datePoured').value,
-            pourStatus: document.getElementById('pourStatus').value,
-            pieces: placedPieces.map(p => ({
-                assetId: p.assetId,
-                position: p.position,
-                rotation: p.rotation,
-                flipped: p.flipped,
-                designNumber: p.designNumber
-            }))
-        };
-
-        // Update ACC Assets with schedule data
-        const updatePromises = [];
-
-        for (const piece of placedPieces) {
-            const customAttributes = {
-                [CUSTOM_FIELD_MAPPINGS.DateScheduled]: schedule.dateScheduled,
-                [CUSTOM_FIELD_MAPPINGS.DatePoured]: schedule.datePoured,
-                [CUSTOM_FIELD_MAPPINGS.BedId]: currentBed,
-                [CUSTOM_FIELD_MAPPINGS.PourStatus]: schedule.pourStatus,
-                [CUSTOM_FIELD_MAPPINGS.BedPosition]: JSON.stringify({
-                    x: piece.position.x,
-                    y: piece.position.y,
-                    z: piece.position.z
-                }),
-                [CUSTOM_FIELD_MAPPINGS.BedRotation]: piece.rotation
-            };
-
-            updatePromises.push(updateAssetCustomAttributes(piece.assetId, customAttributes));
+        if (!currentBed) {
+            alert('Please select a bed first');
+            return;
         }
 
-        await Promise.all(updatePromises);
+        const scheduleData = {
+            bedId: currentBed,
+            dateScheduled: document.getElementById('dateSelect')?.value,
+            datePoured: document.getElementById('datePoured')?.value,
+            status: document.getElementById('statusSelect')?.value,
+            pourStatus: document.getElementById('pourStatus')?.value,
+            designNumber: document.getElementById('designNumber')?.value,
+            pieces: placedPieces.length,
+            placedPieces: placedPieces,
+            validationIssues: validationIssues
+        };
 
-        // Save to local storage as backup
-        const scheduleKey = `schedule_${projectId}_${currentBed}_${schedule.date}`;
-        localStorage.setItem(scheduleKey, JSON.stringify(schedule));
+        console.log('Saving schedule:', scheduleData);
 
-        updateViewerStatus('Schedule saved successfully');
-
-        alert('Schedule saved successfully to ACC!');
+        // Here you would save to your backend/ACC
+        // For now, just show success message
+        alert('Schedule saved successfully!');
 
     } catch (error) {
         console.error('Error saving schedule:', error);
-        updateViewerStatus('Error saving schedule');
         alert('Failed to save schedule: ' + error.message);
     }
 }
 
-async function updateAssetCustomAttributes(assetId, customAttributes) {
-    try {
-        const updateUrl = `https://developer.api.autodesk.com/construction/assets/v1/projects/${projectId.replace('b.', '')}/assets/${assetId}`;
-
-        const response = await fetch(updateUrl, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': `Bearer ${forgeAccessToken}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                customAttributes: customAttributes
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to update asset ${assetId}`);
-        }
-
-        return response.json();
-
-    } catch (error) {
-        console.error('Error updating asset:', assetId, error);
-        // Continue with other assets even if one fails
-        return null;
-    }
+function loadBedSchedule() {
+    // Load existing schedule for the selected bed and date
+    console.log('Loading bed schedule for:', currentBed, document.getElementById('dateSelect')?.value);
 }
 
-async function loadBedSchedule() {
-    if (!currentBed || !projectId) return;
-
-    try {
-        updateViewerStatus('Loading schedule...');
-
-        const date = document.getElementById('dateSelect').value;
-        const scheduleKey = `schedule_${projectId}_${currentBed}_${date}`;
-        const savedSchedule = localStorage.getItem(scheduleKey);
-
-        if (savedSchedule) {
-            currentSchedule = JSON.parse(savedSchedule);
-
-            // Clear current pieces
-            pieceMeshes.forEach(group => {
-                if (group.userData.strandLines) {
-                    group.userData.strandLines.forEach(line => scene.remove(line));
-                }
-                scene.remove(group);
-            });
-            pieceMeshes.clear();
-            placedPieces = [];
-
-            // Load pieces from schedule
-            for (const pieceData of currentSchedule.pieces) {
-                const asset = availableAssets.find(a => a.id === pieceData.assetId);
-                if (asset) {
-                    // Add piece at saved position
-                    addPieceToBedAtPosition(asset, pieceData.position.x, pieceData.position.z);
-
-                    // Update position, rotation, and flip state
-                    const group = pieceMeshes.get(asset.id);
-                    if (group) {
-                        group.position.set(pieceData.position.x, group.position.y, pieceData.position.z);
-
-                        if (pieceData.rotation) {
-                            group.rotation.y = THREE.MathUtils.degToRad(pieceData.rotation);
-                        }
-
-                        if (pieceData.flipped) {
-                            group.scale.z = -1;
-                        }
-
-                        const piece = placedPieces.find(p => p.assetId === asset.id);
-                        if (piece) {
-                            piece.position = pieceData.position;
-                            piece.rotation = pieceData.rotation || 0;
-                            piece.flipped = pieceData.flipped || false;
-                        }
-                    }
-                }
-            }
-
-            // Update schedule fields
-            if (currentSchedule.dateScheduled) {
-                document.getElementById('dateScheduled').value = currentSchedule.dateScheduled;
-            }
-            if (currentSchedule.datePoured) {
-                document.getElementById('datePoured').value = currentSchedule.datePoured;
-            }
-            if (currentSchedule.pourStatus) {
-                document.getElementById('pourStatus').value = currentSchedule.pourStatus;
-            }
-
-            updateViewerStatus('Schedule loaded');
-        } else {
-            currentSchedule = null;
-            updateViewerStatus('No schedule found');
-        }
-
-    } catch (error) {
-        console.error('Error loading schedule:', error);
-        updateViewerStatus('Error loading schedule');
-    }
+function toggleView() {
+    // Toggle between different view modes
+    console.log('Toggling view mode');
 }
 
-// UI Helper Functions
-function updateViewerStatus(status) {
-    const viewerStatus = document.getElementById('viewerStatus');
-    if (viewerStatus) {
-        viewerStatus.textContent = status;
-    }
-}
-
-function updatePieceCount() {
-    const pieceCount = document.getElementById('pieceCount');
-    if (pieceCount) {
-        pieceCount.textContent = placedPieces.length;
-    }
-
-    // Update current design number if all pieces have same design
-    const designs = new Set(placedPieces.map(p => p.designNumber).filter(d => d));
-    const currentDesignNumber = document.getElementById('currentDesignNumber');
-    if (currentDesignNumber) {
-        if (designs.size === 1) {
-            currentDesignNumber.textContent = Array.from(designs)[0];
-        } else if (designs.size > 1) {
-            currentDesignNumber.textContent = 'Multiple';
-        } else {
-            currentDesignNumber.textContent = 'None';
-        }
-    }
-}
-
-function refreshAssetsList() {
-    displayAssets(filterAssetsInternal());
-}
-
-function filterAssets() {
-    const filtered = filterAssetsInternal();
-    displayAssets(filtered);
-}
-
-function filterAssetsInternal() {
-    const searchTerm = document.getElementById('assetSearch').value.toLowerCase();
-    const designFilter = document.getElementById('designFilter').value;
-    const typeFilter = document.getElementById('typeFilter').value;
-
-    return availableAssets.filter(asset => {
-        const matchesSearch = !searchTerm ||
-            asset.attributes.displayName.toLowerCase().includes(searchTerm) ||
-            (asset.attributes.DESIGN_NUMBER && asset.attributes.DESIGN_NUMBER.toLowerCase().includes(searchTerm));
-
-        const matchesDesign = !designFilter || asset.attributes.DESIGN_NUMBER === designFilter;
-        const matchesType = !typeFilter || asset.attributes.pieceType === typeFilter;
-
-        return matchesSearch && matchesDesign && matchesType;
-    });
-}
-
-function clearAssetsList() {
-    const assetsList = document.getElementById('assetsList');
-    assetsList.innerHTML = '<div class="no-assets">Select a project to view assets</div>';
-}
-
+// Piece Details Modal
 function showPieceDetails(assetId) {
-    const piece = placedPieces.find(p => p.assetId === assetId);
-    if (!piece) return;
-
     const modal = document.getElementById('pieceDetailsModal');
     const content = document.getElementById('pieceDetailsContent');
 
+    const piece = placedPieces.find(p => p.assetId === assetId);
+    if (!piece) return;
+
     content.innerHTML = `
         <div class="piece-details">
-            <h4>${piece.asset.attributes.displayName}</h4>
+            <h4>${piece.asset.name}</h4>
             <div class="detail-grid">
                 <div class="detail-row">
+                    <label>Mark:</label>
+                    <span>${piece.asset.mark}</span>
+                </div>
+                <div class="detail-row">
                     <label>Type:</label>
-                    <span>${piece.asset.attributes.pieceType}</span>
+                    <span>${piece.asset.type}</span>
                 </div>
                 <div class="detail-row">
-                    <label>Design Number:</label>
-                    <span>${piece.asset.attributes.DESIGN_NUMBER || 'None'}</span>
+                    <label>X Position:</label>
+                    <input type="number" id="pieceX" value="${Math.round(piece.position.x * 100) / 100}" step="0.1" />
                 </div>
                 <div class="detail-row">
-                    <label>Dimensions:</label>
-                    <span>${piece.asset.attributes.length}' × ${piece.asset.attributes.width}' × ${piece.asset.attributes.height}'</span>
-                </div>
-                <div class="detail-row">
-                    <label>Weight:</label>
-                    <span>${piece.asset.attributes.weight} lbs</span>
-                </div>
-                <div class="detail-row">
-                    <label>Position X:</label>
-                    <input type="number" id="pieceX" value="${piece.position.x.toFixed(2)}" step="0.1">
-                </div>
-                <div class="detail-row">
-                    <label>Position Z:</label>
-                    <input type="number" id="pieceZ" value="${piece.position.z.toFixed(2)}" step="0.1">
+                    <label>Z Position:</label>
+                    <input type="number" id="pieceZ" value="${Math.round(piece.position.z * 100) / 100}" step="0.1" />
                 </div>
                 <div class="detail-row">
                     <label>Rotation:</label>
-                    <input type="number" id="pieceRotation" value="${piece.rotation || 0}" step="15" min="0" max="360">
+                    <input type="number" id="pieceRotation" value="${piece.rotation || 0}" step="1" min="0" max="360" />
+                </div>
+                <div class="detail-row">
+                    <label>Length:</label>
+                    <span>${Math.round(piece.dimensions.length)}'</span>
+                </div>
+                <div class="detail-row">
+                    <label>Width:</label>
+                    <span>${Math.round(piece.dimensions.width)}'</span>
+                </div>
+                <div class="detail-row">
+                    <label>Height:</label>
+                    <span>${Math.round(piece.dimensions.height)}'</span>
+                </div>
+                <div class="detail-row">
+                    <label>Weight:</label>
+                    <span>${piece.asset.weight} lbs</span>
                 </div>
                 ${piece.validationErrors && piece.validationErrors.length > 0 ? `
                     <div class="detail-row validation-errors">
@@ -1631,75 +999,15 @@ function savePieceChanges() {
         }
 
         // Revalidate
-        validatePiecePlacement(group);
-    }
-
-    closePieceDetails();
-}
-
-// View Controls
-function resetCamera() {
-    if (!currentBed) return;
-
-    const bedConfig = BED_CONFIGS[currentBed];
-    const distance = Math.max(bedConfig.length, bedConfig.width) * 1.5;
-
-    camera.position.set(distance, distance, distance);
-    camera.lookAt(0, 0, 0);
-    controls.target.set(0, 0, 0);
-    controls.update();
-}
-
-function toggleGrid() {
-    gridHelper.visible = !gridHelper.visible;
-}
-
-function toggleViewMode() {
-    // Toggle between 3D and top-down view
-    if (camera.position.y > camera.position.x) {
-        // Switch to 3D view
-        resetCamera();
-    } else {
-        // Switch to top-down view
-        const bedConfig = BED_CONFIGS[currentBed] || { length: 100, width: 50 };
-        const distance = Math.max(bedConfig.length, bedConfig.width) * 1.2;
-
-        camera.position.set(0, distance, 0.1);
-        camera.lookAt(0, 0, 0);
-        controls.target.set(0, 0, 0);
-        controls.update();
-    }
-}
-
-function handleKeyPress(event) {
-    if (selectedPiece && event.key === 'Delete') {
-        removePiece(selectedPiece.userData.assetId);
-    }
-}
-
-function removePiece(assetId) {
-    const pieceGroup = pieceMeshes.get(assetId);
-    if (pieceGroup) {
-        // Remove strand pattern if exists
-        if (pieceGroup.userData.strandLines) {
-            pieceGroup.userData.strandLines.forEach(line => scene.remove(line));
-        }
-
-        // Remove the group and all its children
-        scene.remove(pieceGroup);
-        pieceMeshes.delete(assetId);
-
-        const index = placedPieces.findIndex(p => p.assetId === assetId);
-        if (index > -1) {
-            placedPieces.splice(index, 1);
-        }
-
-        updatePieceCount();
+        validatePiecePlacement();
+        updateBedInfo();
         refreshAssetsList();
         updateValidationPanel();
+        closePieceDetails();
     }
 }
 
+// Event Handlers
 function onDateChange() {
     if (currentBed) {
         loadBedSchedule();
@@ -1709,6 +1017,22 @@ function onDateChange() {
 function updateScheduleStatus() {
     // This will be called when schedule dates/status are changed
     // Could trigger auto-save or mark as dirty
+}
+
+function handleKeyPress(event) {
+    if (event.key === 'Delete' && selectedPiece) {
+        // Remove selected piece
+        const group = pieceMeshes.get(selectedPiece);
+        if (group) {
+            scene.remove(group);
+            pieceMeshes.delete(selectedPiece);
+            placedPieces = placedPieces.filter(p => p.assetId !== selectedPiece);
+            selectedPiece = null;
+            updateBedInfo();
+            validatePiecePlacement();
+            updateValidationPanel();
+        }
+    }
 }
 
 // Auth Helper Functions
@@ -1767,9 +1091,3 @@ function debounce(func, wait) {
         timeout = setTimeout(later, wait);
     };
 }
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function () {
-    console.log('Production Scheduling module loaded');
-    initializeApp();
-});

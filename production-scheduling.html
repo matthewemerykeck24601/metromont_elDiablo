@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Production Scheduling - Precast Bed Scheduler | Metromont CastLink</title>
     <link rel="stylesheet" href="styles/production-scheduling.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://developer.api.autodesk.com;">
 </head>
 <body class="auth-loading">
     <!-- Auth Processing Overlay -->
@@ -57,53 +56,38 @@
                 <div class="control-section">
                     <h3>Schedule Controls</h3>
                     <div class="control-group">
-                        <label for="projectSelect">Project</label>
-                        <select id="projectSelect" onchange="onProjectChange()">
+                        <label for="projectSelect">Project:</label>
+                        <select id="projectSelect" disabled>
                             <option value="">Loading projects...</option>
                         </select>
                     </div>
                     <div class="control-group">
-                        <label for="dateSelect">Schedule Date</label>
-                        <input type="date" id="dateSelect" onchange="onDateChange()">
-                    </div>
-                    <div class="control-group">
-                        <label for="bedSelect">Production Bed</label>
-                        <select id="bedSelect" onchange="onBedChange()">
-                            <option value="">Select a bed...</option>
-                            <option value="beam">Beam Bed</option>
-                            <option value="deck1">Deck Bed #1</option>
-                            <option value="deck2">Deck Bed #2</option>
-                            <option value="flatbed1">Flat Bed #1</option>
-                            <option value="flatbed2">Flat Bed #2</option>
-                            <option value="flatbed3">Flat Bed #3</option>
-                            <option value="flatbed4">Flat Bed #4</option>
-                            <option value="flatbed5">Flat Bed #5</option>
-                            <option value="flatbed6">Flat Bed #6</option>
-                            <option value="flatbed7">Flat Bed #7</option>
+                        <label for="typeSelect">Type:</label>
+                        <select id="typeSelect">
+                            <option value="">-</option>
+                            <option value="beam">Beam</option>
+                            <option value="column">Column</option>
+                            <option value="wall">Wall Panel</option>
+                            <option value="doubletee">Double Tee</option>
+                            <option value="slab">Slab</option>
                         </select>
                     </div>
-                    <div class="control-actions">
-                        <button class="btn btn-primary" onclick="saveBedSchedule()">
-                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" />
-                            </svg>
-                            Save Schedule
-                        </button>
-                        <button class="btn btn-secondary" onclick="toggleViewMode()">
-                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34 3-3-3z" />
-                            </svg>
-                            Toggle View
-                        </button>
+                    <div class="control-group">
+                        <label for="lengthInput">Length:</label>
+                        <input type="number" id="lengthInput" placeholder="-" />
+                    </div>
+                    <div class="control-group">
+                        <label for="widthInput">Width:</label>
+                        <input type="number" id="widthInput" placeholder="-" />
                     </div>
                 </div>
 
                 <div class="control-section">
                     <h3>Bed Information</h3>
-                    <div class="bed-info" id="bedInfo">
+                    <div class="bed-info">
                         <div class="info-item">
                             <span class="info-label">Type:</span>
-                            <span class="info-value" id="bedType">-</span>
+                            <span class="info-value" id="bedType">Select a bed</span>
                         </div>
                         <div class="info-item">
                             <span class="info-label">Length:</span>
@@ -114,12 +98,8 @@
                             <span class="info-value" id="bedWidth">-</span>
                         </div>
                         <div class="info-item">
-                            <span class="info-label">Status:</span>
-                            <span class="info-value status-badge" id="bedStatus">Available</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Design #:</span>
-                            <span class="info-value" id="currentDesignNumber">None</span>
+                            <span class="info-label">Utilization:</span>
+                            <span class="info-value" id="bedUtilization">0%</span>
                         </div>
                         <div class="info-item">
                             <span class="info-label">Pieces:</span>
@@ -132,73 +112,118 @@
                     <h3>Schedule Status</h3>
                     <div class="schedule-status">
                         <div class="status-item">
-                            <label>Date Scheduled:</label>
-                            <input type="datetime-local" id="dateScheduled" onchange="updateScheduleStatus()">
+                            <label for="dateSelect">Date Scheduled:</label>
+                            <input type="date" id="dateSelect" onchange="onDateChange()" />
                         </div>
                         <div class="status-item">
-                            <label>Date Poured:</label>
-                            <input type="datetime-local" id="datePoured" onchange="updateScheduleStatus()">
+                            <label for="datePoured">Date Poured:</label>
+                            <input type="date" id="datePoured" onchange="updateScheduleStatus()" />
                         </div>
                         <div class="status-item">
-                            <label>Pour Status:</label>
-                            <select id="pourStatus" onchange="updateScheduleStatus()">
-                                <option value="scheduled">Scheduled</option>
-                                <option value="setup">Setup Complete</option>
-                                <option value="poured">Poured</option>
-                                <option value="curing">Curing</option>
-                                <option value="stripped">Stripped</option>
+                            <label for="bedSelect">Production Bed:</label>
+                            <select id="bedSelect" onchange="onBedChange()">
+                                <option value="">Select a bed...</option>
+                                <option value="beam">Beam Bed</option>
+                                <option value="deck1">Deck Bed 1</option>
+                                <option value="deck2">Deck Bed 2</option>
+                                <option value="flatbed1">Flat Bed 1</option>
+                                <option value="flatbed2">Flat Bed 2</option>
+                                <option value="flatbed3">Flat Bed 3</option>
+                                <option value="flatbed4">Flat Bed 4</option>
+                                <option value="flatbed5">Flat Bed 5</option>
+                                <option value="flatbed6">Flat Bed 6</option>
+                                <option value="flatbed7">Flat Bed 7</option>
                             </select>
                         </div>
+                        <div class="status-item">
+                            <label for="statusSelect">Status:</label>
+                            <select id="statusSelect" onchange="updateScheduleStatus()">
+                                <option value="Available">Available</option>
+                                <option value="Scheduled">Scheduled</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Complete">Complete</option>
+                            </select>
+                        </div>
+                        <div class="status-item">
+                            <label for="pourStatus">Pour Status:</label>
+                            <select id="pourStatus" onchange="updateScheduleStatus()">
+                                <option value="Scheduled">Scheduled</option>
+                                <option value="Ready">Ready</option>
+                                <option value="Pouring">Pouring</option>
+                                <option value="Complete">Complete</option>
+                                <option value="Curing">Curing</option>
+                            </select>
+                        </div>
+                        <div class="status-item">
+                            <label for="designNumber">Design #:</label>
+                            <select id="designNumber">
+                                <option value="">None</option>
+                                <option value="DT-001">DT-001</option>
+                                <option value="BM-001">BM-001</option>
+                                <option value="COL-001">COL-001</option>
+                            </select>
+                        </div>
+                        <div class="status-item">
+                            <label for="piecesInput">Pieces:</label>
+                            <input type="number" id="piecesInput" value="0" min="0" onchange="updateScheduleStatus()" />
+                        </div>
+                    </div>
+                    <div class="control-actions">
+                        <button class="btn btn-primary" id="saveScheduleBtn" onclick="saveSchedule()">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                            </svg>
+                            Save Schedule
+                        </button>
+                        <button class="btn btn-secondary" id="toggleViewBtn" onclick="toggleView()">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                            </svg>
+                            Toggle View
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <!-- 3D Viewer with Piece Controls -->
+            <!-- Viewer Section -->
             <div class="viewer-section">
-                <div class="viewer-container" id="viewerContainer">
+                <!-- Main Viewer -->
+                <div class="viewer-container">
                     <div class="viewer-toolbar">
-                        <button class="viewer-btn" onclick="resetCamera()" title="Reset View">
-                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                        <button class="viewer-btn" onclick="resetCamera()" title="Reset Camera">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6 0 2.97-2.17 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93 0-4.42-3.58-8-8-8z"/>
                             </svg>
                         </button>
-                        <button class="viewer-btn" onclick="toggleGrid()" title="Toggle Grid">
-                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M8 4v1.45l2 2V4h4v4h-3.45l2 2H14v1.45l2 2V10h4v4h-3.45l2 2H20v1.45l2 2V4c0-1.1-.9-2-2-2H4.55l2 2H8zm8 0h4v4h-4V4zM1.27 1.27L0 2.55l2 2V20c0 1.1.9 2 2 2h15.46l2 2 1.27-1.27L1.27 1.27zM10 12.55L11.45 14H10v-1.45zm-6-6L5.45 8H4V6.55zM8 20H4v-4h4v4zm0-6H4v-4h3.45l.55.55V14zm6 6h-4v-4h3.45l.55.55V20zm2 0v-1.46L17.46 20H16z" />
-                            </svg>
-                        </button>
-                        <button class="viewer-btn" onclick="toggleStrandPattern()" title="Toggle Strand Pattern">
-                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M7 2v11h3v9l7-12h-4l4-8z" />
+                        <button class="viewer-btn" onclick="fitToView()" title="Fit to View">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M9 11H7v6h6v-2H9v-4zm-2 8V5h14v14H7z"/>
                             </svg>
                         </button>
                         <div class="viewer-separator"></div>
-                        <button class="viewer-btn" onclick="rotateSelectedPiece(90)" title="Rotate 90°">
-                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11c-.17-1.39-.72-2.73-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z" />
+                        <button class="viewer-btn" onclick="toggleWireframe()" title="Toggle Wireframe">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                             </svg>
                         </button>
-                        <button class="viewer-btn" onclick="flipSelectedPiece()" title="Flip Piece">
-                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M15 21h2v-2h-2v2zm4 0h2v-2h-2v2zM7 21h2v-2H7v2zm4 0h2v-2h-2v2zm8-4h2v-2h-2v2zm0-4h2v-2h-2v2zM3 3v18h2V5h16V3H3zm16 6h2V7h-2v2zm0 4h2v-2h-2v2z" />
-                            </svg>
-                        </button>
-                        <button class="viewer-btn" onclick="deleteSelectedPiece()" title="Delete Piece">
-                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                        <button class="viewer-btn" onclick="toggleStrandPattern()" title="Toggle Strand Pattern">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                             </svg>
                         </button>
                         <div class="viewer-info">
-                            <span id="viewerStatus">Ready</span>
+                            <span id="viewerInfo">Select a bed to begin</span>
                         </div>
                     </div>
-                    <div id="threejsContainer" ondrop="handleDrop(event)" ondragover="handleDragOver(event)"></div>
+                    <div id="threejsContainer"></div>
                 </div>
 
-                <!-- Validation Panel (moved to side of viewer) -->
-                <div class="validation-panel" id="validationPanel" style="display: none;">
+                <!-- Validation Panel -->
+                <div class="validation-panel">
                     <h3>Validation Issues</h3>
-                    <div id="validationMessages"></div>
+                    <div id="validationMessages">
+                        <div class="loading-message">No issues detected</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -208,26 +233,23 @@
             <div class="assets-header">
                 <h3>Available Pieces</h3>
                 <div class="assets-controls">
-                    <input type="text" id="assetSearch" placeholder="Search by mark or design..." onkeyup="filterAssets()">
-                    <select id="modelSelect" onchange="onModelChange()">
+                    <input type="text" id="assetSearch" placeholder="Search by mark or design..." />
+                    <select id="modelFilter">
                         <option value="">Select Model...</option>
                     </select>
-                    <select id="designFilter" onchange="filterAssets()">
-                        <option value="">All Designs</option>
-                    </select>
-                    <select id="typeFilter" onchange="filterAssets()">
+                    <select id="typeFilter">
                         <option value="">All Types</option>
-                        <option value="beam">Beams</option>
-                        <option value="column">Columns</option>
-                        <option value="wall">Walls</option>
-                        <option value="doubletee">Double Tees</option>
-                        <option value="slab">Slabs</option>
+                        <option value="beam">Beam</option>
+                        <option value="column">Column</option>
+                        <option value="wall">Wall</option>
+                        <option value="doubletee">Double Tee</option>
+                        <option value="slab">Slab</option>
                     </select>
                 </div>
             </div>
-            <div class="assets-scroll-container">
-                <div class="assets-grid" id="assetsList">
-                    <div class="loading-message">Select a model to load ACC Assets...</div>
+            <div class="assets-content">
+                <div class="assets-grid" id="assetsGrid">
+                    <div class="loading-message">Loading assets...</div>
                 </div>
             </div>
         </div>
@@ -238,19 +260,121 @@
         <div class="modal">
             <div class="modal-header">
                 <h3 class="modal-title">Piece Details</h3>
-                <button class="modal-close" onclick="closePieceDetails()">&times;</button>
+                <button class="modal-close" onclick="closePieceDetails()">×</button>
             </div>
             <div class="modal-content" id="pieceDetailsContent">
                 <!-- Dynamic content -->
             </div>
             <div class="modal-actions">
-                <button class="btn btn-secondary" onclick="closePieceDetails()">Close</button>
+                <button class="btn btn-secondary" onclick="closePieceDetails()">Cancel</button>
                 <button class="btn btn-primary" onclick="savePieceChanges()">Save Changes</button>
             </div>
         </div>
     </div>
 
-    <script src="scripts/env.js"></script>
+    <!-- Load Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Load OrbitControls after Three.js is loaded
+        function loadOrbitControls() {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+                script.onload = () => {
+                    // Define OrbitControls inline to avoid external script issues
+                    if (typeof THREE !== 'undefined') {
+                        // Simple OrbitControls implementation
+                        THREE.OrbitControls = function(camera, domElement) {
+                            this.camera = camera;
+                            this.domElement = domElement;
+                            this.enabled = true;
+                            this.enableDamping = true;
+                            this.dampingFactor = 0.05;
+                            this.minDistance = 10;
+                            this.maxDistance = 500;
+                            this.maxPolarAngle = Math.PI / 2;
+                            
+                            // Basic orbit functionality
+                            let isMouseDown = false;
+                            let mouseX = 0, mouseY = 0;
+                            let phi = 0, theta = 0;
+                            
+                            this.domElement.addEventListener('mousedown', (e) => {
+                                isMouseDown = true;
+                                mouseX = e.clientX;
+                                mouseY = e.clientY;
+                            });
+                            
+                            this.domElement.addEventListener('mousemove', (e) => {
+                                if (!isMouseDown) return;
+                                const deltaX = e.clientX - mouseX;
+                                const deltaY = e.clientY - mouseY;
+                                theta -= deltaX * 0.01;
+                                phi += deltaY * 0.01;
+                                phi = Math.max(-Math.PI/2, Math.min(Math.PI/2, phi));
+                                this.updateCameraPosition();
+                                mouseX = e.clientX;
+                                mouseY = e.clientY;
+                            });
+                            
+                            this.domElement.addEventListener('mouseup', () => {
+                                isMouseDown = false;
+                            });
+                            
+                            this.domElement.addEventListener('wheel', (e) => {
+                                const distance = this.camera.position.length();
+                                const newDistance = Math.max(this.minDistance, Math.min(this.maxDistance, distance + e.deltaY * 0.1));
+                                this.camera.position.normalize().multiplyScalar(newDistance);
+                            });
+                            
+                            this.updateCameraPosition = () => {
+                                const distance = this.camera.position.length();
+                                this.camera.position.x = distance * Math.sin(theta) * Math.cos(phi);
+                                this.camera.position.y = distance * Math.sin(phi);
+                                this.camera.position.z = distance * Math.cos(theta) * Math.cos(phi);
+                                this.camera.lookAt(0, 0, 0);
+                            };
+                            
+                            this.update = () => {
+                                // Damping can be implemented here
+                            };
+                        };
+                        resolve();
+                    } else {
+                        reject(new Error('Three.js not loaded'));
+                    }
+                };
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+
+        // Initialize when DOM is ready
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                console.log('Production Scheduling module loaded');
+                // Wait for OrbitControls to be available
+                if (typeof THREE === 'undefined') {
+                    await new Promise(resolve => {
+                        const checkThree = () => {
+                            if (typeof THREE !== 'undefined') {
+                                resolve();
+                            } else {
+                                setTimeout(checkThree, 100);
+                            }
+                        };
+                        checkThree();
+                    });
+                }
+                await loadOrbitControls();
+                // Initialize the app
+                initializeApp();
+            } catch (error) {
+                console.error('Failed to initialize:', error);
+                showAuthError('Failed to load required dependencies: ' + error.message);
+            }
+        });
+    </script>
     <script src="scripts/production-scheduling.js"></script>
 </body>
 </html>
