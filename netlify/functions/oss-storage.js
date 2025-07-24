@@ -128,6 +128,7 @@ async function get2LeggedToken() {
 
         const tokenData = await response.json();
         console.log('✅ Token received successfully');
+        console.log('🔍 Granted scopes:', tokenData.scope || 'No scope in response');
 
         if (!tokenData.access_token) {
             throw new Error('No access token in response');
@@ -141,13 +142,13 @@ async function get2LeggedToken() {
     }
 }
 
-// Generate bucket key for project
+// Generate bucket key for project - SIMPLIFIED
 function generateBucketKey(projectId) {
     try {
-        const projectHash = Buffer.from(projectId).toString('base64')
-            .replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substr(0, 8);
+        // Create a simpler, more reliable bucket key
+        const projectClean = projectId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substr(0, 10);
         const timestamp = Date.now().toString().substr(-6);
-        const bucketKey = `metromont-castlink-${projectHash}-${timestamp}`.toLowerCase();
+        const bucketKey = `metromont-${projectClean}-${timestamp}`.toLowerCase();
 
         console.log('🪣 Generated bucket key:', bucketKey);
         return bucketKey;
@@ -157,15 +158,36 @@ function generateBucketKey(projectId) {
     }
 }
 
-// Sanitize object key to be OSS-compatible
-function sanitizeObjectKey(key) {
-    // Replace spaces and special characters with safe alternatives
-    return key
-        .replace(/\s+/g, '_')           // Replace spaces with underscores
-        .replace(/[#&+%]/g, '_')        // Replace problematic characters
-        .replace(/[^\w\-_./]/g, '')     // Remove any other special characters
-        .replace(/_{2,}/g, '_')         // Replace multiple underscores with single
-        .toLowerCase();                 // Convert to lowercase
+// Test OSS API access with basic calls
+async function testOSSAccess(token) {
+    try {
+        console.log('🧪 Testing basic OSS API access...');
+
+        // Test 1: List buckets (most basic OSS call)
+        const listResponse = await fetch('https://developer.api.autodesk.com/oss/v2/buckets', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'User-Agent': 'MetromontCastLink/2.0'
+            }
+        });
+
+        console.log('🧪 List buckets test:', listResponse.status);
+
+        if (listResponse.ok) {
+            const bucketsList = await listResponse.json();
+            console.log('✅ OSS API access confirmed, found', bucketsList.items?.length || 0, 'buckets');
+            return true;
+        } else {
+            const errorText = await listResponse.text();
+            console.log('❌ OSS API access failed:', listResponse.status, errorText);
+            return false;
+        }
+
+    } catch (error) {
+        console.error('❌ OSS API test failed:', error);
+        return false;
+    }
 }
 
 // Ensure bucket exists with enhanced error handling
@@ -175,6 +197,7 @@ async function ensureBucket(token, bucketKey) {
 
         // Check if bucket exists
         const checkResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/details`, {
+            method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'User-Agent': 'MetromontCastLink/2.0'
@@ -220,11 +243,14 @@ async function ensureBucket(token, bucketKey) {
                 throw new Error(`Failed to create bucket: ${createResponse.status} - ${errorText}`);
             }
 
+            const createResult = await createResponse.json();
             console.log('✅ Created new OSS bucket:', bucketKey);
-            return { exists: true, bucketKey, created: true };
+            return { exists: true, bucketKey, created: true, result: createResult };
         }
 
-        throw new Error(`Failed to check bucket: ${checkResponse.status}`);
+        // Handle other errors
+        const errorText = await checkResponse.text();
+        throw new Error(`Bucket check failed: ${checkResponse.status} - ${errorText}`);
 
     } catch (error) {
         console.error('❌ Error in ensureBucket:', error);
@@ -232,113 +258,10 @@ async function ensureBucket(token, bucketKey) {
     }
 }
 
-// Start resumable upload (NEW - Modern approach)
-async function startResumableUpload(token, bucketKey, objectKey, fileSize) {
-    try {
-        console.log('🚀 Starting resumable upload for:', objectKey);
-
-        const startResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/resumable`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'User-Agent': 'MetromontCastLink/2.0'
-            },
-            body: JSON.stringify({
-                ossbucketKey: bucketKey,
-                ossSourceFileObjectKey: objectKey,
-                byteSize: fileSize
-            })
-        });
-
-        console.log('🚀 Start resumable response status:', startResponse.status);
-
-        if (!startResponse.ok) {
-            const errorText = await startResponse.text();
-            throw new Error(`Failed to start resumable upload: ${startResponse.status} - ${errorText}`);
-        }
-
-        const startData = await startResponse.json();
-        console.log('✅ Resumable upload started successfully');
-
-        return startData;
-
-    } catch (error) {
-        console.error('❌ Error starting resumable upload:', error);
-        throw error;
-    }
-}
-
-// Upload chunk using resumable upload
-async function uploadChunk(uploadUrl, chunk, chunkStart, chunkEnd, totalSize) {
-    try {
-        console.log(`📤 Uploading chunk ${chunkStart}-${chunkEnd}/${totalSize}`);
-
-        const uploadResponse = await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/octet-stream',
-                'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${totalSize}`,
-                'Content-Length': chunk.length.toString()
-            },
-            body: chunk
-        });
-
-        console.log('📤 Chunk upload response status:', uploadResponse.status);
-
-        if (!uploadResponse.ok && uploadResponse.status !== 202) {
-            const errorText = await uploadResponse.text();
-            throw new Error(`Chunk upload failed: ${uploadResponse.status} - ${errorText}`);
-        }
-
-        console.log('✅ Chunk uploaded successfully');
-        return uploadResponse;
-
-    } catch (error) {
-        console.error('❌ Error uploading chunk:', error);
-        throw error;
-    }
-}
-
-// Complete resumable upload
-async function completeResumableUpload(token, bucketKey, objectKey, uploadKey) {
-    try {
-        console.log('🏁 Completing resumable upload...');
-
-        const completeResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/resumable`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'User-Agent': 'MetromontCastLink/2.0'
-            },
-            body: JSON.stringify({
-                uploadKey: uploadKey
-            })
-        });
-
-        console.log('🏁 Complete resumable response status:', completeResponse.status);
-
-        if (!completeResponse.ok) {
-            const errorText = await completeResponse.text();
-            throw new Error(`Failed to complete resumable upload: ${completeResponse.status} - ${errorText}`);
-        }
-
-        const completeData = await completeResponse.json();
-        console.log('✅ Resumable upload completed successfully');
-
-        return completeData;
-
-    } catch (error) {
-        console.error('❌ Error completing resumable upload:', error);
-        throw error;
-    }
-}
-
-// Save report to OSS with resumable upload approach (COMPLETELY UPDATED)
+// SIMPLIFIED Save approach - Basic file creation only
 async function saveReportToOSS(token, reportData) {
     try {
-        console.log('💾 Starting report save process...');
+        console.log('💾 Starting simplified report save process...');
 
         const { projectId, reportContent } = reportData;
 
@@ -350,19 +273,22 @@ async function saveReportToOSS(token, reportData) {
             throw new Error('Missing reportContent in report data');
         }
 
+        // First, test basic OSS access
+        const ossAccessOk = await testOSSAccess(token);
+        if (!ossAccessOk) {
+            throw new Error('Basic OSS API access failed - check token permissions');
+        }
+
         // Generate bucket key
         const bucketKey = generateBucketKey(projectId);
 
         // Ensure bucket exists
-        await ensureBucket(token, bucketKey);
+        const bucketResult = await ensureBucket(token, bucketKey);
 
-        // Generate object key with structured path and sanitization
-        const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-        const bedName = reportContent.reportData?.bedName || 'unknown-bed';
+        // Generate simple object key (avoid special characters completely)
         const reportId = reportContent.reportData?.reportId || 'unknown-report';
-
-        // Create sanitized object key (simpler format for compatibility)
-        const simpleObjectKey = `${reportId}_${date}.json`;
+        const date = new Date().toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
+        const simpleObjectKey = `report_${reportId}_${date}.json`;
 
         console.log('📁 Object key:', simpleObjectKey);
 
@@ -373,8 +299,8 @@ async function saveReportToOSS(token, reportData) {
                 bucketKey: bucketKey,
                 objectKey: simpleObjectKey,
                 savedAt: new Date().toISOString(),
-                version: '2.2',
-                storageType: 'oss-resumable',
+                version: '2.3',
+                storageType: 'oss-basic',
                 bucketPermissions: 'create,read,update,delete'
             }
         };
@@ -383,21 +309,28 @@ async function saveReportToOSS(token, reportData) {
         const fileSize = Buffer.byteLength(reportJSON, 'utf8');
         console.log('📊 Report size:', fileSize, 'bytes');
 
-        // Try resumable upload approach first, then simple fallback
-        try {
-            console.log('🔄 Method 1: Resumable upload (modern approach)');
+        console.log('🔄 Attempting basic file upload using multipart form...');
 
-            // Start resumable upload
-            const uploadSession = await startResumableUpload(token, bucketKey, simpleObjectKey, fileSize);
+        // Try multipart form upload (most compatible approach)
+        const formData = new FormData();
+        formData.append('key', simpleObjectKey);
+        formData.append('content-type', 'application/json');
+        formData.append('file', new Blob([reportJSON], { type: 'application/json' }), simpleObjectKey);
 
-            // For small files, upload in one chunk
-            const chunk = Buffer.from(reportJSON, 'utf8');
-            await uploadChunk(uploadSession.urls[0], chunk, 0, fileSize - 1, fileSize);
+        const uploadResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'User-Agent': 'MetromontCastLink/2.0'
+            },
+            body: formData
+        });
 
-            // Complete the upload
-            const completeResult = await completeResumableUpload(token, bucketKey, simpleObjectKey, uploadSession.uploadKey);
+        console.log('📤 Upload response status:', uploadResponse.status);
 
-            console.log('✅ Saved report to OSS successfully (Method 1 - Resumable Upload)');
+        if (uploadResponse.ok) {
+            const uploadResult = await uploadResponse.json();
+            console.log('✅ Saved report to OSS successfully (Multipart Form Upload)');
 
             return {
                 statusCode: 200,
@@ -408,80 +341,17 @@ async function saveReportToOSS(token, reportData) {
                     objectKey: simpleObjectKey,
                     size: fileSize,
                     reportId: reportId,
-                    uploadResult: completeResult,
-                    method: 'oss-storage-resumable-v2.2',
+                    uploadResult: uploadResult,
+                    method: 'oss-storage-multipart-v2.3',
                     bucketPermissions: 'create,read,update,delete'
                 })
             };
+        } else {
+            const errorText = await uploadResponse.text();
+            console.log('❌ Multipart upload failed:', uploadResponse.status, errorText);
 
-        } catch (resumableError) {
-            console.log('❌ Resumable upload failed, trying simple approach...');
-            console.log('Resumable error:', resumableError.message);
-
-            // FINAL FALLBACK: Try the most basic approach possible
-            console.log('🔄 Method 2: Basic object creation fallback');
-
-            try {
-                // Try creating object via POST (alternative approach)
-                const basicResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                        'User-Agent': 'MetromontCastLink/2.0'
-                    },
-                    body: JSON.stringify({
-                        objectKey: simpleObjectKey,
-                        contentType: 'application/json',
-                        contentEncoding: 'utf-8'
-                    })
-                });
-
-                console.log('📤 Basic object creation response status:', basicResponse.status);
-
-                if (basicResponse.ok) {
-                    // If object creation succeeded, now try to upload content
-                    console.log('✅ Basic object created, now uploading content...');
-
-                    // Store content using simple approach
-                    const contentResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${simpleObjectKey}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json',
-                            'User-Agent': 'MetromontCastLink/2.0'
-                        },
-                        body: reportJSON
-                    });
-
-                    if (contentResponse.ok || contentResponse.status === 200 || contentResponse.status === 201) {
-                        console.log('✅ Content uploaded successfully via basic method');
-
-                        return {
-                            statusCode: 200,
-                            headers: { 'Access-Control-Allow-Origin': '*' },
-                            body: JSON.stringify({
-                                success: true,
-                                bucketKey: bucketKey,
-                                objectKey: simpleObjectKey,
-                                size: fileSize,
-                                reportId: reportId,
-                                method: 'oss-storage-basic-fallback',
-                                bucketPermissions: 'create,read,update,delete',
-                                note: 'Used basic object creation fallback'
-                            })
-                        };
-                    }
-                }
-
-                // If all OSS methods fail, this is likely an API compatibility issue
-                console.log('❌ All OSS upload methods failed');
-                throw new Error(`All OSS upload methods failed. This may indicate API compatibility issues. Resumable error: ${resumableError.message}`);
-
-            } catch (basicError) {
-                console.log('❌ Basic upload also failed:', basicError.message);
-                throw new Error(`All upload methods failed. Resumable: ${resumableError.message}. Basic: ${basicError.message}`);
-            }
+            // If multipart fails, this indicates a fundamental OSS API issue
+            throw new Error(`OSS upload failed: ${uploadResponse.status} - ${errorText}. This may indicate OSS API is not available or misconfigured.`);
         }
 
     } catch (error) {
@@ -504,6 +374,7 @@ async function loadReportsFromOSS(token, projectId) {
         // Try to get bucket contents
         console.log('📋 Listing bucket contents...');
         const listResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects`, {
+            method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'User-Agent': 'MetromontCastLink/2.0'
@@ -577,6 +448,7 @@ async function loadSingleReportFromOSS(token, bucketKey, objectKey) {
         console.log('📄 Loading single report:', objectKey);
 
         const downloadResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}`, {
+            method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'User-Agent': 'MetromontCastLink/2.0'
