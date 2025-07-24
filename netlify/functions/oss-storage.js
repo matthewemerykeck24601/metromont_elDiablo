@@ -282,10 +282,10 @@ async function ensureBucket(token, bucketKey) {
     }
 }
 
-// CORRECT APPROACH - Using Data Management v2 API endpoint
+// CORRECTED APPROACH - Using Data Management v2 API with octet-stream
 async function saveReportToOSS(token, reportData) {
     try {
-        console.log('💾 Starting upload using CORRECT Data Management v2 endpoint...');
+        console.log('💾 Starting upload using CORRECT Data Management v2 with octet-stream...');
 
         const { projectId, reportContent } = reportData;
 
@@ -323,8 +323,8 @@ async function saveReportToOSS(token, reportData) {
                 bucketKey: bucketKey,
                 objectKey: simpleObjectKey,
                 savedAt: new Date().toISOString(),
-                version: '2.5',
-                storageType: 'data-v2-api',
+                version: '2.6',
+                storageType: 'data-v2-octet-stream',
                 bucketPermissions: 'create,read,update,delete'
             }
         };
@@ -333,77 +333,85 @@ async function saveReportToOSS(token, reportData) {
         const fileSize = Buffer.byteLength(reportJSON, 'utf8');
         console.log('📊 Report size:', fileSize, 'bytes');
 
-        console.log('🔄 Using CORRECT endpoint: https://developer.api.autodesk.com/data/v2/objects');
+        console.log('🔄 Method 1: Data Management v2 with octet-stream FormData...');
 
-        // CORRECT METHOD: Use Data Management v2 API with proper FormData structure
+        // METHOD 1: Use Data Management v2 API with octet-stream FormData
         const formData = new FormData();
-        formData.append('file', new Blob([reportJSON], { type: 'application/json' }), simpleObjectKey);
+        formData.append('file', new Blob([reportJSON], { type: 'application/octet-stream' }), simpleObjectKey);
         formData.append('bucketKey', bucketKey);
         formData.append('objectKey', simpleObjectKey);
-        formData.append('contentType', 'application/json');
+        formData.append('contentType', 'application/octet-stream');
 
-        console.log('📤 Uploading using correct Data Management v2 endpoint...');
-        console.log('🔧 FormData fields: file, bucketKey, objectKey, contentType');
+        console.log('📤 Uploading to: https://developer.api.autodesk.com/data/v2/objects');
+        console.log('🔧 FormData fields: file (octet-stream), bucketKey, objectKey, contentType');
 
-        const uploadResponse = await fetch('https://developer.api.autodesk.com/data/v2/objects', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'User-Agent': 'MetromontCastLink/2.5'
-                // Note: No Content-Type header - let browser set it for FormData
-            },
-            body: formData
-        });
+        try {
+            const uploadResponse = await fetch('https://developer.api.autodesk.com/data/v2/objects', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'User-Agent': 'MetromontCastLink/2.6'
+                    // Note: No Content-Type header - let browser set it for FormData
+                },
+                body: formData
+            });
 
-        console.log('📤 Data v2 upload response status:', uploadResponse.status);
+            console.log('📤 Data v2 upload response status:', uploadResponse.status);
 
-        if (uploadResponse.ok) {
-            const uploadResult = await uploadResponse.json();
-            console.log('✅ Saved report to OSS successfully (Data Management v2 API)');
+            if (uploadResponse.ok) {
+                const uploadResult = await uploadResponse.json();
+                console.log('✅ Saved report to OSS successfully (Data Management v2 - octet-stream)');
 
-            return {
-                statusCode: 200,
-                headers: { 'Access-Control-Allow-Origin': '*' },
-                body: JSON.stringify({
-                    success: true,
-                    bucketKey: bucketKey,
-                    objectKey: simpleObjectKey,
-                    size: fileSize,
-                    reportId: reportId,
-                    uploadResult: uploadResult,
-                    method: 'data-management-v2-api-v2.5',
-                    bucketPermissions: 'create,read,update,delete',
-                    endpoint: 'https://developer.api.autodesk.com/data/v2/objects'
-                })
-            };
-        } else {
-            const errorText = await uploadResponse.text();
-            console.log('❌ Data v2 upload failed:', uploadResponse.status, errorText);
-
-            // If the correct endpoint fails, try a fallback approach
-            console.log('🔄 Fallback: Try without FormData (raw JSON POST)...');
-
-            try {
-                const fallbackResponse = await fetch('https://developer.api.autodesk.com/data/v2/objects', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                        'User-Agent': 'MetromontCastLink/2.5'
-                    },
+                return {
+                    statusCode: 200,
+                    headers: { 'Access-Control-Allow-Origin': '*' },
                     body: JSON.stringify({
+                        success: true,
                         bucketKey: bucketKey,
                         objectKey: simpleObjectKey,
-                        contentType: 'application/json',
-                        content: reportJSON
+                        size: fileSize,
+                        reportId: reportId,
+                        uploadResult: uploadResult,
+                        method: 'data-management-v2-octet-stream',
+                        bucketPermissions: 'create,read,update,delete',
+                        endpoint: 'https://developer.api.autodesk.com/data/v2/objects'
                     })
+                };
+            } else {
+                const errorText = await uploadResponse.text();
+                console.log('❌ Data v2 FormData upload failed:', uploadResponse.status, errorText);
+                throw new Error(`Data v2 FormData upload failed: ${uploadResponse.status} - ${errorText}`);
+            }
+
+        } catch (formDataError) {
+            console.log('❌ FormData method failed:', formDataError.message);
+
+            // METHOD 2: Try OSS v2 direct upload as fallback
+            console.log('🔄 Method 2: Fallback to OSS v2 direct upload...');
+
+            try {
+                const ossDirectResponse = await fetch(`https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${simpleObjectKey}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/octet-stream',
+                        'Content-Length': fileSize.toString(),
+                        'User-Agent': 'MetromontCastLink/2.6'
+                    },
+                    body: reportJSON
                 });
 
-                console.log('📤 Fallback JSON upload response status:', fallbackResponse.status);
+                console.log('📤 OSS v2 direct upload response status:', ossDirectResponse.status);
 
-                if (fallbackResponse.ok) {
-                    const fallbackResult = await fallbackResponse.json();
-                    console.log('✅ Saved report to OSS successfully (JSON Fallback)');
+                if (ossDirectResponse.ok) {
+                    let uploadResult;
+                    try {
+                        uploadResult = await ossDirectResponse.json();
+                    } catch (jsonError) {
+                        uploadResult = { status: 'uploaded', objectKey: simpleObjectKey };
+                    }
+
+                    console.log('✅ Saved report to OSS successfully (OSS v2 Direct Upload Fallback)');
 
                     return {
                         statusCode: 200,
@@ -414,19 +422,62 @@ async function saveReportToOSS(token, reportData) {
                             objectKey: simpleObjectKey,
                             size: fileSize,
                             reportId: reportId,
-                            uploadResult: fallbackResult,
-                            method: 'data-management-v2-json-fallback',
+                            uploadResult: uploadResult,
+                            method: 'oss-v2-direct-octet-stream-fallback',
                             bucketPermissions: 'create,read,update,delete',
-                            endpoint: 'https://developer.api.autodesk.com/data/v2/objects'
+                            note: 'Used OSS v2 direct upload as Data v2 failed'
                         })
                     };
                 } else {
-                    const fallbackErrorText = await fallbackResponse.text();
-                    throw new Error(`Both FormData and JSON methods failed. FormData: ${errorText}. JSON: ${fallbackErrorText}`);
+                    const errorText = await ossDirectResponse.text();
+                    throw new Error(`OSS v2 direct upload failed: ${ossDirectResponse.status} - ${errorText}`);
                 }
 
-            } catch (fallbackError) {
-                throw new Error(`Data v2 upload failed with both methods. Original: ${errorText}. Fallback: ${fallbackError.message}`);
+            } catch (ossDirectError) {
+                console.log('❌ OSS v2 direct upload also failed:', ossDirectError.message);
+
+                // METHOD 3: Try a completely different approach - Object Storage API v1
+                console.log('🔄 Method 3: Try Object Storage v1 API...');
+
+                try {
+                    const osV1Response = await fetch(`https://developer.api.autodesk.com/oss/v1/buckets/${bucketKey}/objects/${simpleObjectKey}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/octet-stream',
+                            'User-Agent': 'MetromontCastLink/2.6'
+                        },
+                        body: reportJSON
+                    });
+
+                    console.log('📤 OSS v1 upload response status:', osV1Response.status);
+
+                    if (osV1Response.ok) {
+                        console.log('✅ Saved report to OSS successfully (OSS v1 API)');
+
+                        return {
+                            statusCode: 200,
+                            headers: { 'Access-Control-Allow-Origin': '*' },
+                            body: JSON.stringify({
+                                success: true,
+                                bucketKey: bucketKey,
+                                objectKey: simpleObjectKey,
+                                size: fileSize,
+                                reportId: reportId,
+                                method: 'oss-v1-octet-stream',
+                                bucketPermissions: 'create,read,update,delete',
+                                note: 'Used OSS v1 API as v2 methods failed'
+                            })
+                        };
+                    } else {
+                        const errorText = await osV1Response.text();
+                        throw new Error(`OSS v1 upload failed: ${osV1Response.status} - ${errorText}`);
+                    }
+
+                } catch (osV1Error) {
+                    // All methods failed
+                    throw new Error(`All upload methods failed. Data v2: ${formDataError.message}. OSS v2: ${ossDirectError.message}. OSS v1: ${osV1Error.message}`);
+                }
             }
         }
 
