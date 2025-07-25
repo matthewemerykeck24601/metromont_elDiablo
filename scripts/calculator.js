@@ -1,6 +1,6 @@
 ﻿// Engineering Calculator JavaScript
 
-// Global Variables
+// Global Variables (matching QC pattern)
 let forgeAccessToken = null;
 let selectedProject = null;
 let selectedProjectData = null;
@@ -8,6 +8,10 @@ let selectedModel = null;
 let forgeViewer = null;
 let calculationHistory = [];
 let currentCalculation = null;
+let globalHubData = null;
+let userProjects = []; // Added from QC pattern
+let hubId = null; // Added from QC pattern
+let projectId = null; // Added from QC pattern
 
 // Bed Information from uploaded file
 const BED_INFO = {
@@ -34,24 +38,147 @@ const BED_INFO = {
     }
 };
 
-// Initialize the calculator
-async function initializeCalculator() {
-    console.log('Initializing Engineering Calculator...');
-
+// Load pre-loaded hub data (EXACT SAME as QC Bed Report)
+async function loadPreLoadedHubData() {
     try {
-        // Check authentication from parent app
-        await checkAuthentication();
-
-        // Complete authentication and load projects
-        if (forgeAccessToken) {
-            await completeAuthentication();
+        // Try to get hub data from parent window first - FIXED: window.opener not window.parent
+        if (!globalHubData && window.opener && window.opener.CastLinkAuth) {
+            globalHubData = window.opener.CastLinkAuth.getHubData();
         }
 
-        console.log('Calculator initialized successfully');
+        // If not available, try to load from session storage
+        if (!globalHubData) {
+            const storedHubData = sessionStorage.getItem('castlink_hub_data');
+            if (storedHubData) {
+                globalHubData = JSON.parse(storedHubData);
+                console.log('✅ Loaded hub data from session storage');
+            }
+        }
+
+        if (globalHubData && globalHubData.projects && globalHubData.projects.length > 0) {
+            // Use the pre-loaded project data - EXACT SAME as QC
+            userProjects = globalHubData.projects;
+            hubId = globalHubData.hubId;
+
+            // Set default project - EXACT SAME as QC
+            if (globalHubData.projects.length > 0) {
+                projectId = globalHubData.projects[0].id;
+            }
+
+            // Call populateProjectDropdown HERE (not in completeAuthentication) - EXACT SAME as QC
+            populateProjectDropdown(globalHubData.projects);
+
+            console.log('✅ Using pre-loaded hub data:');
+            console.log('   Hub ID:', globalHubData.hubId);
+            console.log('   Projects:', globalHubData.projects.length);
+            console.log('   Loaded at:', globalHubData.loadedAt);
+
+        } else {
+            console.warn('⚠️ No pre-loaded hub data available, falling back to manual entry');
+            await handleMissingHubData();
+        }
+
     } catch (error) {
-        console.error('Failed to initialize calculator:', error);
+        console.error('Error loading pre-loaded hub data:', error);
+        await handleMissingHubData();
+    }
+}
+
+function populateProjectDropdown(projects) {
+    try {
+        userProjects = projects; // EXACT SAME as QC
+        const projectSelect = document.getElementById('projectSelect');
+
+        if (!projectSelect) {
+            console.error('Project select element not found');
+            return;
+        }
+
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
+        projectSelect.innerHTML = `<option value="">Select a project from ${accountName}...</option>`;
+
+        projects.forEach((project) => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ' (' + project.number + ')' : ''}`;
+            option.dataset.projectNumber = project.number || '';
+            option.dataset.location = project.location || '';
+            option.dataset.permissions = project.permissions || 'basic';
+            projectSelect.appendChild(option);
+        });
+
+        projectSelect.disabled = false;
+
+        // Auto-select first project - EXACT SAME as QC
+        if (projects.length > 0) {
+            setTimeout(() => {
+                projectSelect.value = projects[0].id;
+                projectId = projects[0].id;
+                onProjectChange(); // Use our function name
+            }, 100);
+        }
+
+    } catch (error) {
+        console.error('Error in populateProjectDropdown:', error);
+        throw error;
+    }
+}
+
+async function handleMissingHubData() {
+    console.log('Setting up manual entry fallback...');
+
+    const projectSelect = document.getElementById('projectSelect');
+    if (projectSelect) {
+        projectSelect.innerHTML = '<option value="">No projects available - please authenticate from main dashboard</option>';
+        projectSelect.disabled = true;
+    }
+}
+
+// Initialize the calculator
+// Initialize the calculator - EXACT SAME pattern as QC
+async function initializeCalculator() {
+    try {
+        console.log('=== ENGINEERING CALCULATOR INITIALIZATION ===');
+
+        // Check if opened from main app (same as QC pattern)
+        if (window.opener && window.opener.CastLinkAuth) {
+            const parentAuth = window.opener.CastLinkAuth;
+            const isParentAuth = await parentAuth.waitForAuth();
+
+            if (isParentAuth) {
+                forgeAccessToken = parentAuth.getToken();
+                globalHubData = parentAuth.getHubData();
+                await completeAuthentication();
+                return;
+            }
+        }
+
+        // Fallback to stored token (same as QC pattern)
+        const storedToken = getStoredToken();
+        if (storedToken && !isTokenExpired(storedToken)) {
+            forgeAccessToken = storedToken.access_token;
+
+            const isValid = await verifyToken(forgeAccessToken);
+            if (isValid) {
+                await completeAuthentication();
+            } else {
+                clearStoredToken();
+                redirectToMainApp();
+            }
+        } else {
+            redirectToMainApp();
+        }
+    } catch (error) {
+        console.error('Calculator initialization failed:', error);
         showNotification('Failed to initialize calculator: ' + error.message, 'error');
     }
+}
+
+function redirectToMainApp() {
+    updateAuthStatus('Redirecting to Login...', 'Taking you to the main app for authentication...');
+    setTimeout(() => {
+        window.location.href = 'index.html';
+    }, 2000);
 }
 
 async function completeAuthentication() {
@@ -59,18 +186,13 @@ async function completeAuthentication() {
         updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
 
         // Load the hub data that was already loaded during main authentication
+        // This now calls populateProjectDropdown() internally - EXACT SAME as QC
         await loadPreLoadedHubData();
 
         const projectCount = globalHubData ? globalHubData.projects.length : 0;
-        const accountName = globalHubData && globalHubData.accountInfo ?
-            globalHubData.accountInfo.name : 'ACC Account';
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
 
         updateAuthStatus('✅ Connected', `Connected to ${accountName} with ${projectCount} projects available`);
-
-        // Populate project dropdown
-        if (globalHubData && globalHubData.projects) {
-            populateProjectDropdown(globalHubData.projects);
-        }
 
         // Load calculation history
         loadCalculationHistory();
@@ -186,30 +308,67 @@ async function loadProjects() {
 }
 
 // Project Selection
+// Project Selection - Updated to match QC pattern
 function onProjectChange() {
     const projectSelect = document.getElementById('projectSelect');
-    const projectInfo = document.getElementById('projectInfo');
-    const projectName = document.getElementById('projectName');
-    const projectDetails = document.getElementById('projectDetails');
-    const modelSelectBtn = document.getElementById('modelSelectBtn');
+    if (!projectSelect) return;
 
-    selectedProject = projectSelect.value;
+    const selectedOption = projectSelect.selectedOptions[0];
 
-    if (selectedProject && globalHubData && globalHubData.projects) {
-        selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
-        if (selectedProjectData) {
-            if (projectName) projectName.textContent = selectedProjectData.name;
-            if (projectDetails) projectDetails.textContent = 'Ready for engineering calculations';
-            if (modelSelectBtn) modelSelectBtn.disabled = false;
-            console.log('Project selected:', selectedProjectData.name);
-            return;
+    if (selectedOption && selectedOption.value) {
+        const projectNumber = selectedOption.dataset.projectNumber || '';
+        const location = selectedOption.dataset.location || '';
+        const permissions = selectedOption.dataset.permissions || 'basic';
+
+        projectId = selectedOption.value;
+        selectedProject = selectedOption.value; // Keep both for compatibility
+
+        // Find project data
+        if (globalHubData && globalHubData.projects) {
+            selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
+        }
+
+        // Update project info display
+        const projectName = document.getElementById('projectName');
+        const projectDetails = document.getElementById('projectDetails');
+        const modelSelectBtn = document.getElementById('modelSelectBtn');
+
+        if (projectName && selectedProjectData) {
+            projectName.textContent = selectedProjectData.name;
+        }
+
+        if (projectDetails) {
+            projectDetails.textContent = 'Ready for engineering calculations';
+        }
+
+        if (modelSelectBtn) {
+            modelSelectBtn.disabled = false;
+        }
+
+        console.log('Project selected:', selectedProjectData?.name || selectedProject);
+
+    } else {
+        // No selection
+        projectId = null;
+        selectedProject = null;
+        selectedProjectData = null;
+
+        const projectName = document.getElementById('projectName');
+        const projectDetails = document.getElementById('projectDetails');
+        const modelSelectBtn = document.getElementById('modelSelectBtn');
+
+        if (projectName) {
+            projectName.textContent = 'No project selected';
+        }
+
+        if (projectDetails) {
+            projectDetails.textContent = 'Select a project to begin calculations';
+        }
+
+        if (modelSelectBtn) {
+            modelSelectBtn.disabled = true;
         }
     }
-
-    // Fallback or no selection
-    if (projectName) projectName.textContent = selectedProject ? 'Project selected' : 'No project selected';
-    if (projectDetails) projectDetails.textContent = selectedProject ? 'Ready for engineering calculations' : 'Select a project to begin calculations';
-    if (modelSelectBtn) modelSelectBtn.disabled = !selectedProject;
 }
 
 // Model Selection Functions

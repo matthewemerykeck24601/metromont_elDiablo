@@ -1,37 +1,159 @@
 ﻿// Engineering & Drafting Module - Main Page Only
 
-// Global Variables
+// Global Variables (matching QC pattern)
 let forgeAccessToken = null;
 let isAuthenticated = false;
 let authCheckComplete = false;
 let selectedProject = null;
 let selectedProjectData = null;
 let globalHubData = null;
+let userProjects = []; // Added from QC pattern
+let hubId = null; // Added from QC pattern
+let projectId = null; // Added from QC pattern
+
+// Load pre-loaded hub data (EXACT SAME as QC Bed Report)
+async function loadPreLoadedHubData() {
+    try {
+        // Try to get hub data from parent window first - FIXED: window.opener not window.parent
+        if (!globalHubData && window.opener && window.opener.CastLinkAuth) {
+            globalHubData = window.opener.CastLinkAuth.getHubData();
+        }
+
+        // If not available, try to load from session storage
+        if (!globalHubData) {
+            const storedHubData = sessionStorage.getItem('castlink_hub_data');
+            if (storedHubData) {
+                globalHubData = JSON.parse(storedHubData);
+                console.log('✅ Loaded hub data from session storage');
+            }
+        }
+
+        if (globalHubData && globalHubData.projects && globalHubData.projects.length > 0) {
+            // Use the pre-loaded project data - EXACT SAME as QC
+            userProjects = globalHubData.projects;
+            hubId = globalHubData.hubId;
+
+            // Set default project - EXACT SAME as QC
+            if (globalHubData.projects.length > 0) {
+                projectId = globalHubData.projects[0].id;
+            }
+
+            // Call populateProjectDropdown HERE (not in completeAuthentication) - EXACT SAME as QC
+            populateProjectDropdown(globalHubData.projects);
+
+            console.log('✅ Using pre-loaded hub data:');
+            console.log('   Hub ID:', globalHubData.hubId);
+            console.log('   Projects:', globalHubData.projects.length);
+            console.log('   Loaded at:', globalHubData.loadedAt);
+
+        } else {
+            console.warn('⚠️ No pre-loaded hub data available, falling back to manual entry');
+            await handleMissingHubData();
+        }
+
+    } catch (error) {
+        console.error('Error loading pre-loaded hub data:', error);
+        await handleMissingHubData();
+    }
+}
+
+function populateProjectDropdown(projects) {
+    try {
+        userProjects = projects; // EXACT SAME as QC
+        const projectSelect = document.getElementById('projectSelect');
+
+        if (!projectSelect) {
+            console.error('Project select element not found');
+            return;
+        }
+
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
+        projectSelect.innerHTML = `<option value="">Select a project from ${accountName}...</option>`;
+
+        projects.forEach((project) => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ' (' + project.number + ')' : ''}`;
+            option.dataset.projectNumber = project.number || '';
+            option.dataset.location = project.location || '';
+            option.dataset.permissions = project.permissions || 'basic';
+            projectSelect.appendChild(option);
+        });
+
+        projectSelect.disabled = false;
+
+        // Auto-select first project - EXACT SAME as QC
+        if (projects.length > 0) {
+            setTimeout(() => {
+                projectSelect.value = projects[0].id;
+                projectId = projects[0].id;
+                onProjectChange(); // Use our function name instead of onProjectSelected
+            }, 100);
+        }
+
+    } catch (error) {
+        console.error('Error in populateProjectDropdown:', error);
+        throw error;
+    }
+}
+
+async function handleMissingHubData() {
+    console.log('Setting up manual entry fallback...');
+
+    const projectSelect = document.getElementById('projectSelect');
+    if (projectSelect) {
+        projectSelect.innerHTML = '<option value="">No projects available - please authenticate from main dashboard</option>';
+        projectSelect.disabled = true;
+    }
+}
 
 // Initialize the engineering page
+// Initialize the engineering page - EXACT SAME pattern as QC
 async function initializeEngineering() {
-    console.log('Initializing Engineering & Drafting module...');
-    
     try {
-        // Update auth status to show checking
-        updateAuthStatus('Checking authentication...', 'Connecting to ACC...');
-        
-        // Check authentication
-        await checkAuthentication();
-        
-        // If authenticated, complete the setup
-        if (isAuthenticated) {
-            await completeAuthentication();
+        console.log('=== ENGINEERING MODULE INITIALIZATION ===');
+
+        // Check if opened from main app (same as QC pattern)
+        if (window.opener && window.opener.CastLinkAuth) {
+            const parentAuth = window.opener.CastLinkAuth;
+            const isParentAuth = await parentAuth.waitForAuth();
+
+            if (isParentAuth) {
+                forgeAccessToken = parentAuth.getToken();
+                globalHubData = parentAuth.getHubData();
+                await completeAuthentication();
+                return;
+            }
         }
-        
-        console.log('Engineering module initialized successfully');
-        
+
+        // Fallback to stored token (same as QC pattern)
+        const storedToken = getStoredToken();
+        if (storedToken && !isTokenExpired(storedToken)) {
+            forgeAccessToken = storedToken.access_token;
+
+            const isValid = await verifyToken(forgeAccessToken);
+            if (isValid) {
+                await completeAuthentication();
+            } else {
+                clearStoredToken();
+                redirectToMainApp();
+            }
+        } else {
+            redirectToMainApp();
+        }
     } catch (error) {
-        console.error('Failed to initialize engineering module:', error);
+        console.error('Engineering module initialization failed:', error);
         showNotification('Failed to initialize: ' + error.message, 'error');
     } finally {
         authCheckComplete = true;
     }
+}
+
+function redirectToMainApp() {
+    updateAuthStatus('Redirecting to Login...', 'Taking you to the main app for authentication...');
+    setTimeout(() => {
+        window.location.href = 'index.html';
+    }, 2000);
 }
 
 async function completeAuthentication() {
@@ -39,21 +161,17 @@ async function completeAuthentication() {
         updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
 
         // Load the hub data that was already loaded during main authentication
-        // This is the SAME method used by QC Bed Report
+        // This now calls populateProjectDropdown() internally - EXACT SAME as QC
         await loadPreLoadedHubData();
 
+        isAuthenticated = true; // Set this flag
+
         const projectCount = globalHubData ? globalHubData.projects.length : 0;
-        const accountName = globalHubData && globalHubData.accountInfo ? 
-            globalHubData.accountInfo.name : 'ACC Account';
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
 
         updateAuthStatus('✅ Connected', `Connected to ${accountName} with ${projectCount} projects available`);
 
-        // Populate project dropdown - this is the key part that was missing!
-        if (globalHubData && globalHubData.projects) {
-            populateProjectDropdown(globalHubData.projects);
-        }
-
-        // Initialize UI after data is loaded
+        // Initialize UI after data is loaded - same as QC pattern
         initializeUI();
 
         console.log('✅ Engineering module ready with pre-loaded data');
@@ -171,26 +289,57 @@ function populateProjectDropdown(projects) {
 }
 
 // Project Selection
+// Project Selection - Updated to match QC pattern
 function onProjectChange() {
     const projectSelect = document.getElementById('projectSelect');
-    const projectName = document.getElementById('projectName');
-    const projectDetails = document.getElementById('projectDetails');
-    
-    selectedProject = projectSelect.value;
-    
-    if (selectedProject && globalHubData && globalHubData.projects) {
-        selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
-        if (selectedProjectData) {
-            if (projectName) projectName.textContent = selectedProjectData.name;
-            if (projectDetails) projectDetails.textContent = 'Project selected - ready for engineering tools';
-            console.log('Project selected:', selectedProjectData.name);
-            return;
+    if (!projectSelect) return;
+
+    const selectedOption = projectSelect.selectedOptions[0];
+
+    if (selectedOption && selectedOption.value) {
+        const projectNumber = selectedOption.dataset.projectNumber || '';
+        const location = selectedOption.dataset.location || '';
+        const permissions = selectedOption.dataset.permissions || 'basic';
+
+        projectId = selectedOption.value;
+        selectedProject = selectedOption.value; // Keep both for compatibility
+        
+        // Find project data
+        if (globalHubData && globalHubData.projects) {
+            selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
+        }
+
+        // Update project info display
+        const projectName = document.getElementById('projectName');
+        const projectDetails = document.getElementById('projectDetails');
+
+        if (projectName && selectedProjectData) {
+            projectName.textContent = selectedProjectData.name;
+        }
+
+        if (projectDetails) {
+            projectDetails.textContent = 'Project selected - ready for engineering tools';
+        }
+
+        console.log('Project selected:', selectedProjectData?.name || selectedProject);
+
+    } else {
+        // No selection
+        projectId = null;
+        selectedProject = null;
+        selectedProjectData = null;
+
+        const projectName = document.getElementById('projectName');
+        const projectDetails = document.getElementById('projectDetails');
+
+        if (projectName) {
+            projectName.textContent = 'No project selected';
+        }
+
+        if (projectDetails) {
+            projectDetails.textContent = 'Select a project to view design requirements';
         }
     }
-    
-    // Fallback or no selection
-    if (projectName) projectName.textContent = selectedProject ? 'Project selected' : 'No project selected';
-    if (projectDetails) projectDetails.textContent = selectedProject ? 'Ready for engineering tools' : 'Select a project to begin';
 }
 
 // Engineering Tool Functions
@@ -270,40 +419,29 @@ function openBOMQuery() {
 }
 
 // Authentication Helper Functions
+// Token Management - EXACT SAME as QC
 function getStoredToken() {
-    try {
-        // Try multiple storage locations for compatibility
-        let tokenStr = localStorage.getItem('forgeToken');
-        if (!tokenStr) {
-            tokenStr = sessionStorage.getItem('forge_token');
+    let stored = sessionStorage.getItem('forge_token');
+    if (!stored) {
+        stored = localStorage.getItem('forge_token_backup');
+        if (stored) {
+            sessionStorage.setItem('forge_token', stored);
         }
-        if (!tokenStr) {
-            tokenStr = localStorage.getItem('forge_token_backup');
-        }
-        
-        return tokenStr ? JSON.parse(tokenStr) : null;
-    } catch (error) {
-        console.error('Error reading stored token:', error);
-        return null;
     }
+    return stored ? JSON.parse(stored) : null;
 }
 
-function isTokenExpired(token) {
-    if (!token || !token.expires_at) return true;
+function isTokenExpired(tokenInfo) {
     const now = Date.now();
-    const expiresAt = token.expires_at;
+    const expiresAt = tokenInfo.expires_at;
     const timeUntilExpiry = expiresAt - now;
-    
-    // Consider token expired if it expires in less than 5 minutes
     return timeUntilExpiry < (5 * 60 * 1000);
 }
 
 function clearStoredToken() {
-    localStorage.removeItem('forgeToken');
     sessionStorage.removeItem('forge_token');
     localStorage.removeItem('forge_token_backup');
-    sessionStorage.removeItem('castlink_hub_data');
-    console.log('Stored tokens cleared');
+    console.log('Token cleared');
 }
 
 async function verifyToken(token) {
