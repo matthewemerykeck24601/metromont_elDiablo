@@ -267,7 +267,7 @@ async function completeAuthentication() {
     }
 }
 
-// Load pre-loaded hub data - SAME method as QC Bed Report
+// Load pre-loaded hub data - SAME method as QC Bed Report and Production Scheduling
 async function loadPreLoadedHubData() {
     try {
         // Try to get hub data from parent window first
@@ -275,28 +275,15 @@ async function loadPreLoadedHubData() {
             globalHubData = window.opener.CastLinkAuth.getHubData();
         }
 
-        // If not available, try to load from session storage
+        // If not available, try to load from session storage using the CORRECT key
         if (!globalHubData) {
-            const storedHubData = sessionStorage.getItem('hubData');
+            const storedHubData = sessionStorage.getItem('castlink_hub_data');
             if (storedHubData) {
                 try {
                     globalHubData = JSON.parse(storedHubData);
                     console.log('✅ Loaded hub data from session storage');
                 } catch (parseError) {
                     console.error('Error parsing stored hub data:', parseError);
-                }
-            }
-        }
-
-        // If still no data, try localStorage backup
-        if (!globalHubData) {
-            const backupHubData = localStorage.getItem('hubData_backup');
-            if (backupHubData) {
-                try {
-                    globalHubData = JSON.parse(backupHubData);
-                    console.log('✅ Loaded hub data from localStorage backup');
-                } catch (parseError) {
-                    console.error('Error parsing backup hub data:', parseError);
                 }
             }
         }
