@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -91,178 +91,187 @@
                                 load calculations, and structural verification specific to precast elements.
                             </p>
                             <div class="card-features">
-                                <div class="feature-tag">Stress Analysis</div>
-                                <div class="feature-tag">Load Calculations</div>
-                                <div class="feature-tag">Prestress Design</div>
-                                <div class="feature-tag">Code Compliance</div>
+                                <span class="feature-tag">Point Loads</span>
+                                <span class="feature-tag">Columns</span>
+                                <span class="feature-tag">Wall Panels</span>
+                                <span class="feature-tag">Beams</span>
+                                <span class="feature-tag">Double Tees</span>
                             </div>
-                            <div class="project-filter-info" id="calcProjectFilter">
-                                <span class="filter-label">Project-specific calculations available when project is selected</span>
+                            <div class="card-actions">
+                                <span class="action-hint">Click to open calculator →</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Engineering Design Summaries -->
+                    <!-- Design Summary Generator -->
                     <div class="engineering-card design-summary" onclick="openEngineeringTool('design-summary')">
                         <div class="card-header">
                             <div class="card-icon">
                                 <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                     <path d="M14 2v6h6" />
-                                    <path d="M16 13H8m8 2H8m4 2H8" />
+                                    <line x1="16" y1="13" x2="8" y2="13" />
+                                    <line x1="16" y1="17" x2="8" y2="17" />
+                                    <polyline points="10,9 9,9 8,9" />
                                 </svg>
                             </div>
                             <div class="card-title-section">
-                                <h3 class="card-title">Engineering Design Summaries</h3>
-                                <p class="card-subtitle">Technical documentation & reports</p>
+                                <h3 class="card-title">Design Summary Generator</h3>
+                                <p class="card-subtitle">Automated design documentation</p>
                             </div>
                             <div class="card-status">
-                                <span class="status-badge status-active">Ready</span>
+                                <span class="status-badge status-development">In Development</span>
                             </div>
                         </div>
                         <div class="card-content">
                             <p class="card-description">
-                                Generate comprehensive design summaries, technical specifications, and
-                                engineering reports with automatic integration from ACC project data.
+                                Automatically generate comprehensive design summaries from calculation data,
+                                model information, and production requirements for project documentation.
                             </p>
                             <div class="card-features">
-                                <div class="feature-tag">Design Reports</div>
-                                <div class="feature-tag">Spec Sheets</div>
-                                <div class="feature-tag">ACC Integration</div>
-                                <div class="feature-tag">Auto-Generation</div>
+                                <span class="feature-tag">Auto Generation</span>
+                                <span class="feature-tag">PDF Export</span>
+                                <span class="feature-tag">Template Based</span>
                             </div>
-                            <div class="project-filter-info" id="designProjectFilter">
-                                <span class="filter-label">Design summaries filtered by project requirements and specifications</span>
+                            <div class="card-actions">
+                                <span class="action-hint">Coming soon</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Right Column: Management & Query Tools -->
+                <!-- Right Column: Project Management Tools -->
                 <div class="engineering-column right-column">
-                    <h3 class="column-title">Management & Data</h3>
+                    <h3 class="column-title">Project Management</h3>
 
                     <!-- Piece Issue Management -->
                     <div class="engineering-card piece-issue" onclick="openEngineeringTool('piece-issue')">
                         <div class="card-header">
                             <div class="card-icon">
                                 <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
-                                    <path d="M11 11h2v6h-2z" />
-                                    <circle cx="12" cy="8" r="1" />
+                                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                                    <circle cx="12" cy="12" r="3" />
+                                    <path d="M12 1v6m0 6v6m-5-7h6m-6 0h6" />
                                 </svg>
                             </div>
                             <div class="card-title-section">
                                 <h3 class="card-title">Piece Issue Management</h3>
-                                <p class="card-subtitle">Track & resolve production issues</p>
+                                <p class="card-subtitle">Track and resolve design issues</p>
                             </div>
                             <div class="card-status">
-                                <span class="status-badge status-development">Development</span>
+                                <span class="status-badge status-development">In Development</span>
                             </div>
                         </div>
                         <div class="card-content">
                             <p class="card-description">
-                                Comprehensive issue tracking for precast pieces including design conflicts,
-                                production problems, quality concerns, and resolution workflows.
+                                Centralized issue tracking for precast pieces including design conflicts,
+                                manufacturing constraints, and field coordination requirements.
                             </p>
                             <div class="card-features">
-                                <div class="feature-tag">Issue Tracking</div>
-                                <div class="feature-tag">Workflow Management</div>
-                                <div class="feature-tag">Quality Control</div>
-                                <div class="feature-tag">Notifications</div>
+                                <span class="feature-tag">Issue Tracking</span>
+                                <span class="feature-tag">ACC Integration</span>
+                                <span class="feature-tag">Notifications</span>
                             </div>
-                            <div class="project-filter-info" id="issueProjectFilter">
-                                <span class="filter-label">Issue tracking scoped to selected project pieces and production runs</span>
+                            <div class="card-actions">
+                                <span class="action-hint">Coming soon</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- BOM Query System -->
+                    <!-- BOM Query Tool -->
                     <div class="engineering-card bom-query" onclick="openEngineeringTool('bom-query')">
                         <div class="card-header">
                             <div class="card-icon">
                                 <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M9 11H7v2h2v-2zm0 4H7v2h2v-2zm0-8H7v2h2V7zm4 4h-2v2h2v-2zm0 4h-2v2h2v-2zm0-8h-2v2h2V7zm4 4h-2v2h2v-2zm0 4h-2v2h2v-2zm0-8h-2v2h2V7z" />
-                                    <path d="M5 3v18a2 2 0 002 2h10a2 2 0 002-2V3a2 2 0 00-2-2H7a2 2 0 00-2 2z" />
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <path d="M14 2v6h6" />
+                                    <path d="M9 13h2v2H9z" />
+                                    <path d="M13 13h5v1h-5z" />
+                                    <path d="M13 15h3v1h-3z" />
+                                    <path d="M9 17h2v2H9z" />
+                                    <path d="M13 17h5v1h-5z" />
+                                    <path d="M13 19h3v1h-3z" />
                                 </svg>
                             </div>
                             <div class="card-title-section">
-                                <h3 class="card-title">BOM Query System</h3>
-                                <p class="card-subtitle">Material planning & cost analysis</p>
+                                <h3 class="card-title">BOM Query Tool</h3>
+                                <p class="card-subtitle">Bill of materials analysis</p>
                             </div>
                             <div class="card-status">
-                                <span class="status-badge status-development">Development</span>
+                                <span class="status-badge status-development">In Development</span>
                             </div>
                         </div>
                         <div class="card-content">
                             <p class="card-description">
-                                Advanced bill of materials querying with automated takeoffs, cost analysis,
-                                inventory integration, and procurement workflows.
+                                Advanced querying and analysis of bill of materials data from Revit models
+                                with integration to production scheduling and inventory systems.
                             </p>
                             <div class="card-features">
-                                <div class="feature-tag">Material Takeoffs</div>
-                                <div class="feature-tag">Cost Analysis</div>
-                                <div class="feature-tag">Inventory Sync</div>
-                                <div class="feature-tag">Procurement</div>
+                                <span class="feature-tag">Revit Integration</span>
+                                <span class="feature-tag">Material Takeoffs</span>
+                                <span class="feature-tag">Production Links</span>
                             </div>
-                            <div class="project-filter-info" id="bomProjectFilter">
-                                <span class="filter-label">BOM data scoped to selected project materials and specifications</span>
+                            <div class="card-actions">
+                                <span class="action-hint">Coming soon</span>
                             </div>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <section class="quick-actions">
+            <!-- Quick Actions Section -->
+            <section class="quick-actions-section">
                 <h3 class="section-title">Quick Actions</h3>
-                <div class="actions-grid">
-                    <button class="action-btn" onclick="createNewCalculation()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <div class="quick-actions-grid">
+                    <button class="quick-action-btn" onclick="openEngineeringTool('calculator')" disabled>
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" />
+                            <path d="M9 9h2v2H9z" />
+                            <path d="M13 9h2v2H13z" />
+                            <path d="M9 13h2v2H9z" />
+                            <path d="M13 13h2v2H13z" />
                         </svg>
                         New Calculation
                     </button>
-                    <button class="action-btn" onclick="generateReport()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+                    <button class="quick-action-btn" onclick="showNotification('Feature coming soon', 'info')">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <path d="M14 2v6h6" />
                         </svg>
                         Generate Report
                     </button>
-                    <button class="action-btn" onclick="syncWithACC()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 4L12 1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8z" />
+                    <button class="quick-action-btn" onclick="showNotification('Feature coming soon', 'info')">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                            <polyline points="3.27,6.96 12,12.01 20.73,6.96" />
+                            <line x1="12" y1="22.08" x2="12" y2="12" />
                         </svg>
-                        Sync with ACC
+                        View 3D Model
                     </button>
-                    <button class="action-btn" onclick="viewRecentItems()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <button class="quick-action-btn" onclick="showNotification('Feature coming soon', 'info')">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
                         </svg>
-                        Recent Items
+                        Search Issues
                     </button>
                 </div>
             </section>
         </main>
 
-        <footer class="main-footer">
-            <p>&copy; 2025 Metromont Corporation. All rights reserved. | Engineering & Drafting Module</p>
+        <footer class="footer">
+            <div class="footer-content">
+                <p>&copy; 2025 Metromont Corporation - CastLink Engineering Module</p>
+                <p>Integrated with Autodesk Construction Cloud for seamless project management</p>
+            </div>
         </footer>
-    </div>
 
-    <!-- Notification System -->
-    <div class="notification" id="notification">
-        <span id="notificationText"></span>
-    </div>
-
-    <!-- Loading Overlay -->
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="loading-spinner">
-            <div class="spinner"></div>
-            <p>Loading engineering tools...</p>
+        <!-- Notification System -->
+        <div class="notification" id="notification">
+            <div class="notification-content" id="notificationText"></div>
         </div>
     </div>
 
     <script src="scripts/engineering.js"></script>
 </body>
-
 </html>
