@@ -46,24 +46,15 @@
                             issue management, and bill of materials integration with ACC and Revit.
                         </p>
                     </div>
-                    <div class="bed-selection-panel" id="bedSelectionPanel">
-                        <label for="bedSelect">Production Bed:</label>
-                        <select id="bedSelect" onchange="onBedChange()">
-                            <option value="">Select a bed...</option>
-                            <option value="beam">Beam Bed - Long Structural Elements</option>
-                            <option value="deck1">Deck Bed #1 - Double Tees & Slabs</option>
-                            <option value="deck2">Deck Bed #2 - Double Tees & Slabs</option>
-                            <option value="flatbed1">Flat Bed #1 - Wall Panels & Columns</option>
-                            <option value="flatbed2">Flat Bed #2 - Wall Panels & Columns</option>
-                            <option value="flatbed3">Flat Bed #3 - Specialty Elements</option>
-                            <option value="flatbed4">Flat Bed #4 - Wall Panels</option>
-                            <option value="flatbed5">Flat Bed #5 - Wall Panels</option>
-                            <option value="flatbed6">Flat Bed #6 - Columns & Beams</option>
-                            <option value="flatbed7">Flat Bed #7 - Mixed Elements</option>
+                    <div class="project-selection-panel" id="projectSelectionPanel">
+                        <label for="projectSelect">Project:</label>
+                        <select id="projectSelect" onchange="onProjectChange()">
+                            <option value="">Select a project...</option>
+                            <option value="">Loading projects...</option>
                         </select>
-                        <div class="bed-info" id="bedInfo">
-                            <span class="bed-type" id="bedType">No bed selected</span>
-                            <span class="bed-capacity" id="bedCapacity">Select a bed to view capacity details</span>
+                        <div class="project-info" id="projectInfo">
+                            <span class="project-name" id="projectName">No project selected</span>
+                            <span class="project-details" id="projectDetails">Select a project to view design requirements</span>
                         </div>
                     </div>
                 </div>
@@ -99,8 +90,8 @@
                             <div class="feature-tag">Prestress Design</div>
                             <div class="feature-tag">Code Compliance</div>
                         </div>
-                        <div class="bed-filter-info" id="calcBedFilter">
-                            <span class="filter-label">Bed-specific calculations available when bed is selected</span>
+                        <div class="project-filter-info" id="calcProjectFilter">
+                            <span class="filter-label">Project-specific calculations available when project is selected</span>
                         </div>
                     </div>
                 </div>
@@ -133,8 +124,8 @@
                             <div class="feature-tag">ACC Integration</div>
                             <div class="feature-tag">Auto-Generation</div>
                         </div>
-                        <div class="bed-filter-info" id="designBedFilter">
-                            <span class="filter-label">Design summaries filtered by bed type and capacity</span>
+                        <div class="project-filter-info" id="designProjectFilter">
+                            <span class="filter-label">Design summaries filtered by project requirements and specifications</span>
                         </div>
                     </div>
                 </div>
@@ -167,8 +158,8 @@
                             <div class="feature-tag">Design Conflicts</div>
                             <div class="feature-tag">Quality Alerts</div>
                         </div>
-                        <div class="bed-filter-info" id="issueBedFilter">
-                            <span class="filter-label">Issues filtered by selected bed and associated pieces</span>
+                        <div class="project-filter-info" id="issueProjectFilter">
+                            <span class="filter-label">Issues filtered by selected project and associated design elements</span>
                         </div>
                     </div>
                 </div>
@@ -200,8 +191,8 @@
                             <div class="feature-tag">Inventory Sync</div>
                             <div class="feature-tag">Procurement</div>
                         </div>
-                        <div class="bed-filter-info" id="bomBedFilter">
-                            <span class="filter-label">BOM data scoped to selected bed production requirements</span>
+                        <div class="project-filter-info" id="bomProjectFilter">
+                            <span class="filter-label">BOM data scoped to selected project materials and specifications</span>
                         </div>
                     </div>
                 </div>

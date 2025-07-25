@@ -165,20 +165,20 @@ body {
     line-height: 1.6;
 }
 
-.bed-selection-panel {
+.project-selection-panel {
     display: flex;
     flex-direction: column;
     gap: 1rem;
     min-width: 300px;
 }
 
-    .bed-selection-panel label {
+    .project-selection-panel label {
         font-size: 0.875rem;
         font-weight: 600;
         color: var(--gray-700);
     }
 
-    .bed-selection-panel select {
+    .project-selection-panel select {
         padding: 0.75rem;
         border: 2px solid var(--gray-200);
         border-radius: 8px;
@@ -187,24 +187,24 @@ body {
         transition: border-color 0.2s ease;
     }
 
-        .bed-selection-panel select:focus {
+        .project-selection-panel select:focus {
             outline: none;
             border-color: var(--primary-blue);
         }
 
-.bed-info {
+.project-info {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
 }
 
-.bed-type {
+.project-name {
     font-weight: 600;
     color: var(--gray-800);
     font-size: 0.875rem;
 }
 
-.bed-capacity {
+.project-details {
     font-size: 0.75rem;
     color: var(--gray-600);
 }
@@ -356,7 +356,7 @@ body {
     font-weight: 500;
 }
 
-.bed-filter-info {
+.project-filter-info {
     padding: 0.75rem;
     background: var(--gray-50);
     border-radius: 8px;

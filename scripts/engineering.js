@@ -20,167 +20,33 @@ let hubId = null;
 let projectId = null;
 let isAuthenticated = false;
 let globalHubData = null;
-let currentBed = null;
-let selectedBedData = null;
-
-// Bed Configurations - Enhanced with production capabilities
-const BED_CONFIGS = {
-    beam: { 
-        length: 500, 
-        width: 10, 
-        height: 0.5, 
-        type: 'beam', 
-        color: 0x8B4513,
-        capacity: 'Long Structural Elements',
-        suitableFor: ['beam', 'girder', 'spandrel'],
-        maxLength: 500,
-        maxWidth: 10,
-        maxWeight: 50000,
-        description: 'Designed for casting long structural beams, girders, and spandrel elements'
-    },
-    deck1: { 
-        length: 400, 
-        width: 15, 
-        height: 0.5, 
-        type: 'deck', 
-        color: 0x696969,
-        capacity: 'Double Tees & Slabs',
-        suitableFor: ['doubletee', 'slab', 'deck'],
-        maxLength: 400,
-        maxWidth: 15,
-        maxWeight: 35000,
-        description: 'Optimized for double tee and slab production'
-    },
-    deck2: { 
-        length: 400, 
-        width: 15, 
-        height: 0.5, 
-        type: 'deck', 
-        color: 0x696969,
-        capacity: 'Double Tees & Slabs',
-        suitableFor: ['doubletee', 'slab', 'deck'],
-        maxLength: 400,
-        maxWidth: 15,
-        maxWeight: 35000,
-        description: 'Optimized for double tee and slab production'
-    },
-    flatbed1: { 
-        length: 300, 
-        width: 12, 
-        height: 0.5, 
-        type: 'flat', 
-        color: 0x708090,
-        capacity: 'Wall Panels & Columns',
-        suitableFor: ['wall', 'column', 'panel'],
-        maxLength: 300,
-        maxWidth: 12,
-        maxWeight: 25000,
-        description: 'Ideal for wall panels and column casting'
-    },
-    flatbed2: { 
-        length: 300, 
-        width: 12, 
-        height: 0.5, 
-        type: 'flat', 
-        color: 0x708090,
-        capacity: 'Wall Panels & Columns',
-        suitableFor: ['wall', 'column', 'panel'],
-        maxLength: 300,
-        maxWidth: 12,
-        maxWeight: 25000,
-        description: 'Ideal for wall panels and column casting'
-    },
-    flatbed3: { 
-        length: 300, 
-        width: 12, 
-        height: 0.5, 
-        type: 'flat', 
-        color: 0x708090,
-        capacity: 'Specialty Elements',
-        suitableFor: ['specialty', 'custom', 'mixed'],
-        maxLength: 300,
-        maxWidth: 12,
-        maxWeight: 25000,
-        description: 'Flexible bed for specialty and custom elements'
-    },
-    flatbed4: { 
-        length: 300, 
-        width: 12, 
-        height: 0.5, 
-        type: 'flat', 
-        color: 0x708090,
-        capacity: 'Wall Panels',
-        suitableFor: ['wall', 'panel'],
-        maxLength: 300,
-        maxWidth: 12,
-        maxWeight: 25000,
-        description: 'Dedicated to wall panel production'
-    },
-    flatbed5: { 
-        length: 300, 
-        width: 12, 
-        height: 0.5, 
-        type: 'flat', 
-        color: 0x708090,
-        capacity: 'Wall Panels',
-        suitableFor: ['wall', 'panel'],
-        maxLength: 300,
-        maxWidth: 12,
-        maxWeight: 25000,
-        description: 'Dedicated to wall panel production'
-    },
-    flatbed6: { 
-        length: 300, 
-        width: 12, 
-        height: 0.5, 
-        type: 'flat', 
-        color: 0x708090,
-        capacity: 'Columns & Beams',
-        suitableFor: ['column', 'beam', 'structural'],
-        maxLength: 300,
-        maxWidth: 12,
-        maxWeight: 25000,
-        description: 'Optimized for columns and structural beams'
-    },
-    flatbed7: { 
-        length: 300, 
-        width: 12, 
-        height: 0.5, 
-        type: 'flat', 
-        color: 0x708090,
-        capacity: 'Mixed Elements',
-        suitableFor: ['mixed', 'various', 'custom'],
-        maxLength: 300,
-        maxWidth: 12,
-        maxWeight: 25000,
-        description: 'Versatile bed for various element types'
-    }
-};
+let currentProject = null;
+let selectedProjectData = null;
 
 // Engineering Tool Configurations
 const ENGINEERING_TOOLS = {
     calculator: {
         name: 'Engineering Calculator',
         description: 'Precast design calculations & analysis',
-        bedDependent: true,
+        projectDependent: true,
         features: ['Stress Analysis', 'Load Calculations', 'Prestress Design', 'Code Compliance']
     },
     'design-summary': {
         name: 'Engineering Design Summaries',
         description: 'Technical documentation & reports',
-        bedDependent: true,
+        projectDependent: true,
         features: ['Design Reports', 'Spec Sheets', 'ACC Integration', 'Auto-Generation']
     },
     'piece-issue': {
         name: 'Piece Issue Management',
         description: 'Track & resolve production issues',
-        bedDependent: true,
+        projectDependent: true,
         features: ['Issue Tracking', 'Resolution Workflow', 'Design Conflicts', 'Quality Alerts']
     },
     'bom-query': {
         name: 'BOM Query System',
         description: 'Bill of materials analysis & reporting',
-        bedDependent: true,
+        projectDependent: true,
         features: ['Material Takeoffs', 'Cost Analysis', 'Inventory Sync', 'Procurement']
     }
 };
@@ -240,6 +106,11 @@ async function loadInitialData() {
             }
         }
 
+        // Load projects into dropdown
+        if (globalHubData && globalHubData.projects) {
+            loadProjectOptions();
+        }
+
         updateAuthStatus('Connected', 'Engineering module ready');
         initializeEventListeners();
         
@@ -247,6 +118,25 @@ async function loadInitialData() {
         console.error('Error loading initial data:', error);
         updateAuthStatus('Error', 'Failed to load project data');
     }
+}
+
+// Load project options into dropdown
+function loadProjectOptions() {
+    const projectSelect = document.getElementById('projectSelect');
+    if (!projectSelect || !globalHubData || !globalHubData.projects) return;
+
+    // Clear existing options
+    projectSelect.innerHTML = '<option value="">Select a project...</option>';
+
+    // Add projects
+    globalHubData.projects.forEach(project => {
+        const option = document.createElement('option');
+        option.value = project.id;
+        option.textContent = `${project.number} - ${project.projectName}`;
+        projectSelect.appendChild(option);
+    });
+
+    console.log(`Loaded ${globalHubData.projects.length} projects into dropdown`);
 }
 
 // Initialize event listeners
@@ -296,78 +186,81 @@ function goBack() {
     }
 }
 
-// Bed Management Functions
-function onBedChange() {
-    const bedSelect = document.getElementById('bedSelect');
-    const bedId = bedSelect.value;
+// Project Management Functions
+function onProjectChange() {
+    const projectSelect = document.getElementById('projectSelect');
+    const projectId = projectSelect.value;
 
-    if (bedId && BED_CONFIGS[bedId]) {
-        currentBed = bedId;
-        selectedBedData = BED_CONFIGS[bedId];
-        updateBedInfo();
-        updateBedFilterInfo();
-        console.log('Bed selected:', bedId, selectedBedData);
+    if (projectId && globalHubData && globalHubData.projects) {
+        const project = globalHubData.projects.find(p => p.id === projectId);
+        if (project) {
+            currentProject = projectId;
+            selectedProjectData = project;
+            updateProjectInfo();
+            updateProjectFilterInfo();
+            console.log('Project selected:', projectId, selectedProjectData);
+        }
     } else {
-        currentBed = null;
-        selectedBedData = null;
-        updateBedInfo();
-        clearBedFilterInfo();
+        currentProject = null;
+        selectedProjectData = null;
+        updateProjectInfo();
+        clearProjectFilterInfo();
     }
 }
 
-function updateBedInfo() {
-    const bedType = document.getElementById('bedType');
-    const bedCapacity = document.getElementById('bedCapacity');
+function updateProjectInfo() {
+    const projectName = document.getElementById('projectName');
+    const projectDetails = document.getElementById('projectDetails');
 
-    if (selectedBedData) {
-        if (bedType) {
-            bedType.textContent = `${selectedBedData.type.charAt(0).toUpperCase() + selectedBedData.type.slice(1)} Bed - ${selectedBedData.capacity}`;
+    if (selectedProjectData) {
+        if (projectName) {
+            projectName.textContent = `${selectedProjectData.number} - ${selectedProjectData.projectName}`;
         }
-        if (bedCapacity) {
-            bedCapacity.textContent = `${selectedBedData.description} (${selectedBedData.length}' x ${selectedBedData.width}')`;
+        if (projectDetails) {
+            projectDetails.textContent = `${selectedProjectData.location || 'Location TBD'} • ${selectedProjectData.status || 'Active'}`;
         }
     } else {
-        if (bedType) bedType.textContent = 'No bed selected';
-        if (bedCapacity) bedCapacity.textContent = 'Select a bed to view capacity details';
+        if (projectName) projectName.textContent = 'No project selected';
+        if (projectDetails) projectDetails.textContent = 'Select a project to view design requirements';
     }
 }
 
-function updateBedFilterInfo() {
-    if (!selectedBedData) return;
+function updateProjectFilterInfo() {
+    if (!selectedProjectData) return;
 
-    const bedInfo = `${selectedBedData.capacity} - ${selectedBedData.suitableFor.join(', ')}`;
+    const projectInfo = `${selectedProjectData.number} - ${selectedProjectData.projectName}`;
     
     // Update calculator filter info
-    const calcFilter = document.getElementById('calcBedFilter');
+    const calcFilter = document.getElementById('calcProjectFilter');
     if (calcFilter) {
-        calcFilter.innerHTML = `<span class="filter-label">Calculations available for: ${bedInfo}</span>`;
+        calcFilter.innerHTML = `<span class="filter-label">Calculations available for: ${projectInfo}</span>`;
     }
 
     // Update design summary filter info
-    const designFilter = document.getElementById('designBedFilter');
+    const designFilter = document.getElementById('designProjectFilter');
     if (designFilter) {
-        designFilter.innerHTML = `<span class="filter-label">Design summaries filtered for: ${bedInfo}</span>`;
+        designFilter.innerHTML = `<span class="filter-label">Design summaries filtered for: ${projectInfo}</span>`;
     }
 
     // Update issue filter info
-    const issueFilter = document.getElementById('issueBedFilter');
+    const issueFilter = document.getElementById('issueProjectFilter');
     if (issueFilter) {
-        issueFilter.innerHTML = `<span class="filter-label">Issues filtered for pieces suitable for: ${bedInfo}</span>`;
+        issueFilter.innerHTML = `<span class="filter-label">Issues filtered for project: ${projectInfo}</span>`;
     }
 
     // Update BOM filter info
-    const bomFilter = document.getElementById('bomBedFilter');
+    const bomFilter = document.getElementById('bomProjectFilter');
     if (bomFilter) {
-        bomFilter.innerHTML = `<span class="filter-label">BOM data for bed capacity: ${selectedBedData.maxWeight} lbs, ${selectedBedData.maxLength}' x ${selectedBedData.maxWidth}'</span>`;
+        bomFilter.innerHTML = `<span class="filter-label">BOM data for project: ${projectInfo}</span>`;
     }
 }
 
-function clearBedFilterInfo() {
-    const filters = ['calcBedFilter', 'designBedFilter', 'issueBedFilter', 'bomBedFilter'];
+function clearProjectFilterInfo() {
+    const filters = ['calcProjectFilter', 'designProjectFilter', 'issueProjectFilter', 'bomProjectFilter'];
     filters.forEach(filterId => {
         const element = document.getElementById(filterId);
         if (element) {
-            element.innerHTML = `<span class="filter-label">Bed-specific filtering available when bed is selected</span>`;
+            element.innerHTML = `<span class="filter-label">Project-specific filtering available when project is selected</span>`;
         }
     });
 }
@@ -442,19 +335,19 @@ function openBOMQuery() {
 
 // Quick Action Functions
 function createNewCalculation() {
-    if (!currentBed) {
-        showNotification('Please select a production bed first');
+    if (!currentProject) {
+        showNotification('Please select a project first');
         return;
     }
-    showNotification(`Creating new calculation for ${selectedBedData.capacity} - Coming Soon!`);
+    showNotification(`Creating new calculation for ${selectedProjectData.number} - ${selectedProjectData.projectName} - Coming Soon!`);
 }
 
 function generateReport() {
-    if (!currentBed) {
-        showNotification('Please select a production bed first');
+    if (!currentProject) {
+        showNotification('Please select a project first');
         return;
     }
-    showNotification(`Generating report for ${selectedBedData.capacity} - Coming Soon!`);
+    showNotification(`Generating report for ${selectedProjectData.number} - ${selectedProjectData.projectName} - Coming Soon!`);
 }
 
 function syncWithACC() {
@@ -505,30 +398,6 @@ function hideLoadingOverlay() {
         overlay.classList.remove('show');
     }
 }
-
-// Piece filtering functions based on bed selection
-function getFilteredPiecesForBed(pieces, bedId) {
-    if (!bedId || !BED_CONFIGS[bedId]) return pieces;
-    
-    const bedConfig = BED_CONFIGS[bedId];
-    return pieces.filter(piece => {
-        // Filter pieces that are suitable for the selected bed
-        return bedConfig.suitableFor.includes(piece.type) &&
-               piece.dimensions.length <= bedConfig.maxLength &&
-               piece.dimensions.width <= bedConfig.maxWidth &&
-               piece.weight <= bedConfig.maxWeight;
-    });
-}
-
-// Export bed mapping functionality for use by other modules
-window.EngineeringModule = {
-    getBedConfig: (bedId) => BED_CONFIGS[bedId],
-    getAllBedConfigs: () => BED_CONFIGS,
-    getCurrentBed: () => currentBed,
-    getSelectedBedData: () => selectedBedData,
-    isAuthenticated: () => isAuthenticated,
-    filterPiecesForBed: getFilteredPiecesForBed
-};
 
 // Initialize the app on page load
 document.addEventListener('DOMContentLoaded', initializeApp);
