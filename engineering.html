@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engineering & Drafting - CastLink</title>
+    <link rel="stylesheet" href="styles/engineering.css">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <script src="scripts/config.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header class="main-header">
+            <div class="header-content">
+                <div class="nav-section">
+                    <button class="back-button" onclick="goBack()">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 12H5m7-7l-7 7 7 7" />
+                        </svg>
+                        Back to Dashboard
+                    </button>
+                </div>
+                <div class="logo-section">
+                    <h1 class="main-title">Engineering & Drafting</h1>
+                    <p class="main-subtitle">Design Automation & Technical Management</p>
+                </div>
+                <div class="auth-section">
+                    <div class="auth-status">
+                        <div class="status-indicator" id="authIndicator"></div>
+                        <span id="authStatus">Checking authentication...</span>
+                    </div>
+                    <div class="auth-info" id="authInfo">Connecting to ACC...</div>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <section class="module-header">
+                <div class="module-header-content">
+                    <div class="module-info">
+                        <h2 class="module-title">Design Automation Hub</h2>
+                        <p class="module-description">
+                            Comprehensive engineering tools for design calculations, technical documentation,
+                            issue management, and bill of materials integration with ACC and Revit.
+                        </p>
+                    </div>
+                    <div class="bed-selection-panel" id="bedSelectionPanel">
+                        <label for="bedSelect">Production Bed:</label>
+                        <select id="bedSelect" onchange="onBedChange()">
+                            <option value="">Select a bed...</option>
+                            <option value="beam">Beam Bed - Long Structural Elements</option>
+                            <option value="deck1">Deck Bed #1 - Double Tees & Slabs</option>
+                            <option value="deck2">Deck Bed #2 - Double Tees & Slabs</option>
+                            <option value="flatbed1">Flat Bed #1 - Wall Panels & Columns</option>
+                            <option value="flatbed2">Flat Bed #2 - Wall Panels & Columns</option>
+                            <option value="flatbed3">Flat Bed #3 - Specialty Elements</option>
+                            <option value="flatbed4">Flat Bed #4 - Wall Panels</option>
+                            <option value="flatbed5">Flat Bed #5 - Wall Panels</option>
+                            <option value="flatbed6">Flat Bed #6 - Columns & Beams</option>
+                            <option value="flatbed7">Flat Bed #7 - Mixed Elements</option>
+                        </select>
+                        <div class="bed-info" id="bedInfo">
+                            <span class="bed-type" id="bedType">No bed selected</span>
+                            <span class="bed-capacity" id="bedCapacity">Select a bed to view capacity details</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="engineering-grid">
+                <div class="engineering-card calculator" onclick="openEngineeringTool('calculator')">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" />
+                                <path d="M6.5 7.5h3v1h-3zm0 2h3v1h-3zm0 2h3v1h-3zm5-4h5v1h-5zm0 2h5v1h-5zm0 2h5v1h-5zm-5 2h11v1H6.5z" />
+                                <circle cx="16" cy="8" r="1" />
+                                <path d="M14.5 16.5h3v1h-3z" />
+                            </svg>
+                        </div>
+                        <div class="card-title-section">
+                            <h3 class="card-title">Engineering Calculator</h3>
+                            <p class="card-subtitle">Precast design calculations & analysis</p>
+                        </div>
+                        <div class="card-status">
+                            <span class="status-badge status-active">Ready</span>
+                        </div>
+                    </div>
+                    <div class="card-content">
+                        <p class="card-description">
+                            Comprehensive calculation tools for concrete stress analysis, prestress design,
+                            load calculations, and structural verification specific to precast elements.
+                        </p>
+                        <div class="card-features">
+                            <div class="feature-tag">Stress Analysis</div>
+                            <div class="feature-tag">Load Calculations</div>
+                            <div class="feature-tag">Prestress Design</div>
+                            <div class="feature-tag">Code Compliance</div>
+                        </div>
+                        <div class="bed-filter-info" id="calcBedFilter">
+                            <span class="filter-label">Bed-specific calculations available when bed is selected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="engineering-card design-summary" onclick="openEngineeringTool('design-summary')">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+                                <path d="M14 2v6h6" />
+                                <path d="M16 13H8m8 2H8m4 2H8" />
+                            </svg>
+                        </div>
+                        <div class="card-title-section">
+                            <h3 class="card-title">Engineering Design Summaries</h3>
+                            <p class="card-subtitle">Technical documentation & reports</p>
+                        </div>
+                        <div class="card-status">
+                            <span class="status-badge status-active">Ready</span>
+                        </div>
+                    </div>
+                    <div class="card-content">
+                        <p class="card-description">
+                            Generate comprehensive design summaries, technical specifications, and
+                            engineering reports with automatic integration from ACC project data.
+                        </p>
+                        <div class="card-features">
+                            <div class="feature-tag">Design Reports</div>
+                            <div class="feature-tag">Spec Sheets</div>
+                            <div class="feature-tag">ACC Integration</div>
+                            <div class="feature-tag">Auto-Generation</div>
+                        </div>
+                        <div class="bed-filter-info" id="designBedFilter">
+                            <span class="filter-label">Design summaries filtered by bed type and capacity</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="engineering-card piece-issue" onclick="openEngineeringTool('piece-issue')">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+                                <path d="M11 11h2v6h-2z" />
+                                <circle cx="12" cy="8" r="1" />
+                            </svg>
+                        </div>
+                        <div class="card-title-section">
+                            <h3 class="card-title">Piece Issue Management</h3>
+                            <p class="card-subtitle">Track & resolve production issues</p>
+                        </div>
+                        <div class="card-status">
+                            <span class="status-badge status-development">Development</span>
+                        </div>
+                    </div>
+                    <div class="card-content">
+                        <p class="card-description">
+                            Comprehensive issue tracking for precast pieces including design conflicts,
+                            production problems, quality concerns, and resolution workflows.
+                        </p>
+                        <div class="card-features">
+                            <div class="feature-tag">Issue Tracking</div>
+                            <div class="feature-tag">Resolution Workflow</div>
+                            <div class="feature-tag">Design Conflicts</div>
+                            <div class="feature-tag">Quality Alerts</div>
+                        </div>
+                        <div class="bed-filter-info" id="issueBedFilter">
+                            <span class="filter-label">Issues filtered by selected bed and associated pieces</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="engineering-card bom-query" onclick="openEngineeringTool('bom-query')">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm2-7h-2V2h-2v2H9V2H7v2H5c-1.1 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z" />
+                                <path d="M9 15H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z" />
+                            </svg>
+                        </div>
+                        <div class="card-title-section">
+                            <h3 class="card-title">BOM Query System</h3>
+                            <p class="card-subtitle">Bill of materials analysis & reporting</p>
+                        </div>
+                        <div class="card-status">
+                            <span class="status-badge status-development">Development</span>
+                        </div>
+                    </div>
+                    <div class="card-content">
+                        <p class="card-description">
+                            Advanced bill of materials querying with material takeoffs, cost analysis,
+                            inventory integration, and procurement planning for precast production.
+                        </p>
+                        <div class="card-features">
+                            <div class="feature-tag">Material Takeoffs</div>
+                            <div class="feature-tag">Cost Analysis</div>
+                            <div class="feature-tag">Inventory Sync</div>
+                            <div class="feature-tag">Procurement</div>
+                        </div>
+                        <div class="bed-filter-info" id="bomBedFilter">
+                            <span class="filter-label">BOM data scoped to selected bed production requirements</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="quick-actions">
+                <h3 class="section-title">Quick Actions</h3>
+                <div class="actions-grid">
+                    <button class="action-btn" onclick="createNewCalculation()">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                        </svg>
+                        New Calculation
+                    </button>
+                    <button class="action-btn" onclick="generateReport()">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+                        </svg>
+                        Generate Report
+                    </button>
+                    <button class="action-btn" onclick="syncWithACC()">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 4L12 1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8z" />
+                        </svg>
+                        Sync with ACC
+                    </button>
+                    <button class="action-btn" onclick="viewRecentItems()">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                        </svg>
+                        Recent Items
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <footer class="main-footer">
+            <p>&copy; 2025 Metromont Corporation. All rights reserved. | Engineering & Drafting Module</p>
+        </footer>
+    </div>
+
+    <!-- Notification System -->
+    <div class="notification" id="notification">
+        <span id="notificationText"></span>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Loading engineering tools...</p>
+        </div>
+    </div>
+
+    <script src="scripts/engineering.js"></script>
+</body>
+
+</html>

@@ -683,7 +683,7 @@ function navigateToModule(module) {
             window.location.href = 'quality-control.html';
             break;
         case 'design':
-            showNotification('Design Development coming Q3 2025');
+            window.location.href = 'engineering.html';
             break;
         case 'production':
             window.location.href = 'production-scheduling.html';
