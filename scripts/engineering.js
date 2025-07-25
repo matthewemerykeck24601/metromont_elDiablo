@@ -1,403 +1,617 @@
-// Engineering Module JavaScript
-// ACC Authentication Configuration
+﻿// Engineering & Drafting Module
+// Updated to use the same authentication and project loading method as QC Bed Report
+
+// ACC Authentication Configuration (same as other modules)
 const ACC_CLIENT_ID = window.ACC_CLIENT_ID;
 const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 
-// Enhanced scope configuration
+// Enhanced scope configuration including OSS bucket management
 const ACC_SCOPES = [
     'data:read',
-    'data:write',
+    'data:write', 
     'data:create',
     'data:search',
     'account:read',
     'user:read',
-    'viewables:read'
+    'viewables:read',
+    'bucket:create',
+    'bucket:read',
+    'bucket:update',
+    'bucket:delete'
 ].join(' ');
 
-// Global Variables
+const ACC_PROJECT_API_BASE = 'https://developer.api.autodesk.com/project/v1';
+
+// Authentication Variables
 let forgeAccessToken = null;
-let hubId = null;
 let projectId = null;
-let isAuthenticated = false;
+let hubId = null;
+let userProfile = null;
+let isACCConnected = false;
+let userProjects = [];
+let projectMembers = [];
+
+// Global Hub Data (loaded from main app - same as QC Bed Report)
 let globalHubData = null;
-let currentProject = null;
+
+// Current selections
+let selectedProject = null;
 let selectedProjectData = null;
 
-// Engineering Tool Configurations
-const ENGINEERING_TOOLS = {
-    calculator: {
-        name: 'Engineering Calculator',
-        description: 'Precast design calculations & analysis',
-        projectDependent: true,
-        features: ['Stress Analysis', 'Load Calculations', 'Prestress Design', 'Code Compliance']
+// Bed Information (from uploaded BED Info.xlsx)
+const BED_INFO = {
+    "FB #1": {
+        name: "FB #1",
+        surface: "STEEL",
+        width: "13' 8-1/4\"",
+        length: "320'",
+        strandLength: "340'",
+        pullingBlockCapacity: "18-1/2 33k",
+        supportedProducts: ["MDK", "WP", "ARCH"],
+        type: "flatbed"
     },
-    'design-summary': {
-        name: 'Engineering Design Summaries',
-        description: 'Technical documentation & reports',
-        projectDependent: true,
-        features: ['Design Reports', 'Spec Sheets', 'ACC Integration', 'Auto-Generation']
+    "FB #2": {
+        name: "FB #2", 
+        surface: "STEEL",
+        width: "13' 5\"",
+        length: "250'",
+        strandLength: "270'",
+        pullingBlockCapacity: "28-1/2 33k",
+        supportedProducts: ["WP", "ARCH"],
+        type: "flatbed"
     },
-    'piece-issue': {
-        name: 'Piece Issue Management',
-        description: 'Track & resolve production issues',
-        projectDependent: true,
-        features: ['Issue Tracking', 'Resolution Workflow', 'Design Conflicts', 'Quality Alerts']
+    "FB #3": {
+        name: "FB #3",
+        surface: "STEEL", 
+        width: "13' 2\"",
+        length: "240'",
+        strandLength: "260'",
+        pullingBlockCapacity: "24-1/2 33k",
+        supportedProducts: ["WP", "SPA", "ARCH"],
+        type: "flatbed"
     },
-    'bom-query': {
-        name: 'BOM Query System',
-        description: 'Bill of materials analysis & reporting',
-        projectDependent: true,
-        features: ['Material Takeoffs', 'Cost Analysis', 'Inventory Sync', 'Procurement']
+    "FB #4": {
+        name: "FB #4",
+        surface: "STEEL",
+        width: "13' 5\"", 
+        length: "250'",
+        strandLength: "270'",
+        pullingBlockCapacity: "28-1/2 33k",
+        supportedProducts: ["WP", "ARCH", "MW"],
+        type: "flatbed"
+    },
+    "FB #5": {
+        name: "FB #5",
+        surface: "STEEL",
+        width: "13' 1\"",
+        length: "250'", 
+        strandLength: "270'",
+        supportedProducts: ["WP", "SPA", "ARCH"],
+        type: "flatbed"
+    },
+    "FB #6": {
+        name: "FB #6",
+        surface: "STEEL",
+        width: "13' 1-1/2\"",
+        length: "200'",
+        strandLength: "220'",
+        supportedProducts: ["WP", "ARCH"],
+        type: "flatbed"
+    },
+    "FB #7": {
+        name: "FB #7",
+        surface: "FIBERGLASS",
+        width: "14' 9-3/4\"",
+        length: "190'",
+        strandLength: "210'",
+        supportedProducts: ["ARCH"],
+        type: "flatbed"
+    },
+    "COLUMN": {
+        name: "COLUMN",
+        surface: "STEEL",
+        width: "6' 8\"",
+        length: "180'",
+        strandLength: "200'",
+        supportedProducts: ["COL"],
+        type: "column"
+    },
+    "BEAMS": {
+        name: "BEAMS",
+        surface: "STEEL",
+        width: "24\"",
+        length: "230'",
+        strandLength: "250'",
+        supportedProducts: ["BMS"],
+        type: "beam"
+    },
+    "DK #1": {
+        name: "DK #1",
+        surface: "FIBERGLASS",
+        width: "16'",
+        length: "44'",
+        supportedProducts: ["SW"],
+        type: "deck"
+    },
+    "DK #2": {
+        name: "DK #2", 
+        surface: "STEEL",
+        width: "14'",
+        length: "100'",
+        supportedProducts: ["SW"],
+        type: "deck"
+    },
+    "PC BED #1": {
+        name: "PC BED #1",
+        surface: "FIBERGLASS",
+        width: "16'",
+        length: "44'",
+        supportedProducts: ["ARCH"],
+        type: "pcbed"
+    },
+    "PC BED #2": {
+        name: "PC BED #2",
+        surface: "FIBERGLASS", 
+        width: "16'",
+        length: "44'",
+        supportedProducts: ["ARCH"],
+        type: "pcbed"
+    },
+    "PC BED #3": {
+        name: "PC BED #3",
+        surface: "FIBERGLASS",
+        width: "16'",
+        length: "88'",
+        supportedProducts: ["ARCH"],
+        type: "pcbed"
     }
 };
 
-// Initialize Application
+// Product Type Definitions
+const PRODUCT_TYPES = {
+    "MDK": "Mega Double Tees",
+    "WP": "Wall Panels", 
+    "ARCH": "Architectural",
+    "BMS": "Beams",
+    "COL": "Columns",
+    "SPA": "Spandrels",
+    "MW": "Modular Walls",
+    "SW": "Structural Walls",
+    "FS": "Floor Slabs"
+};
+
+// UI Elements
+const authIndicator = document.getElementById('authIndicator');
+const authStatus = document.getElementById('authStatus');
+const authInfo = document.getElementById('authInfo');
+
+// Authentication Flow - Following QC Bed Report pattern exactly
 async function initializeApp() {
     try {
-        updateAuthStatus('Initializing...', 'Setting up engineering module...');
+        console.log('=== ENGINEERING MODULE INITIALIZATION ===');
+        updateAuthStatus('Checking authentication...', 'Verifying your login status...');
 
-        // Check for parent window auth
+        // Try to get authentication from parent window first (same as QC Bed Report)
         if (window.opener && window.opener.CastLinkAuth) {
             const parentAuth = window.opener.CastLinkAuth;
-            const parentIsAuth = await parentAuth.waitForAuth();
-            
-            if (parentIsAuth) {
-                forgeAccessToken = parentAuth.getToken();
-                globalHubData = parentAuth.getHubData();
-                isAuthenticated = true;
-                updateAuthStatus('Authenticated', 'Connected to ACC');
-                
-                console.log('Engineering module authenticated via parent window');
-                await loadInitialData();
-                return;
+            try {
+                const isParentAuth = await parentAuth.waitForAuth();
+                if (isParentAuth) {
+                    forgeAccessToken = parentAuth.getToken();
+                    globalHubData = parentAuth.getHubData();
+                    await completeAuthentication();
+                    return;
+                }
+            } catch (error) {
+                console.warn('Parent auth not available:', error);
             }
         }
 
-        // Check stored token
+        // Fallback to stored token (same as QC Bed Report)
         const storedToken = getStoredToken();
         if (storedToken && !isTokenExpired(storedToken)) {
             forgeAccessToken = storedToken.access_token;
-            updateAuthStatus('Authenticated', 'Using stored credentials');
-            isAuthenticated = true;
-            await loadInitialData();
-            return;
+
+            const isValid = await verifyToken(forgeAccessToken);
+            if (isValid) {
+                await completeAuthentication();
+            } else {
+                clearStoredToken();
+                redirectToMainApp();
+            }
+        } else {
+            redirectToMainApp();
         }
-
-        // If no valid token, redirect to login
-        updateAuthStatus('Authentication Required', 'Redirecting to login...');
-        setTimeout(() => {
-            window.location.href = 'index.html';
-        }, 2000);
-
     } catch (error) {
-        console.error('Error initializing engineering module:', error);
-        updateAuthStatus('Error', 'Authentication failed');
+        console.error('Engineering module initialization failed:', error);
+        showAuthError(error.message);
     }
 }
 
-// Load initial data after authentication
-async function loadInitialData() {
+function redirectToMainApp() {
+    updateAuthStatus('Redirecting to Login...', 'Taking you to the main app for authentication...');
+    setTimeout(() => {
+        window.location.href = 'index.html';
+    }, 2000);
+}
+
+async function completeAuthentication() {
     try {
-        // Load hub data if not available
+        updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
+
+        // Load the hub data that was already loaded during main authentication
+        // This is the SAME method used by QC Bed Report
+        await loadPreLoadedHubData();
+
+        isACCConnected = true;
+
+        const projectCount = globalHubData ? globalHubData.projects.length : 0;
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
+
+        updateAuthStatus('Connected', `${accountName} - ${projectCount} projects`);
+        updateAuthInfo('Engineering tools ready');
+
+        // Update UI indicators
+        if (authIndicator) {
+            authIndicator.classList.add('authenticated');
+        }
+
+        // Initialize the project dropdown with pre-loaded data
+        populateProjectDropdown();
+
+        console.log('✅ Engineering module ready with pre-loaded data');
+
+    } catch (error) {
+        console.error('Authentication completion failed:', error);
+        showAuthError('Failed to load project data: ' + error.message);
+    }
+}
+
+// Load pre-loaded hub data - SAME method as QC Bed Report
+async function loadPreLoadedHubData() {
+    try {
+        // Try to get hub data from parent window first
+        if (!globalHubData && window.opener && window.opener.CastLinkAuth) {
+            globalHubData = window.opener.CastLinkAuth.getHubData();
+        }
+
+        // If not available, try to load from session storage
         if (!globalHubData) {
-            const hubData = sessionStorage.getItem('castlink_hub_data');
-            if (hubData) {
-                globalHubData = JSON.parse(hubData);
+            const storedHubData = sessionStorage.getItem('hubData');
+            if (storedHubData) {
+                try {
+                    globalHubData = JSON.parse(storedHubData);
+                    console.log('✅ Loaded hub data from session storage');
+                } catch (parseError) {
+                    console.error('Error parsing stored hub data:', parseError);
+                }
             }
         }
 
-        // Load projects into dropdown
-        if (globalHubData && globalHubData.projects) {
-            loadProjectOptions();
+        // If still no data, try localStorage backup
+        if (!globalHubData) {
+            const backupHubData = localStorage.getItem('hubData_backup');
+            if (backupHubData) {
+                try {
+                    globalHubData = JSON.parse(backupHubData);
+                    console.log('✅ Loaded hub data from localStorage backup');
+                } catch (parseError) {
+                    console.error('Error parsing backup hub data:', parseError);
+                }
+            }
         }
 
-        updateAuthStatus('Connected', 'Engineering module ready');
-        initializeEventListeners();
-        
+        if (!globalHubData) {
+            throw new Error('No hub data available. Please authenticate through the main app.');
+        }
+
+        console.log(`✅ Hub data loaded with ${globalHubData.projects?.length || 0} projects`);
+
     } catch (error) {
-        console.error('Error loading initial data:', error);
-        updateAuthStatus('Error', 'Failed to load project data');
+        console.error('Error loading pre-loaded hub data:', error);
+        throw error;
     }
 }
 
-// Load project options into dropdown
-function loadProjectOptions() {
-    const projectSelect = document.getElementById('projectSelect');
-    if (!projectSelect || !globalHubData || !globalHubData.projects) return;
-
-    // Clear existing options
-    projectSelect.innerHTML = '<option value="">Select a project...</option>';
-
-    // Add projects
-    globalHubData.projects.forEach(project => {
-        const option = document.createElement('option');
-        option.value = project.id;
-        option.textContent = `${project.number} - ${project.projectName}`;
-        projectSelect.appendChild(option);
-    });
-
-    console.log(`Loaded ${globalHubData.projects.length} projects into dropdown`);
+// UI Update Functions
+function updateAuthStatus(status, info = '') {
+    if (authStatus) {
+        authStatus.textContent = status;
+    }
+    if (info && authInfo) {
+        authInfo.textContent = info;
+    }
 }
 
-// Initialize event listeners
-function initializeEventListeners() {
-    // Bed selection event listener is already set in HTML via onchange
-    console.log('Engineering module initialized successfully');
+function updateAuthInfo(message) {
+    if (authInfo) {
+        authInfo.textContent = message;
+    }
 }
 
-// Authentication helper functions
-function updateAuthStatus(status, info) {
-    const statusElement = document.getElementById('authStatus');
-    const infoElement = document.getElementById('authInfo');
-    const indicator = document.getElementById('authIndicator');
+function showAuthError(message) {
+    updateAuthStatus('Authentication Error', message);
+    
+    if (authIndicator) {
+        authIndicator.classList.add('error');
+    }
 
-    if (statusElement) statusElement.textContent = status;
-    if (infoElement) infoElement.textContent = info;
+    // Create error notification
+    showNotification('Authentication failed: ' + message, 'error');
+}
 
-    if (indicator) {
-        indicator.className = 'status-indicator';
-        if (status === 'Authenticated' || status === 'Connected') {
-            indicator.classList.add('authenticated');
-        } else if (status === 'Error') {
-            indicator.classList.add('error');
+// Token Management Functions (same as QC Bed Report)
+function getStoredToken() {
+    let stored = sessionStorage.getItem('forge_token');
+    if (!stored) {
+        stored = localStorage.getItem('forge_token_backup');
+        if (stored) {
+            sessionStorage.setItem('forge_token', stored);
         }
     }
-}
-
-function getStoredToken() {
-    const sessionToken = sessionStorage.getItem('forge_token');
-    const localToken = localStorage.getItem('forge_token_backup');
-    return sessionToken ? JSON.parse(sessionToken) : (localToken ? JSON.parse(localToken) : null);
+    return stored ? JSON.parse(stored) : null;
 }
 
 function isTokenExpired(tokenInfo) {
     const now = Date.now();
     const expiresAt = tokenInfo.expires_at;
     const timeUntilExpiry = expiresAt - now;
-    return timeUntilExpiry < (5 * 60 * 1000);
+    return timeUntilExpiry < (5 * 60 * 1000); // 5 minute buffer
 }
 
-// Navigation functions
-function goBack() {
-    if (window.opener) {
-        window.close();
-    } else {
-        window.location.href = 'index.html';
+function clearStoredToken() {
+    sessionStorage.removeItem('forge_token');
+    localStorage.removeItem('forge_token_backup');
+    console.log('Token cleared');
+}
+
+async function verifyToken(token) {
+    try {
+        const response = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        return response.ok;
+    } catch (error) {
+        console.error('Token verification failed:', error);
+        return false;
     }
 }
 
 // Project Management Functions
-function onProjectChange() {
-    const projectSelect = document.getElementById('projectSelect');
-    const projectId = projectSelect.value;
-
-    if (projectId && globalHubData && globalHubData.projects) {
-        const project = globalHubData.projects.find(p => p.id === projectId);
-        if (project) {
-            currentProject = projectId;
-            selectedProjectData = project;
-            updateProjectInfo();
-            updateProjectFilterInfo();
-            console.log('Project selected:', projectId, selectedProjectData);
+function populateProjectDropdown() {
+    try {
+        const projectSelect = document.getElementById('projectSelect');
+        if (!projectSelect) {
+            console.error('Project select element not found');
+            return;
         }
-    } else {
-        currentProject = null;
-        selectedProjectData = null;
-        updateProjectInfo();
-        clearProjectFilterInfo();
+
+        if (!globalHubData || !globalHubData.projects) {
+            console.error('No project data available');
+            projectSelect.innerHTML = '<option value="">No projects available</option>';
+            return;
+        }
+
+        const accountName = globalHubData.accountInfo ? globalHubData.accountInfo.name : 'ACC Account';
+        projectSelect.innerHTML = `<option value="">Select a project from ${accountName}...</option>`;
+
+        // Populate with pre-loaded projects (same data as QC Bed Report)
+        globalHubData.projects.forEach((project) => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ' (' + project.number + ')' : ''}`;
+            option.dataset.projectData = JSON.stringify(project);
+            projectSelect.appendChild(option);
+        });
+
+        projectSelect.disabled = false;
+        console.log(`✅ Populated project dropdown with ${globalHubData.projects.length} projects`);
+
+    } catch (error) {
+        console.error('Error populating project dropdown:', error);
+        showNotification('Failed to load projects', 'error');
     }
 }
 
-function updateProjectInfo() {
+function onProjectChange() {
+    const projectSelect = document.getElementById('projectSelect');
+    const projectInfo = document.getElementById('projectInfo');
     const projectName = document.getElementById('projectName');
     const projectDetails = document.getElementById('projectDetails');
 
-    if (selectedProjectData) {
-        if (projectName) {
-            projectName.textContent = `${selectedProjectData.number} - ${selectedProjectData.projectName}`;
-        }
-        if (projectDetails) {
-            projectDetails.textContent = `${selectedProjectData.location || 'Location TBD'} � ${selectedProjectData.status || 'Active'}`;
-        }
-    } else {
+    if (!projectSelect.value) {
+        // No project selected
         if (projectName) projectName.textContent = 'No project selected';
         if (projectDetails) projectDetails.textContent = 'Select a project to view design requirements';
+        selectedProject = null;
+        selectedProjectData = null;
+        updateProjectFilterInfo();
+        return;
+    }
+
+    try {
+        const selectedOption = projectSelect.selectedOptions[0];
+        if (selectedOption && selectedOption.dataset.projectData) {
+            selectedProjectData = JSON.parse(selectedOption.dataset.projectData);
+            selectedProject = selectedProjectData.id;
+            
+            // Update project info display
+            if (projectName) {
+                projectName.textContent = selectedProjectData.displayName || selectedProjectData.name;
+            }
+            if (projectDetails) {
+                projectDetails.textContent = `${selectedProjectData.location || 'Location not specified'} • ${selectedProjectData.status || 'Active'}`;
+            }
+
+            // Update filter information for engineering cards
+            updateProjectFilterInfo();
+
+            console.log('✅ Project selected:', selectedProjectData.name);
+            showNotification(`Project selected: ${selectedProjectData.name}`, 'success');
+        }
+    } catch (error) {
+        console.error('Error handling project change:', error);
+        showNotification('Error selecting project', 'error');
     }
 }
 
 function updateProjectFilterInfo() {
-    if (!selectedProjectData) return;
+    // Update filter information on engineering cards
+    const filterElements = [
+        'calcProjectFilter',
+        'designProjectFilter', 
+        'bomProjectFilter'
+    ];
 
-    const projectInfo = `${selectedProjectData.number} - ${selectedProjectData.projectName}`;
-    
-    // Update calculator filter info
-    const calcFilter = document.getElementById('calcProjectFilter');
-    if (calcFilter) {
-        calcFilter.innerHTML = `<span class="filter-label">Calculations available for: ${projectInfo}</span>`;
-    }
-
-    // Update design summary filter info
-    const designFilter = document.getElementById('designProjectFilter');
-    if (designFilter) {
-        designFilter.innerHTML = `<span class="filter-label">Design summaries filtered for: ${projectInfo}</span>`;
-    }
-
-    // Update issue filter info
-    const issueFilter = document.getElementById('issueProjectFilter');
-    if (issueFilter) {
-        issueFilter.innerHTML = `<span class="filter-label">Issues filtered for project: ${projectInfo}</span>`;
-    }
-
-    // Update BOM filter info
-    const bomFilter = document.getElementById('bomProjectFilter');
-    if (bomFilter) {
-        bomFilter.innerHTML = `<span class="filter-label">BOM data for project: ${projectInfo}</span>`;
-    }
-}
-
-function clearProjectFilterInfo() {
-    const filters = ['calcProjectFilter', 'designProjectFilter', 'issueProjectFilter', 'bomProjectFilter'];
-    filters.forEach(filterId => {
-        const element = document.getElementById(filterId);
+    filterElements.forEach(elementId => {
+        const element = document.getElementById(elementId);
         if (element) {
-            element.innerHTML = `<span class="filter-label">Project-specific filtering available when project is selected</span>`;
+            const filterLabel = element.querySelector('.filter-label');
+            if (filterLabel) {
+                if (selectedProject) {
+                    filterLabel.textContent = `Data scoped to project: ${selectedProjectData.displayName || selectedProjectData.name}`;
+                } else {
+                    filterLabel.textContent = getDefaultFilterText(elementId);
+                }
+            }
         }
     });
 }
 
+function getDefaultFilterText(elementId) {
+    const defaultTexts = {
+        'calcProjectFilter': 'Project-specific calculations available when project is selected',
+        'designProjectFilter': 'Design summaries filtered by project requirements and specifications',
+        'bomProjectFilter': 'BOM data scoped to selected project materials and specifications'
+    };
+    return defaultTexts[elementId] || 'Project-specific data available when project is selected';
+}
+
 // Engineering Tool Functions
-function openEngineeringTool(toolType) {
-    if (!isAuthenticated) {
-        showNotification('Please wait for authentication to complete');
+function openEngineeringTool(tool) {
+    if (!selectedProject) {
+        showNotification('Please select a project first', 'warning');
         return;
     }
 
-    const tool = ENGINEERING_TOOLS[toolType];
-    if (!tool) {
-        showNotification('Engineering tool not found');
-        return;
+    switch (tool) {
+        case 'calculator':
+            openCalculator();
+            break;
+        case 'design-summary':
+            openDesignSummary();
+            break;
+        case 'piece-issue':
+            openPieceIssue();
+            break;
+        case 'bom-query':
+            openBOMQuery();
+            break;
+        default:
+            showNotification('Tool not yet implemented', 'info');
     }
-
-    // Check if tool requires bed selection
-    if (tool.bedDependent && !currentBed) {
-        showNotification('Please select a production bed first');
-        return;
-    }
-
-    showLoadingOverlay(`Loading ${tool.name}...`);
-
-    // Simulate tool loading with bed-specific data
-    setTimeout(() => {
-        hideLoadingOverlay();
-        
-        switch (toolType) {
-            case 'calculator':
-                openCalculator();
-                break;
-            case 'design-summary':
-                openDesignSummary();
-                break;
-            case 'piece-issue':
-                openPieceIssue();
-                break;
-            case 'bom-query':
-                openBOMQuery();
-                break;
-            default:
-                showNotification('Tool coming soon!');
-        }
-    }, 1500);
 }
 
 function openCalculator() {
-    const bedInfo = selectedBedData ? ` for ${selectedBedData.capacity}` : '';
-    showNotification(`Engineering Calculator${bedInfo} - Coming Soon!`);
-    console.log('Opening calculator with bed data:', selectedBedData);
+    showNotification('Opening Engineering Calculator...', 'info');
+    // TODO: Implement calculator modal/page
+    console.log('Calculator tool opened for project:', selectedProject);
 }
 
 function openDesignSummary() {
-    const bedInfo = selectedBedData ? ` filtered for ${selectedBedData.capacity}` : '';
-    showNotification(`Design Summaries${bedInfo} - Coming Soon!`);
-    console.log('Opening design summary with bed data:', selectedBedData);
+    showNotification('Opening Design Summary Generator...', 'info');
+    // TODO: Implement design summary tool
+    console.log('Design summary tool opened for project:', selectedProject);
 }
 
 function openPieceIssue() {
-    const bedInfo = selectedBedData ? ` for ${selectedBedData.capacity} pieces` : '';
-    showNotification(`Piece Issue Management${bedInfo} - In Development!`);
-    console.log('Opening piece issue tracker with bed data:', selectedBedData);
+    showNotification('Opening Piece Issue Management...', 'info');
+    // TODO: Implement piece issue tracker
+    console.log('Piece issue tool opened for project:', selectedProject);
 }
 
 function openBOMQuery() {
-    const bedInfo = selectedBedData ? ` scoped to ${selectedBedData.capacity}` : '';
-    showNotification(`BOM Query System${bedInfo} - In Development!`);
-    console.log('Opening BOM query with bed data:', selectedBedData);
+    showNotification('Opening BOM Query Tool...', 'info');
+    // TODO: Implement BOM query interface
+    console.log('BOM query tool opened for project:', selectedProject);
 }
 
 // Quick Action Functions
 function createNewCalculation() {
-    if (!currentProject) {
-        showNotification('Please select a project first');
+    if (!selectedProject) {
+        showNotification('Please select a project first', 'warning');
         return;
     }
-    showNotification(`Creating new calculation for ${selectedProjectData.number} - ${selectedProjectData.projectName} - Coming Soon!`);
+    openCalculator();
 }
 
 function generateReport() {
-    if (!currentProject) {
-        showNotification('Please select a project first');
+    if (!selectedProject) {
+        showNotification('Please select a project first', 'warning');
         return;
     }
-    showNotification(`Generating report for ${selectedProjectData.number} - ${selectedProjectData.projectName} - Coming Soon!`);
+    showNotification('Report generation coming soon...', 'info');
 }
 
 function syncWithACC() {
-    if (!isAuthenticated) {
-        showNotification('Authentication required for ACC sync');
+    if (!selectedProject) {
+        showNotification('Please select a project first', 'warning');
         return;
     }
-    showLoadingOverlay('Syncing with ACC...');
-    
-    setTimeout(() => {
-        hideLoadingOverlay();
-        showNotification('ACC sync completed successfully!');
-    }, 2000);
+    showNotification('Syncing with ACC...', 'info');
+    // TODO: Implement ACC sync functionality
 }
 
 function viewRecentItems() {
-    showNotification('Recent items view - Coming Soon!');
+    showNotification('Recent items view coming soon...', 'info');
+    // TODO: Implement recent items viewer
 }
 
 // Utility Functions
-function showNotification(message) {
+function getBedsByProductType(productType) {
+    return Object.values(BED_INFO).filter(bed => 
+        bed.supportedProducts.includes(productType)
+    );
+}
+
+function getProductsForBed(bedName) {
+    const bed = BED_INFO[bedName];
+    return bed ? bed.supportedProducts : [];
+}
+
+function filterPiecesByBed(pieces, bedName) {
+    const supportedProducts = getProductsForBed(bedName);
+    return pieces.filter(piece => 
+        supportedProducts.some(product => 
+            piece.type && piece.type.toUpperCase().includes(product)
+        )
+    );
+}
+
+// Navigation Functions
+function goBack() {
+    window.location.href = 'index.html';
+}
+
+// Notification System
+function showNotification(message, type = 'info') {
     const notification = document.getElementById('notification');
     const notificationText = document.getElementById('notificationText');
-
+    
     if (notification && notificationText) {
         notificationText.textContent = message;
-        notification.classList.add('show');
-
+        notification.className = `notification ${type}`;
+        notification.style.display = 'block';
+        
         setTimeout(() => {
-            notification.classList.remove('show');
-        }, 3000);
+            notification.style.display = 'none';
+        }, 4000);
+    } else {
+        console.log(`Notification (${type}): ${message}`);
     }
 }
 
-function showLoadingOverlay(message = 'Loading...') {
-    const overlay = document.getElementById('loadingOverlay');
-    const text = overlay.querySelector('p');
-    
-    if (overlay) {
-        if (text) text.textContent = message;
-        overlay.classList.add('show');
-    }
-}
-
-function hideLoadingOverlay() {
-    const overlay = document.getElementById('loadingOverlay');
-    if (overlay) {
-        overlay.classList.remove('show');
-    }
-}
-
-// Initialize the app on page load
+// Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', initializeApp);
