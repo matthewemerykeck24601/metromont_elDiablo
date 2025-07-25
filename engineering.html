@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Design Development - CastLink</title>
+    <title>Engineering & Drafting - CastLink</title>
     <link rel="stylesheet" href="styles/engineering.css">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <script src="scripts/config.js"></script>
@@ -23,7 +23,7 @@
                     </button>
                 </div>
                 <div class="logo-section">
-                    <h1 class="main-title">Design Developement</h1>
+                    <h1 class="main-title">Engineering & Drafting</h1>
                     <p class="main-subtitle">Design Automation & Technical Management</p>
                 </div>
                 <div class="auth-section">
@@ -60,139 +60,154 @@
                 </div>
             </section>
 
-            <section class="engineering-grid">
-                <div class="engineering-card calculator" onclick="openEngineeringTool('calculator')">
-                    <div class="card-header">
-                        <div class="card-icon">
-                            <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" />
-                                <path d="M6.5 7.5h3v1h-3zm0 2h3v1h-3zm0 2h3v1h-3zm5-4h5v1h-5zm0 2h5v1h-5zm0 2h5v1h-5zm-5 2h11v1H6.5z" />
-                                <circle cx="16" cy="8" r="1" />
-                                <path d="M14.5 16.5h3v1h-3z" />
-                            </svg>
+            <!-- Split Screen Engineering Tools -->
+            <section class="engineering-split-screen">
+                <!-- Left Column: Design & Analysis Tools -->
+                <div class="engineering-column left-column">
+                    <h3 class="column-title">Design & Analysis</h3>
+
+                    <!-- Engineering Calculator -->
+                    <div class="engineering-card calculator" onclick="openEngineeringTool('calculator')">
+                        <div class="card-header">
+                            <div class="card-icon">
+                                <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" />
+                                    <path d="M6.5 7.5h3v1h-3zm0 2h3v1h-3zm0 2h3v1h-3zm5-4h5v1h-5zm0 2h5v1h-5zm0 2h5v1h-5zm-5 2h11v1H6.5z" />
+                                    <circle cx="16" cy="8" r="1" />
+                                    <path d="M14.5 16.5h3v1h-3z" />
+                                </svg>
+                            </div>
+                            <div class="card-title-section">
+                                <h3 class="card-title">Engineering Calculator</h3>
+                                <p class="card-subtitle">Precast design calculations & analysis</p>
+                            </div>
+                            <div class="card-status">
+                                <span class="status-badge status-active">Ready</span>
+                            </div>
                         </div>
-                        <div class="card-title-section">
-                            <h3 class="card-title">Engineering Calculator</h3>
-                            <p class="card-subtitle">Precast design calculations & analysis</p>
-                        </div>
-                        <div class="card-status">
-                            <span class="status-badge status-active">Ready</span>
+                        <div class="card-content">
+                            <p class="card-description">
+                                Comprehensive calculation tools for concrete stress analysis, prestress design,
+                                load calculations, and structural verification specific to precast elements.
+                            </p>
+                            <div class="card-features">
+                                <div class="feature-tag">Stress Analysis</div>
+                                <div class="feature-tag">Load Calculations</div>
+                                <div class="feature-tag">Prestress Design</div>
+                                <div class="feature-tag">Code Compliance</div>
+                            </div>
+                            <div class="project-filter-info" id="calcProjectFilter">
+                                <span class="filter-label">Project-specific calculations available when project is selected</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="card-content">
-                        <p class="card-description">
-                            Comprehensive calculation tools for concrete stress analysis, prestress design,
-                            load calculations, and structural verification specific to precast elements.
-                        </p>
-                        <div class="card-features">
-                            <div class="feature-tag">Stress Analysis</div>
-                            <div class="feature-tag">Load Calculations</div>
-                            <div class="feature-tag">Prestress Design</div>
-                            <div class="feature-tag">Code Compliance</div>
+
+                    <!-- Engineering Design Summaries -->
+                    <div class="engineering-card design-summary" onclick="openEngineeringTool('design-summary')">
+                        <div class="card-header">
+                            <div class="card-icon">
+                                <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+                                    <path d="M14 2v6h6" />
+                                    <path d="M16 13H8m8 2H8m4 2H8" />
+                                </svg>
+                            </div>
+                            <div class="card-title-section">
+                                <h3 class="card-title">Engineering Design Summaries</h3>
+                                <p class="card-subtitle">Technical documentation & reports</p>
+                            </div>
+                            <div class="card-status">
+                                <span class="status-badge status-active">Ready</span>
+                            </div>
                         </div>
-                        <div class="project-filter-info" id="calcProjectFilter">
-                            <span class="filter-label">Project-specific calculations available when project is selected</span>
+                        <div class="card-content">
+                            <p class="card-description">
+                                Generate comprehensive design summaries, technical specifications, and
+                                engineering reports with automatic integration from ACC project data.
+                            </p>
+                            <div class="card-features">
+                                <div class="feature-tag">Design Reports</div>
+                                <div class="feature-tag">Spec Sheets</div>
+                                <div class="feature-tag">ACC Integration</div>
+                                <div class="feature-tag">Auto-Generation</div>
+                            </div>
+                            <div class="project-filter-info" id="designProjectFilter">
+                                <span class="filter-label">Design summaries filtered by project requirements and specifications</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="engineering-card design-summary" onclick="openEngineeringTool('design-summary')">
-                    <div class="card-header">
-                        <div class="card-icon">
-                            <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
-                                <path d="M14 2v6h6" />
-                                <path d="M16 13H8m8 2H8m4 2H8" />
-                            </svg>
-                        </div>
-                        <div class="card-title-section">
-                            <h3 class="card-title">Engineering Design Summaries</h3>
-                            <p class="card-subtitle">Technical documentation & reports</p>
-                        </div>
-                        <div class="card-status">
-                            <span class="status-badge status-active">Ready</span>
-                        </div>
-                    </div>
-                    <div class="card-content">
-                        <p class="card-description">
-                            Generate comprehensive design summaries, technical specifications, and
-                            engineering reports with automatic integration from ACC project data.
-                        </p>
-                        <div class="card-features">
-                            <div class="feature-tag">Design Reports</div>
-                            <div class="feature-tag">Spec Sheets</div>
-                            <div class="feature-tag">ACC Integration</div>
-                            <div class="feature-tag">Auto-Generation</div>
-                        </div>
-                        <div class="project-filter-info" id="designProjectFilter">
-                            <span class="filter-label">Design summaries filtered by project requirements and specifications</span>
-                        </div>
-                    </div>
-                </div>
+                <!-- Right Column: Management & Query Tools -->
+                <div class="engineering-column right-column">
+                    <h3 class="column-title">Management & Data</h3>
 
-                <div class="engineering-card piece-issue" onclick="openEngineeringTool('piece-issue')">
-                    <div class="card-header">
-                        <div class="card-icon">
-                            <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
-                                <path d="M11 11h2v6h-2z" />
-                                <circle cx="12" cy="8" r="1" />
-                            </svg>
+                    <!-- Piece Issue Management -->
+                    <div class="engineering-card piece-issue" onclick="openEngineeringTool('piece-issue')">
+                        <div class="card-header">
+                            <div class="card-icon">
+                                <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+                                    <path d="M11 11h2v6h-2z" />
+                                    <circle cx="12" cy="8" r="1" />
+                                </svg>
+                            </div>
+                            <div class="card-title-section">
+                                <h3 class="card-title">Piece Issue Management</h3>
+                                <p class="card-subtitle">Track & resolve production issues</p>
+                            </div>
+                            <div class="card-status">
+                                <span class="status-badge status-development">Development</span>
+                            </div>
                         </div>
-                        <div class="card-title-section">
-                            <h3 class="card-title">Piece Issue Management</h3>
-                            <p class="card-subtitle">Track & resolve production issues</p>
-                        </div>
-                        <div class="card-status">
-                            <span class="status-badge status-development">Development</span>
+                        <div class="card-content">
+                            <p class="card-description">
+                                Comprehensive issue tracking for precast pieces including design conflicts,
+                                production problems, quality concerns, and resolution workflows.
+                            </p>
+                            <div class="card-features">
+                                <div class="feature-tag">Issue Tracking</div>
+                                <div class="feature-tag">Workflow Management</div>
+                                <div class="feature-tag">Quality Control</div>
+                                <div class="feature-tag">Notifications</div>
+                            </div>
+                            <div class="project-filter-info" id="issueProjectFilter">
+                                <span class="filter-label">Issue tracking scoped to selected project pieces and production runs</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="card-content">
-                        <p class="card-description">
-                            Comprehensive issue tracking for precast pieces including design conflicts,
-                            production problems, quality concerns, and resolution workflows.
-                        </p>
-                        <div class="card-features">
-                            <div class="feature-tag">Issue Tracking</div>
-                            <div class="feature-tag">Resolution Workflow</div>
-                            <div class="feature-tag">Design Conflicts</div>
-                            <div class="feature-tag">Quality Alerts</div>
-                        </div>
-                        <div class="project-filter-info" id="issueProjectFilter">
-                            <span class="filter-label">Issues filtered by selected project and associated design elements</span>
-                        </div>
-                    </div>
-                </div>
 
-                <div class="engineering-card bom-query" onclick="openEngineeringTool('bom-query')">
-                    <div class="card-header">
-                        <div class="card-icon">
-                            <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm2-7h-2V2h-2v2H9V2H7v2H5c-1.1 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z" />
-                                <path d="M9 15H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z" />
-                            </svg>
+                    <!-- BOM Query System -->
+                    <div class="engineering-card bom-query" onclick="openEngineeringTool('bom-query')">
+                        <div class="card-header">
+                            <div class="card-icon">
+                                <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M9 11H7v2h2v-2zm0 4H7v2h2v-2zm0-8H7v2h2V7zm4 4h-2v2h2v-2zm0 4h-2v2h2v-2zm0-8h-2v2h2V7zm4 4h-2v2h2v-2zm0 4h-2v2h2v-2zm0-8h-2v2h2V7z" />
+                                    <path d="M5 3v18a2 2 0 002 2h10a2 2 0 002-2V3a2 2 0 00-2-2H7a2 2 0 00-2 2z" />
+                                </svg>
+                            </div>
+                            <div class="card-title-section">
+                                <h3 class="card-title">BOM Query System</h3>
+                                <p class="card-subtitle">Material planning & cost analysis</p>
+                            </div>
+                            <div class="card-status">
+                                <span class="status-badge status-development">Development</span>
+                            </div>
                         </div>
-                        <div class="card-title-section">
-                            <h3 class="card-title">BOM Query System</h3>
-                            <p class="card-subtitle">Bill of materials analysis & reporting</p>
-                        </div>
-                        <div class="card-status">
-                            <span class="status-badge status-development">Development</span>
-                        </div>
-                    </div>
-                    <div class="card-content">
-                        <p class="card-description">
-                            Advanced bill of materials querying with material takeoffs, cost analysis,
-                            inventory integration, and procurement planning for precast production.
-                        </p>
-                        <div class="card-features">
-                            <div class="feature-tag">Material Takeoffs</div>
-                            <div class="feature-tag">Cost Analysis</div>
-                            <div class="feature-tag">Inventory Sync</div>
-                            <div class="feature-tag">Procurement</div>
-                        </div>
-                        <div class="project-filter-info" id="bomProjectFilter">
-                            <span class="filter-label">BOM data scoped to selected project materials and specifications</span>
+                        <div class="card-content">
+                            <p class="card-description">
+                                Advanced bill of materials querying with automated takeoffs, cost analysis,
+                                inventory integration, and procurement workflows.
+                            </p>
+                            <div class="card-features">
+                                <div class="feature-tag">Material Takeoffs</div>
+                                <div class="feature-tag">Cost Analysis</div>
+                                <div class="feature-tag">Inventory Sync</div>
+                                <div class="feature-tag">Procurement</div>
+                            </div>
+                            <div class="project-filter-info" id="bomProjectFilter">
+                                <span class="filter-label">BOM data scoped to selected project materials and specifications</span>
+                            </div>
                         </div>
                     </div>
                 </div>
