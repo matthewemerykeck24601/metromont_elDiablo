@@ -1,13 +1,12 @@
-/* Engineering & Drafting Module - Enhanced Calculator Styles */
-/* Base styles and layout foundation */
+/* Engineering & Drafting Module - Original Layout Restored */
 
 :root {
     --primary-blue: #2563eb;
     --primary-blue-dark: #1d4ed8;
     --secondary-cyan: #06b6d4;
-    --success-green: #10b981;
-    --warning-orange: #f59e0b;
-    --danger-red: #ef4444;
+    --success-green: #059669;
+    --warning-orange: #d97706;
+    --danger-red: #dc2626;
     --gray-50: #f9fafb;
     --gray-100: #f3f4f6;
     --gray-200: #e5e7eb;
@@ -20,6 +19,7 @@
     --gray-900: #111827;
 }
 
+/* Global Styles */
 * {
     margin: 0;
     padding: 0;
@@ -27,93 +27,95 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    color: var(--gray-900);
     line-height: 1.6;
-    color: var(--gray-800);
-    background: var(--gray-50);
-    overflow-x: hidden;
+    min-height: 100vh;
+}
+
+/* Container */
+.container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
 }
 
 /* Header */
-.header {
-    background: var(--gray-900);
-    color: white;
-    padding: 1rem 2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+.main-header {
+    background: white;
+    border-bottom: 1px solid var(--gray-200);
+    padding: 1rem 0;
     position: sticky;
     top: 0;
     z-index: 100;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.header-left {
-    display: flex;
+.header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 2rem;
 }
 
-.logo {
+.nav-section {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    text-decoration: none;
-    color: white;
 }
 
-    .logo svg {
-        width: 32px;
-        height: 32px;
-        color: var(--primary-blue);
-    }
-
-.logo-text .company-name {
-    font-size: 1.25rem;
-    font-weight: 700;
-    display: block;
-}
-
-.logo-text .module-name {
-    font-size: 0.75rem;
-    opacity: 0.8;
-    display: block;
-}
-
-.back-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    text-decoration: none;
+.back-button {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--gray-100);
+    border: 1px solid var(--gray-300);
+    border-radius: 8px;
+    color: var(--gray-700);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
     transition: all 0.2s ease;
+}
+
+    .back-button:hover {
+        background: var(--gray-200);
+        color: var(--gray-900);
+    }
+
+.logo-section {
+    text-align: center;
+}
+
+.main-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-bottom: 0.25rem;
+}
+
+.main-subtitle {
+    color: var(--gray-600);
     font-size: 0.875rem;
 }
 
-    .back-btn:hover {
-        background: rgba(255, 255, 255, 0.15);
-        color: white;
-        transform: translateX(-2px);
-    }
-
-.header-right {
+.auth-section {
     display: flex;
-    align-items: center;
-    gap: 1rem;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
 }
 
 .auth-status {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    background: rgba(255, 255, 255, 0.1);
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
 }
 
 .status-indicator {
@@ -1033,13 +1035,99 @@ body {
     text-align: center;
     padding: 2rem;
     font-size: 0.875rem;
+    margin-top: auto;
+}
+
+/* Notification System */
+.notification {
+    position: fixed;
+    top: 2rem;
+    right: 2rem;
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+    z-index: 1100;
+    display: none;
+    max-width: 400px;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s ease;
+}
+
+    .notification.show {
+        opacity: 1;
+        transform: translateX(0);
+        display: block;
+    }
+
+    .notification.success {
+        background: var(--success-green);
+        color: white;
+    }
+
+    .notification.error {
+        background: var(--danger-red);
+        color: white;
+    }
+
+    .notification.warning {
+        background: var(--warning-orange);
+        color: white;
+    }
+
+    .notification.info {
+        background: var(--primary-blue);
+        color: white;
+    }
+
+/* Loading Overlay */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    display: none;
+}
+
+.loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid var(--gray-200);
+    border-top: 4px solid var(--primary-blue);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
 }
 
 /* Responsive Design */
-@media (max-width: 1200px) {
+@media (max-width: 1024px) {
     .engineering-split-screen {
         grid-template-columns: 1fr;
         gap: 1.5rem;
+    }
+
+    .module-header-content {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+        text-align: center;
+    }
+
+    .project-selection-panel {
+        min-width: auto;
     }
 
     .calculator-layout {
@@ -1058,31 +1146,24 @@ body {
         padding: 1rem;
     }
 
+    .header-content {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+        text-align: center;
+        padding: 0 1rem;
+    }
+
+    .back-button {
+        align-self: center;
+    }
+
+    .auth-section {
+        align-items: center;
+    }
+
     .module-header {
         padding: 1.5rem;
     }
-
-    .module-header-content {
-        grid-template-columns: 1fr;
-        gap: 1.5rem;
-    }
-
-    .header {
-        padding: 1rem;
-    }
-
-    .header-left {
-        gap: 1rem;
-    }
-
-    .back-btn {
-        padding: 0.5rem;
-        font-size: 0;
-    }
-
-        .back-btn svg {
-            margin: 0;
-        }
 
     .modal-content {
         width: 95%;
@@ -1119,15 +1200,23 @@ body {
 }
 
 @media (max-width: 480px) {
-    .header-right .auth-status {
-        display: none;
+    .engineering-card {
+        margin-bottom: 1rem;
     }
 
-    .logo-text .company-name {
-        font-size: 1rem;
+    .card-header {
+        padding: 1rem;
     }
 
-    .logo-text .module-name {
-        display: none;
+    .card-content {
+        padding: 0 1rem 1rem 1rem;
+    }
+
+    .card-title {
+        font-size: 1.125rem;
+    }
+
+    .module-info .module-title {
+        font-size: 1.5rem;
     }
 }
