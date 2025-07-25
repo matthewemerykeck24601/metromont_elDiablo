@@ -19,13 +19,10 @@ async function initializeEngineering() {
         // Check authentication
         await checkAuthentication();
         
-        // Load project data if authenticated
+        // If authenticated, complete the setup
         if (isAuthenticated) {
-            await loadProjects();
+            await completeAuthentication();
         }
-        
-        // Initialize UI
-        initializeUI();
         
         console.log('Engineering module initialized successfully');
         
@@ -34,6 +31,36 @@ async function initializeEngineering() {
         showNotification('Failed to initialize: ' + error.message, 'error');
     } finally {
         authCheckComplete = true;
+    }
+}
+
+async function completeAuthentication() {
+    try {
+        updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
+
+        // Load the hub data that was already loaded during main authentication
+        // This is the SAME method used by QC Bed Report
+        await loadPreLoadedHubData();
+
+        const projectCount = globalHubData ? globalHubData.projects.length : 0;
+        const accountName = globalHubData && globalHubData.accountInfo ? 
+            globalHubData.accountInfo.name : 'ACC Account';
+
+        updateAuthStatus('✅ Connected', `Connected to ${accountName} with ${projectCount} projects available`);
+
+        // Populate project dropdown - this is the key part that was missing!
+        if (globalHubData && globalHubData.projects) {
+            populateProjectDropdown(globalHubData.projects);
+        }
+
+        // Initialize UI after data is loaded
+        initializeUI();
+
+        console.log('✅ Engineering module ready with pre-loaded data');
+
+    } catch (error) {
+        console.error('Authentication completion failed:', error);
+        showNotification('Failed to load project data: ' + error.message, 'error');
     }
 }
 

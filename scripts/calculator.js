@@ -42,8 +42,35 @@ async function initializeCalculator() {
         // Check authentication from parent app
         await checkAuthentication();
 
-        // Load project data
-        await loadProjects();
+        // Complete authentication and load projects
+        if (forgeAccessToken) {
+            await completeAuthentication();
+        }
+
+        console.log('Calculator initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize calculator:', error);
+        showNotification('Failed to initialize calculator: ' + error.message, 'error');
+    }
+}
+
+async function completeAuthentication() {
+    try {
+        updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
+
+        // Load the hub data that was already loaded during main authentication
+        await loadPreLoadedHubData();
+
+        const projectCount = globalHubData ? globalHubData.projects.length : 0;
+        const accountName = globalHubData && globalHubData.accountInfo ?
+            globalHubData.accountInfo.name : 'ACC Account';
+
+        updateAuthStatus('✅ Connected', `Connected to ${accountName} with ${projectCount} projects available`);
+
+        // Populate project dropdown
+        if (globalHubData && globalHubData.projects) {
+            populateProjectDropdown(globalHubData.projects);
+        }
 
         // Load calculation history
         loadCalculationHistory();
@@ -51,10 +78,11 @@ async function initializeCalculator() {
         // Initialize UI event listeners
         initializeUI();
 
-        console.log('Calculator initialized successfully');
+        console.log('✅ Calculator ready with pre-loaded data');
+
     } catch (error) {
-        console.error('Failed to initialize calculator:', error);
-        showNotification('Failed to initialize calculator: ' + error.message, 'error');
+        console.error('Authentication completion failed:', error);
+        showNotification('Failed to load project data: ' + error.message, 'error');
     }
 }
 
