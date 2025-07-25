@@ -4,46 +4,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Engineering & Drafting - CastLink</title>
+    <title>Engineering Calculator - MetromontCastLink</title>
     <link rel="stylesheet" href="styles/engineering.css">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <script src="scripts/config.js"></script>
 </head>
 
 <body>
     <div class="container">
-        <header class="main-header">
-            <div class="header-content">
-                <div class="nav-section">
-                    <button class="back-button" onclick="goBack()">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M19 12H5m7-7l-7 7 7 7" />
-                        </svg>
-                        Back to Dashboard
-                    </button>
-                </div>
-                <div class="logo-section">
-                    <h1 class="main-title">Engineering & Drafting</h1>
-                    <p class="main-subtitle">Design Automation & Technical Management</p>
-                </div>
-                <div class="auth-section">
-                    <div class="auth-status">
-                        <div class="status-indicator" id="authIndicator"></div>
-                        <span id="authStatus">Checking authentication...</span>
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <a href="index.html" class="logo">
+                    <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" />
+                        <path d="M6.5 7.5h3v1h-3zm0 2h3v1h-3zm0 2h3v1h-3zm5-4h5v1h-5zm0 2h5v1h-5zm0 2h5v1h-5zm-5 2h11v1H6.5z" />
+                        <circle cx="16" cy="8" r="1" />
+                        <path d="M14.5 16.5h3v1h-3z" />
+                    </svg>
+                    <div class="logo-text">
+                        <span class="company-name">MetromontCastLink</span>
+                        <span class="module-name">Engineering & Drafting Module</span>
                     </div>
-                    <div class="auth-info" id="authInfo">Connecting to ACC...</div>
+                </a>
+                <a href="index.html" class="back-btn">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                    </svg>
+                    Back to Dashboard
+                </a>
+            </div>
+            <div class="header-right">
+                <div class="auth-status">
+                    <div class="status-indicator" id="statusIndicator"></div>
+                    <div class="auth-info">
+                        <div id="authStatusTitle">Checking Authentication...</div>
+                        <div id="authStatusDescription">Verifying access credentials...</div>
+                    </div>
                 </div>
             </div>
         </header>
 
+        <!-- Main Content -->
         <main class="main-content">
+            <!-- Module Header -->
             <section class="module-header">
                 <div class="module-header-content">
                     <div class="module-info">
-                        <h2 class="module-title">Design Automation Hub</h2>
+                        <h1 class="module-title">Engineering Calculator</h1>
                         <p class="module-description">
-                            Comprehensive engineering tools for design calculations, technical documentation,
-                            issue management, and bill of materials integration with ACC and Revit.
+                            Advanced precast concrete design calculations with integrated 3D model viewing.
+                            Perform PCI-compliant structural analysis for columns, beams, walls, and double tees
+                            with automated load transfer calculations and code compliance checking.
                         </p>
                     </div>
                     <div class="project-selection-panel" id="projectSelectionPanel">
@@ -54,7 +65,7 @@
                         </select>
                         <div class="project-info" id="projectInfo">
                             <span class="project-name" id="projectName">No project selected</span>
-                            <span class="project-details" id="projectDetails">Select a project to view design requirements</span>
+                            <span class="project-details" id="projectDetails">Select a project to begin calculations</span>
                         </div>
                     </div>
                 </div>
@@ -79,7 +90,7 @@
                             </div>
                             <div class="card-title-section">
                                 <h3 class="card-title">Engineering Calculator</h3>
-                                <p class="card-subtitle">Precast design calculations & analysis</p>
+                                <p class="card-subtitle">PCI-compliant design calculations</p>
                             </div>
                             <div class="card-status">
                                 <span class="status-badge status-active">Ready</span>
@@ -87,14 +98,16 @@
                         </div>
                         <div class="card-content">
                             <p class="card-description">
-                                Comprehensive calculation tools for concrete stress analysis, prestress design,
-                                load calculations, and structural verification specific to precast elements.
+                                Comprehensive calculation tools for precast concrete elements including point load analysis,
+                                column design, wall panels, beams, and double tees with integrated 3D model viewing.
                             </p>
                             <div class="card-features">
-                                <div class="feature-tag">Stress Analysis</div>
-                                <div class="feature-tag">Load Calculations</div>
-                                <div class="feature-tag">Prestress Design</div>
-                                <div class="feature-tag">Code Compliance</div>
+                                <div class="feature-tag">Point Load Transfer</div>
+                                <div class="feature-tag">Column Design</div>
+                                <div class="feature-tag">Wall Panels</div>
+                                <div class="feature-tag">Beam Analysis</div>
+                                <div class="feature-tag">Double Tee Design</div>
+                                <div class="feature-tag">3D Model Integration</div>
                             </div>
                             <div class="project-filter-info" id="calcProjectFilter">
                                 <span class="filter-label">Project-specific calculations available when project is selected</span>
@@ -113,23 +126,23 @@
                                 </svg>
                             </div>
                             <div class="card-title-section">
-                                <h3 class="card-title">Engineering Design Summaries</h3>
+                                <h3 class="card-title">Design Summary Generator</h3>
                                 <p class="card-subtitle">Technical documentation & reports</p>
                             </div>
                             <div class="card-status">
-                                <span class="status-badge status-active">Ready</span>
+                                <span class="status-badge status-development">Development</span>
                             </div>
                         </div>
                         <div class="card-content">
                             <p class="card-description">
                                 Generate comprehensive design summaries, technical specifications, and
-                                engineering reports with automatic integration from ACC project data.
+                                engineering reports with automatic integration from calculator results and ACC project data.
                             </p>
                             <div class="card-features">
-                                <div class="feature-tag">Design Reports</div>
-                                <div class="feature-tag">Spec Sheets</div>
-                                <div class="feature-tag">ACC Integration</div>
-                                <div class="feature-tag">Auto-Generation</div>
+                                <div class="feature-tag">Calculation Reports</div>
+                                <div class="feature-tag">Technical Drawings</div>
+                                <div class="feature-tag">Code Compliance</div>
+                                <div class="feature-tag">PDF Export</div>
                             </div>
                             <div class="project-filter-info" id="designProjectFilter">
                                 <span class="filter-label">Design summaries filtered by project requirements and specifications</span>
@@ -138,23 +151,21 @@
                     </div>
                 </div>
 
-                <!-- Right Column: Management & Query Tools -->
+                <!-- Right Column: Data & Management Tools -->
                 <div class="engineering-column right-column">
-                    <h3 class="column-title">Management & Data</h3>
+                    <h3 class="column-title">Data & Management</h3>
 
                     <!-- Piece Issue Management -->
                     <div class="engineering-card piece-issue" onclick="openEngineeringTool('piece-issue')">
                         <div class="card-header">
                             <div class="card-icon">
                                 <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
-                                    <path d="M11 11h2v6h-2z" />
-                                    <circle cx="12" cy="8" r="1" />
+                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                                 </svg>
                             </div>
                             <div class="card-title-section">
                                 <h3 class="card-title">Piece Issue Management</h3>
-                                <p class="card-subtitle">Track & resolve production issues</p>
+                                <p class="card-subtitle">Track and resolve design issues</p>
                             </div>
                             <div class="card-status">
                                 <span class="status-badge status-development">Development</span>
@@ -162,33 +173,32 @@
                         </div>
                         <div class="card-content">
                             <p class="card-description">
-                                Comprehensive issue tracking for precast pieces including design conflicts,
-                                production problems, quality concerns, and resolution workflows.
+                                Identify, track, and manage design issues for individual precast pieces.
+                                Integrate with calculation results to flag potential structural concerns.
                             </p>
                             <div class="card-features">
                                 <div class="feature-tag">Issue Tracking</div>
-                                <div class="feature-tag">Workflow Management</div>
-                                <div class="feature-tag">Quality Control</div>
-                                <div class="feature-tag">Notifications</div>
+                                <div class="feature-tag">Design Alerts</div>
+                                <div class="feature-tag">Resolution Workflow</div>
+                                <div class="feature-tag">Team Collaboration</div>
                             </div>
-                            <div class="project-filter-info" id="issueProjectFilter">
-                                <span class="filter-label">Issue tracking scoped to selected project pieces and production runs</span>
+                            <div class="project-filter-info">
+                                <span class="filter-label">Issue tracking filtered by selected project pieces</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- BOM Query System -->
+                    <!-- BOM Query Tool -->
                     <div class="engineering-card bom-query" onclick="openEngineeringTool('bom-query')">
                         <div class="card-header">
                             <div class="card-icon">
                                 <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M9 11H7v2h2v-2zm0 4H7v2h2v-2zm0-8H7v2h2V7zm4 4h-2v2h2v-2zm0 4h-2v2h2v-2zm0-8h-2v2h2V7zm4 4h-2v2h2v-2zm0 4h-2v2h2v-2zm0-8h-2v2h2V7z" />
-                                    <path d="M5 3v18a2 2 0 002 2h10a2 2 0 002-2V3a2 2 0 00-2-2H7a2 2 0 00-2 2z" />
+                                    <path d="M9 11H7v6h2v-6zm4 0h-2v6h2v-6zm4 0h-2v6h2v-6zm2-7H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V8h14v12z" />
                                 </svg>
                             </div>
                             <div class="card-title-section">
-                                <h3 class="card-title">BOM Query System</h3>
-                                <p class="card-subtitle">Material planning & cost analysis</p>
+                                <h3 class="card-title">BOM Query Tool</h3>
+                                <p class="card-subtitle">Material analysis & optimization</p>
                             </div>
                             <div class="card-status">
                                 <span class="status-badge status-development">Development</span>
@@ -196,14 +206,14 @@
                         </div>
                         <div class="card-content">
                             <p class="card-description">
-                                Advanced bill of materials querying with automated takeoffs, cost analysis,
-                                inventory integration, and procurement workflows.
+                                Query and analyze bill of materials data from ACC projects.
+                                Optimize material usage and identify cost-saving opportunities.
                             </p>
                             <div class="card-features">
-                                <div class="feature-tag">Material Takeoffs</div>
+                                <div class="feature-tag">Material Search</div>
                                 <div class="feature-tag">Cost Analysis</div>
-                                <div class="feature-tag">Inventory Sync</div>
-                                <div class="feature-tag">Procurement</div>
+                                <div class="feature-tag">Usage Optimization</div>
+                                <div class="feature-tag">Inventory Planning</div>
                             </div>
                             <div class="project-filter-info" id="bomProjectFilter">
                                 <span class="filter-label">BOM data scoped to selected project materials and specifications</span>
@@ -213,38 +223,51 @@
                 </div>
             </section>
 
+            <!-- Quick Actions Section -->
             <section class="quick-actions">
-                <h3 class="section-title">Quick Actions</h3>
-                <div class="actions-grid">
-                    <button class="action-btn" onclick="createNewCalculation()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <div class="quick-actions-header">
+                    <h3>Quick Actions</h3>
+                    <p>Common engineering tasks and shortcuts</p>
+                </div>
+                <div class="quick-actions-grid">
+                    <button class="quick-action-btn" onclick="createNewCalculation()">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                         </svg>
                         New Calculation
                     </button>
-                    <button class="action-btn" onclick="generateReport()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                    <button class="quick-action-btn" onclick="generateReport()">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
                         </svg>
                         Generate Report
                     </button>
-                    <button class="action-btn" onclick="syncWithACC()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 4L12 1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8z" />
+                    <button class="quick-action-btn" onclick="syncWithACC()">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 8.74C4.46 8.97 4 11.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" />
                         </svg>
                         Sync with ACC
                     </button>
-                    <button class="action-btn" onclick="viewRecentItems()">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <button class="quick-action-btn" onclick="viewRecentItems()">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z" />
                         </svg>
                         Recent Items
                     </button>
                 </div>
             </section>
+
+            <!-- Calculation History Sidebar (Hidden by default, shown when calculations exist) -->
+            <aside class="calculation-history" id="calculationHistory" style="display: none;">
+                <h4>Recent Calculations</h4>
+                <div class="history-content">
+                    <!-- Populated dynamically -->
+                </div>
+            </aside>
         </main>
 
-        <footer class="main-footer">
+        <!-- Footer -->
+        <footer class="footer">
             <p>&copy; 2025 Metromont Corporation. All rights reserved. | Engineering & Drafting Module</p>
         </footer>
     </div>
@@ -255,14 +278,190 @@
     </div>
 
     <!-- Loading Overlay -->
-    <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
         <div class="loading-spinner">
             <div class="spinner"></div>
             <p>Loading engineering tools...</p>
         </div>
     </div>
 
+    <!-- Scripts -->
+    <script>
+// Global configuration for ACC integration
+window.ACC_CLIENT_ID = 'RrXjaW8qlIiWI3h8Rt1F3w4s7MUJfXBr';
+window.ACC_CALLBACK_URL = 'https://metrocastpro.com/';
+    </script>
+
+    <!-- Forge Viewer will be loaded dynamically by the JavaScript -->
     <script src="scripts/engineering.js"></script>
+
+    <style>
+        /* Additional styles for quick actions section */
+        .quick-actions {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--gray-200);
+        }
+
+        .quick-actions-header {
+            margin-bottom: 1.5rem;
+        }
+
+            .quick-actions-header h3 {
+                font-size: 1.5rem;
+                font-weight: 600;
+                color: var(--gray-900);
+                margin-bottom: 0.5rem;
+            }
+
+            .quick-actions-header p {
+                color: var(--gray-600);
+                font-size: 0.875rem;
+            }
+
+        .quick-actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .quick-action-btn {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--gray-700);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+            .quick-action-btn:hover {
+                background: var(--primary-blue);
+                color: white;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+            }
+
+            .quick-action-btn svg {
+                flex-shrink: 0;
+            }
+
+        /* Calculation History Sidebar */
+        .calculation-history {
+            position: fixed;
+            right: 2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 280px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--gray-200);
+            z-index: 50;
+        }
+
+            .calculation-history h4 {
+                padding: 1rem 1.5rem;
+                border-bottom: 1px solid var(--gray-200);
+                font-size: 1rem;
+                font-weight: 600;
+                color: var(--gray-900);
+                margin: 0;
+            }
+
+        .history-content {
+            padding: 1rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 0.75rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            margin-bottom: 0.5rem;
+        }
+
+            .history-item:hover {
+                background: var(--gray-50);
+            }
+
+        .history-title {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--gray-900);
+            margin-bottom: 0.25rem;
+        }
+
+        .history-date {
+            font-size: 0.75rem;
+            color: var(--gray-600);
+        }
+
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .loading-spinner {
+            text-align: center;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--gray-200);
+            border-top: 4px solid var(--primary-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Responsive design for quick actions */
+        @media (max-width: 768px) {
+            .quick-actions-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .calculation-history {
+                display: none !important;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .quick-actions-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </body>
 
 </html>
