@@ -42,7 +42,7 @@ async function checkAuthentication() {
     console.log('Checking authentication...');
     
     try {
-        // Method 1: Check if parent app has authentication
+        // Method 1: Check if parent app has authentication (same as QC Bed Report)
         if (window.parent && window.parent !== window && window.parent.CastLinkAuth) {
             console.log('Checking parent app authentication...');
             const isAuth = await window.parent.CastLinkAuth.waitForAuth();
@@ -58,7 +58,7 @@ async function checkAuthentication() {
             }
         }
         
-        // Method 2: Check stored token
+        // Method 2: Check stored token (same pattern as QC Bed Report)
         console.log('Checking stored token...');
         const storedToken = getStoredToken();
         if (storedToken && !isTokenExpired(storedToken)) {
@@ -68,13 +68,6 @@ async function checkAuthentication() {
                 forgeAccessToken = storedToken.access_token;
                 isAuthenticated = true;
                 updateAuthStatus('✅ Connected', 'Using stored authentication');
-                
-                // Try to load hub data from session storage
-                const hubDataStr = sessionStorage.getItem('castlink_hub_data');
-                if (hubDataStr) {
-                    globalHubData = JSON.parse(hubDataStr);
-                }
-                
                 console.log('Successfully authenticated via stored token');
                 return;
             } else {
@@ -84,15 +77,29 @@ async function checkAuthentication() {
         }
         
         // Method 3: No valid authentication found
-        console.log('No valid authentication found');
+        console.log('No valid authentication found - redirecting to main app');
         isAuthenticated = false;
-        updateAuthStatus('❌ Authentication Required', 'Please authenticate with ACC from the main dashboard');
+        updateAuthStatus('❌ Authentication Required', 'Redirecting to main app for authentication...');
+        
+        // Redirect to main app for authentication
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 2000);
         
     } catch (error) {
         console.error('Authentication check failed:', error);
         isAuthenticated = false;
         updateAuthStatus('❌ Authentication Error', error.message);
     }
+}
+
+function handleMissingHubData() {
+    const projectSelect = document.getElementById('projectSelect');
+    if (projectSelect) {
+        projectSelect.innerHTML = '<option value="">No projects available - please authenticate from main dashboard</option>';
+        projectSelect.disabled = true;
+    }
+    console.warn('No hub data available - user may need to authenticate from main dashboard');
 }
 
 async function loadProjects() {
@@ -147,9 +154,9 @@ function onProjectChange() {
     if (selectedProject && globalHubData && globalHubData.projects) {
         selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
         if (selectedProjectData) {
-            if (projectName) projectName.textContent = selectedProjectData.attributes.name;
+            if (projectName) projectName.textContent = selectedProjectData.name;
             if (projectDetails) projectDetails.textContent = 'Project selected - ready for engineering tools';
-            console.log('Project selected:', selectedProjectData.attributes.name);
+            console.log('Project selected:', selectedProjectData.name);
             return;
         }
     }

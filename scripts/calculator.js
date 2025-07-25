@@ -63,31 +63,47 @@ async function checkAuthentication() {
     console.log('Checking authentication...');
 
     try {
-        // Check if parent app has authentication
-        if (window.parent && window.parent.CastLinkAuth) {
+        // Method 1: Check if parent app has authentication (same as other modules)
+        if (window.parent && window.parent !== window && window.parent.CastLinkAuth) {
+            console.log('Checking parent app authentication...');
             const isAuth = await window.parent.CastLinkAuth.waitForAuth();
             if (isAuth) {
                 forgeAccessToken = window.parent.CastLinkAuth.getToken();
-                updateAuthStatus('✅ Connected', 'Authenticated with ACC');
-                return;
+                globalHubData = window.parent.CastLinkAuth.getHubData();
+                if (forgeAccessToken) {
+                    updateAuthStatus('✅ Connected', 'Authenticated with ACC');
+                    console.log('Successfully authenticated via parent app');
+                    return;
+                }
             }
         }
 
-        // Fallback to stored token
+        // Method 2: Check stored token (same pattern as other modules)
+        console.log('Checking stored token...');
         const storedToken = getStoredToken();
         if (storedToken && !isTokenExpired(storedToken)) {
-            forgeAccessToken = storedToken.access_token;
-
             // Verify token is still valid
-            const isValid = await verifyToken(forgeAccessToken);
+            const isValid = await verifyToken(storedToken.access_token);
             if (isValid) {
+                forgeAccessToken = storedToken.access_token;
                 updateAuthStatus('✅ Connected', 'Using stored authentication');
+                console.log('Successfully authenticated via stored token');
                 return;
+            } else {
+                console.log('Stored token is invalid, clearing...');
+                clearStoredToken();
             }
         }
 
-        // No valid authentication
-        updateAuthStatus('❌ Authentication Required', 'Please authenticate with ACC');
+        // Method 3: No valid authentication found - redirect to main app
+        console.log('No valid authentication found - redirecting to main app');
+        updateAuthStatus('❌ Authentication Required', 'Redirecting to main app for authentication...');
+
+        // Redirect to main app for authentication
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 2000);
+
         throw new Error('No valid authentication found');
 
     } catch (error) {
@@ -151,38 +167,21 @@ function onProjectChange() {
 
     selectedProject = projectSelect.value;
 
-    if (selectedProject) {
-        // Get project data from parent or stored data
-        let hubData = null;
-        if (window.parent && window.parent.CastLinkAuth) {
-            hubData = window.parent.CastLinkAuth.getHubData();
-        } else {
-            const stored = sessionStorage.getItem('castlink_hub_data');
-            if (stored) {
-                hubData = JSON.parse(stored);
-            }
+    if (selectedProject && globalHubData && globalHubData.projects) {
+        selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
+        if (selectedProjectData) {
+            if (projectName) projectName.textContent = selectedProjectData.name;
+            if (projectDetails) projectDetails.textContent = 'Ready for engineering calculations';
+            if (modelSelectBtn) modelSelectBtn.disabled = false;
+            console.log('Project selected:', selectedProjectData.name);
+            return;
         }
-
-        if (hubData && hubData.projects) {
-            selectedProjectData = hubData.projects.find(p => p.id === selectedProject);
-            if (selectedProjectData) {
-                projectName.textContent = selectedProjectData.attributes.name;
-                projectDetails.textContent = 'Ready for engineering calculations';
-                modelSelectBtn.disabled = false;
-                console.log('Project selected:', selectedProjectData.attributes.name);
-                return;
-            }
-        }
-
-        // Fallback
-        projectName.textContent = 'Project selected';
-        projectDetails.textContent = 'Ready for engineering calculations';
-        modelSelectBtn.disabled = false;
-    } else {
-        projectName.textContent = 'No project selected';
-        projectDetails.textContent = 'Select a project to begin calculations';
-        modelSelectBtn.disabled = true;
     }
+
+    // Fallback or no selection
+    if (projectName) projectName.textContent = selectedProject ? 'Project selected' : 'No project selected';
+    if (projectDetails) projectDetails.textContent = selectedProject ? 'Ready for engineering calculations' : 'Select a project to begin calculations';
+    if (modelSelectBtn) modelSelectBtn.disabled = !selectedProject;
 }
 
 // Model Selection Functions
@@ -671,7 +670,7 @@ async function saveCalculationToOSS(calculationData) {
         timestamp: new Date().toISOString(),
         projectInfo: {
             projectId: projectId,
-            projectName: selectedProjectData?.attributes?.name || 'Unknown Project',
+            projectName: selectedProjectData?.name || 'Unknown Project',
             modelId: selectedModel?.id,
             modelName: selectedModel?.name
         },
