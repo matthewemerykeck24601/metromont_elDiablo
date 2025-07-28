@@ -1,4 +1,4 @@
-﻿// Engineering Calculator JavaScript - COMPLETE FILE
+﻿// Engineering Calculator JavaScript - COMPLETE FILE WITH ALL FEATURES
 // Replace your entire scripts/calculator.js with this file
 
 // Global Variables (matching QC pattern + Architecture Alignment)
@@ -140,7 +140,6 @@ async function completeAuthentication() {
         updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
 
         // Load the hub data that was already loaded during main authentication
-        // This now calls populateProjectDropdown() internally - EXACT SAME as QC
         await loadPreLoadedHubData();
 
         const projectCount = globalHubData ? globalHubData.projects.length : 0;
@@ -264,96 +263,123 @@ async function findRevitModelsWithMetadata(folder) {
         if (!folderContentsResponse.ok) return [];
 
         const contentsData = await folderContentsResponse.json();
-        const models = [];
+        const revitModels = [];
 
+        // Find all Revit models in folder
         for (const item of contentsData.data) {
-            if (item.type === 'items' && item.attributes.displayName.endsWith('.rvt')) {
-                // Get item details with version info
-                const itemResponse = await fetch(
-                    `https://developer.api.autodesk.com/data/v1/projects/${selectedProject}/items/${item.id}`, {
-                    headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-                });
+            if (item.type === 'items' && item.attributes.displayName.toLowerCase().endsWith('.rvt')) {
 
-                if (itemResponse.ok) {
-                    const itemData = await itemResponse.json();
-                    models.push({
-                        id: item.id,
-                        name: item.attributes.displayName,
-                        urn: itemData.data.relationships.tip.data.id,
-                        folderName: folder.attributes.displayName,
-                        size: item.attributes.storageSize,
-                        modified: item.attributes.lastModifiedTime,
-                        translationStatus: 'pending' // Will check status
+                try {
+                    // Get latest version details
+                    const versionsResponse = await fetch(
+                        `https://developer.api.autodesk.com/data/v1/projects/${selectedProject}/items/${item.id}/versions`, {
+                        headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
                     });
+
+                    if (versionsResponse.ok) {
+                        const versionsData = await versionsResponse.json();
+                        const latestVersion = versionsData.data[0]; // First is latest
+
+                        if (latestVersion) {
+                            const modelData = {
+                                id: item.id,
+                                name: item.attributes.displayName,
+                                folderName: folder.attributes.displayName,
+                                folderId: folder.id,
+                                versionId: latestVersion.id,
+                                versionUrn: btoa(latestVersion.id).replace(/=/g, ''), // Base64 encode and remove padding
+                                size: item.attributes.storageSize || 0,
+                                lastModified: latestVersion.attributes.lastModifiedTime,
+                                translationStatus: 'pending',
+                                modelPropertiesReady: false,
+                                isCloudWorkshared: false,
+                                modelGuid: null
+                            };
+
+                            revitModels.push(modelData);
+                        }
+                    }
+                } catch (versionError) {
+                    console.error(`Error getting version for ${item.attributes.displayName}:`, versionError);
                 }
             }
         }
 
-        return models;
+        return revitModels;
 
     } catch (error) {
-        console.error('Error finding models in folder:', folder.attributes.displayName, error);
+        console.error(`Error scanning folder ${folder.attributes.name}:`, error);
         return [];
     }
 }
 
-// ALIGNED: Ensure models are translated to SVF2 format
+// ALIGNED: Ensure models are translated to SVF2 (required for Model Properties API)
 async function ensureModelsTranslatedToSVF2() {
     try {
-        console.log('⚙️ Checking model translation status...');
+        console.log('🔄 Ensuring SVF2 translation for Model Properties API compatibility...');
 
         for (const model of discoveredModels) {
-            const status = await checkModelTranslationStatus(model.urn);
+            try {
+                // Check current translation status
+                const manifestResponse = await fetch(
+                    `https://developer.api.autodesk.com/modelderivative/v2/designdata/${model.versionUrn}/manifest`, {
+                    headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+                });
 
-            if (status === 'success') {
-                model.translationStatus = 'ready';
-            } else if (status === 'inprogress') {
-                model.translationStatus = 'translating';
-                // Start monitoring
-                monitorTranslationProgress(model);
-            } else {
-                // Trigger translation to SVF2
-                await startModelTranslation(model);
+                if (manifestResponse.ok) {
+                    const manifest = await manifestResponse.json();
+
+                    // Check if SVF2 derivative exists
+                    const svf2Derivative = manifest.derivatives?.find(d =>
+                        d.outputType === 'svf2' && d.status === 'success'
+                    );
+
+                    if (svf2Derivative) {
+                        model.translationStatus = 'ready';
+                        model.modelPropertiesReady = true;
+                        console.log(`✅ ${model.name} - SVF2 ready`);
+                    } else if (manifest.status === 'inprogress') {
+                        model.translationStatus = 'translating';
+                        console.log(`⏳ ${model.name} - Translation in progress`);
+                    } else {
+                        // Trigger SVF2 translation
+                        await triggerSVF2Translation(model);
+                    }
+                } else if (manifestResponse.status === 404) {
+                    // No manifest exists, trigger translation
+                    await triggerSVF2Translation(model);
+                } else {
+                    throw new Error(`Manifest check failed: ${manifestResponse.status}`);
+                }
+
+            } catch (error) {
+                console.error(`Translation check failed for ${model.name}:`, error);
+                model.translationStatus = 'error';
             }
         }
 
     } catch (error) {
-        console.error('Translation check failed:', error);
+        console.error('SVF2 translation setup failed:', error);
+        throw error;
     }
 }
 
-// Check model translation status
-async function checkModelTranslationStatus(urn) {
+// ALIGNED: Trigger SVF2 translation (required for Model Properties API)
+async function triggerSVF2Translation(model) {
     try {
-        const response = await fetch(
-            `https://developer.api.autodesk.com/modelderivative/v2/designdata/${urn}/manifest`, {
-            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-        });
+        console.log(`🔄 Triggering SVF2 translation for ${model.name}...`);
 
-        if (!response.ok) return 'not_found';
-
-        const manifest = await response.json();
-        return manifest.status;
-
-    } catch (error) {
-        return 'error';
-    }
-}
-
-// Start model translation to SVF2
-async function startModelTranslation(model) {
-    try {
-        console.log(`🔄 Starting SVF2 translation for: ${model.name}`);
-
-        const translateRequest = {
+        const translationJob = {
             input: {
-                urn: model.urn
+                urn: model.versionUrn
             },
             output: {
-                formats: [{
-                    type: 'svf2',
-                    views: ['2d', '3d']
-                }]
+                formats: [
+                    {
+                        type: "svf2",
+                        views: ["2d", "3d"]
+                    }
+                ]
             }
         };
 
@@ -364,85 +390,88 @@ async function startModelTranslation(model) {
                 'Authorization': `Bearer ${forgeAccessToken}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(translateRequest)
+            body: JSON.stringify(translationJob)
         });
 
         if (response.ok) {
+            const result = await response.json();
             model.translationStatus = 'translating';
-            monitorTranslationProgress(model);
+            modelTranslationJobs.set(model.id, result.urn);
+            console.log(`🔄 ${model.name} - Translation started`);
         } else {
-            model.translationStatus = 'error';
+            const errorText = await response.text();
+            throw new Error(`Translation request failed: ${response.status} - ${errorText}`);
         }
 
     } catch (error) {
-        console.error('Translation start failed:', error);
+        console.error(`SVF2 translation failed for ${model.name}:`, error);
         model.translationStatus = 'error';
     }
 }
 
-// Monitor translation progress
-function monitorTranslationProgress(model) {
-    const jobId = `translation_${model.id}`;
-    modelTranslationJobs.set(jobId, setInterval(async () => {
-        const status = await checkModelTranslationStatus(model.urn);
-
-        if (status === 'success') {
-            model.translationStatus = 'ready';
-            clearInterval(modelTranslationJobs.get(jobId));
-            modelTranslationJobs.delete(jobId);
-            updateModelStatusUI(model);
-        } else if (status === 'failed') {
-            model.translationStatus = 'error';
-            clearInterval(modelTranslationJobs.get(jobId));
-            modelTranslationJobs.delete(jobId);
-            updateModelStatusUI(model);
-        }
-    }, 5000)); // Check every 5 seconds
-}
-
-// Update model status in UI
-function updateModelStatusUI(model) {
-    const modelElement = document.querySelector(`[data-model-id="${model.id}"]`);
-    if (modelElement) {
-        const statusBadge = modelElement.querySelector('.model-status');
-        if (statusBadge) {
-            statusBadge.className = `model-status ${model.translationStatus}`;
-            statusBadge.textContent = model.translationStatus === 'ready' ? 'Ready' :
-                model.translationStatus === 'translating' ? 'Processing...' :
-                    model.translationStatus === 'error' ? 'Error' : 'Pending';
-        }
-    }
-}
-
-// ALIGNED: Show enhanced model selection dialog
+// ALIGNED: Show enhanced model selection following architecture
 function showAlignedModelSelection() {
     const modal = document.getElementById('modelSelectionModal');
-    const modelsGrid = document.getElementById('modelsGrid');
-
-    if (!modal || !modelsGrid) {
-        // If modal doesn't exist, go directly to calculator with first available model
-        const readyModels = discoveredModels.filter(m => m.translationStatus === 'ready');
-        if (readyModels.length > 0) {
-            selectedModel = readyModels[0];
-            selectedModels = [readyModels[0]];
+    if (!modal) {
+        // If no modal exists, try to go directly to calculator
+        if (discoveredModels.length > 0) {
+            selectedModel = discoveredModels[0];
+            selectedModels = [discoveredModels[0]];
             initializeCalculatorInterface();
-        } else {
-            showNotification('No translated models available. Please wait for translation to complete.', 'warning');
         }
         return;
     }
 
-    // Show modal
     modal.style.display = 'flex';
 
-    // Populate models grid
-    modelsGrid.innerHTML = '';
-    discoveredModels.forEach(model => {
-        const modelTile = createModelTile(model);
-        modelsGrid.appendChild(modelTile);
-    });
+    const folderTree = document.getElementById('folderTree');
+    if (folderTree) {
+        // Populate with discovered models and their architecture status
+        folderTree.innerHTML = `
+            <h4>Revit Models in ${selectedProjectData.name}</h4>
+            <p class="architecture-note">🏗️ Following Forge Viewer + Model Properties + AEC Data workflow</p>
+            <div class="models-list">
+                ${discoveredModels.length === 0 ?
+                '<p class="no-models">No Revit models found in this project</p>' :
+                discoveredModels.map(model => `
+                        <div class="tree-item model-item enhanced" onclick="selectEnhancedModel('${model.id}', '${model.name}', '${model.versionUrn}')">
+                            <input type="checkbox" class="model-checkbox" id="model_${model.id}" />
+                            <span class="tree-icon">📋</span>
+                            <div class="model-info">
+                                <div class="model-name">${model.name}</div>
+                                <div class="model-details">
+                                    <small>📁 ${model.folderName} • 📅 ${new Date(model.lastModified).toLocaleDateString()}</small>
+                                </div>
+                                <div class="architecture-status">
+                                    <span class="status-badge ${getTranslationStatusClass(model.translationStatus)}">
+                                        ${getTranslationStatusText(model.translationStatus)}
+                                    </span>
+                                    <span class="status-badge ${model.modelPropertiesReady ? 'ready' : 'pending'}">
+                                        Model Properties: ${model.modelPropertiesReady ? 'Ready' : 'Pending'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')
+            }
+            </div>
+            ${discoveredModels.length > 0 ?
+                `<div class="model-actions">
+                    <button class="btn btn-sm" onclick="selectAllModels()">Select All Ready</button>
+                    <button class="btn btn-sm" onclick="clearAllModels()">Clear Selection</button>
+                    <button class="btn btn-sm" onclick="refreshTranslationStatus()">Refresh Status</button>
+                </div>` : ''
+            }
+        `;
+    }
 
-    updateAuthStatus('📐 Select Model', 'Choose one or more 3D models for calculations');
+    // Also populate models grid if it exists
+    const modelsGrid = document.getElementById('modelsGrid');
+    if (modelsGrid) {
+        modelsGrid.innerHTML = discoveredModels.map(model => createModelTile(model).outerHTML).join('');
+    }
+
+    updateAuthStatus('📐 Select Models', 'Choose one or more 3D models for calculations');
 }
 
 // Create model tile for selection
@@ -502,6 +531,40 @@ function selectModelTile(model) {
     if (selectBtn) {
         selectBtn.disabled = selectedModels.length === 0;
     }
+}
+
+// ALIGNED: Enhanced model selection with architecture validation
+function selectEnhancedModel(modelId, modelName, versionUrn) {
+    const model = discoveredModels.find(m => m.id === modelId);
+    const checkbox = document.getElementById(`model_${modelId}`);
+
+    if (!model || !checkbox) return;
+
+    // Validate model readiness for architecture workflow
+    if (model.translationStatus !== 'ready') {
+        showNotification(`${modelName} is not ready. SVF2 translation required for Model Properties API.`, 'warning');
+        return;
+    }
+
+    const wasChecked = checkbox.checked;
+    checkbox.checked = !wasChecked;
+
+    // Update selected models array
+    if (checkbox.checked) {
+        if (!selectedModels.find(m => m.id === modelId)) {
+            selectedModels.push({
+                id: modelId,
+                name: modelName,
+                versionUrn: versionUrn,
+                ...model
+            });
+        }
+    } else {
+        selectedModels = selectedModels.filter(m => m.id !== modelId);
+    }
+
+    updateModelSelectionUI();
+    updateLoadModelButton();
 }
 
 // Confirm model selection and load
@@ -614,22 +677,27 @@ async function initializeForgeViewerProperly() {
             }
         };
 
-        Autodesk.Viewing.Initializer(options, function () {
-            // Create viewer instance
-            forgeViewer = new Autodesk.Viewing.GuiViewer3D(viewerContainer);
+        return new Promise((resolve, reject) => {
+            Autodesk.Viewing.Initializer(options, function () {
+                // Create viewer instance
+                forgeViewer = new Autodesk.Viewing.GuiViewer3D(viewerContainer);
 
-            const startedCode = forgeViewer.start();
-            if (startedCode > 0) {
-                console.error('Failed to create a Viewer: WebGL not supported.');
-                return;
-            }
+                const startedCode = forgeViewer.start();
+                if (startedCode > 0) {
+                    console.error('Failed to create a Viewer: WebGL not supported.');
+                    reject(new Error('WebGL not supported'));
+                    return;
+                }
 
-            // Load the first selected model
-            const primaryModel = selectedModels[0] || selectedModel;
-            loadModelInViewer(primaryModel);
+                // Load the first selected model
+                const primaryModel = selectedModels[0] || selectedModel;
+                loadModelInViewer(primaryModel);
 
-            // Setup enhanced event handlers for architecture workflow
-            setupEnhancedViewerEventHandlers();
+                // Setup enhanced event handlers for architecture workflow
+                setupEnhancedViewerEventHandlers();
+
+                resolve();
+            });
         });
 
     } catch (error) {
@@ -639,39 +707,48 @@ async function initializeForgeViewerProperly() {
 }
 
 // Forge Viewer Integration
-function initializeForgeViewer() {
+async function initializeForgeViewer() {
     const viewerContainer = document.getElementById('forgeViewer');
     const viewerLoading = document.getElementById('viewerLoading');
 
     try {
         // Load Forge Viewer script dynamically
-        loadForgeViewerScript().then(() => {
-            const options = {
-                env: 'AutodeskProduction',
-                api: 'derivativeV2',
-                getAccessToken: function (onTokenReady) {
-                    const token = forgeAccessToken;
-                    const timeInSeconds = 3600;
-                    onTokenReady(token, timeInSeconds);
-                }
-            };
+        await loadForgeViewerScript();
 
+        const options = {
+            env: 'AutodeskProduction',
+            api: 'derivativeV2',
+            getAccessToken: function (onTokenReady) {
+                const token = forgeAccessToken;
+                const timeInSeconds = 3600;
+                onTokenReady(token, timeInSeconds);
+            }
+        };
+
+        return new Promise((resolve, reject) => {
             Autodesk.Viewing.Initializer(options, function () {
                 forgeViewer = new Autodesk.Viewing.GuiViewer3D(viewerContainer);
 
                 const startedCode = forgeViewer.start();
                 if (startedCode > 0) {
                     console.error('Failed to create a Viewer: WebGL not supported.');
+                    reject(new Error('WebGL not supported'));
                     return;
                 }
 
-                // Load model
-                loadModelInViewer(selectedModel);
+                // Hide loading indicator
+                if (viewerLoading) viewerLoading.style.display = 'none';
+
+                // Setup viewer tools
+                setupViewerTools();
+
+                resolve();
             });
         });
     } catch (error) {
         console.error('Failed to initialize Forge Viewer:', error);
         showNotification('Failed to initialize 3D viewer', 'error');
+        throw error;
     }
 }
 
@@ -702,7 +779,7 @@ function loadModelInViewer(model) {
     const viewerLoading = document.getElementById('viewerLoading');
     if (viewerLoading) viewerLoading.style.display = 'flex';
 
-    const documentId = `urn:${model.urn}`;
+    const documentId = `urn:${model.versionUrn}`;
 
     Autodesk.Viewing.Document.load(documentId, onDocumentLoadSuccess, onDocumentLoadFailure);
 
@@ -742,6 +819,8 @@ function setupEnhancedViewerEventHandlers() {
 
 // Setup viewer tools
 function setupViewerTools() {
+    if (!forgeViewer) return;
+
     // Add measurement tool
     forgeViewer.loadExtension('Autodesk.Measure');
 
@@ -756,8 +835,7 @@ function setupViewerTools() {
 
 // ALIGNED: Setup enhanced element selection following architecture
 function setupEnhancedElementSelection() {
-    console.log('🎯 Setting up enhanced element selection...');
-
+    console.log('🎯 Setting up enhanced element selection for BIM data extraction...');
     // This would integrate with Model Properties API
     // and AEC Data Model as specified in directives
 }
@@ -805,11 +883,12 @@ function handleElementSelection(dbIds) {
 
 // Get element properties
 function getElementProperties(dbId) {
+    if (!forgeViewer) return;
+
     forgeViewer.getProperties(dbId, (result) => {
         console.log('Element properties:', result);
-
-        // Display relevant properties in UI
         displayElementInfo(result);
+        updateSelectedElementInfo(result);
     });
 }
 
@@ -828,6 +907,19 @@ function displayElementInfo(properties) {
     `;
 
     resultsDiv.innerHTML = elementInfo;
+}
+
+function updateSelectedElementInfo(properties) {
+    // Update current calculation with selected element info
+    if (currentCalculation) {
+        currentCalculation.selectedElement = {
+            name: properties.name,
+            dbId: properties.dbId,
+            properties: properties.properties
+        };
+    }
+
+    showNotification('Element selected: ' + properties.name, 'info');
 }
 
 // Viewer controls
@@ -1095,8 +1187,12 @@ function openModelSelector() {
         return;
     }
 
-    // Show model selection modal
-    showAlignedModelSelection();
+    // Initialize model discovery if not already done
+    if (discoveredModels.length === 0) {
+        initializeWithProjectData();
+    } else {
+        showAlignedModelSelection();
+    }
 }
 
 function closeModelSelection() {
@@ -1124,8 +1220,9 @@ async function onProjectChange() {
         document.getElementById('projectDetails').textContent = `ID: ${selectedProjectData.id}`;
         document.getElementById('modelSelectBtn').disabled = false;
 
-        // Auto-discover models
-        await discoverRevitModels();
+        // Clear discovered models for new project
+        discoveredModels = [];
+        selectedModels = [];
     }
 }
 
@@ -1178,7 +1275,120 @@ async function loadPreLoadedHubData() {
     }
 }
 
+// Helper functions for enhanced architecture
+function getTranslationStatusClass(status) {
+    switch (status) {
+        case 'ready': return 'ready';
+        case 'translating': return 'translating';
+        case 'error': return 'error';
+        default: return 'pending';
+    }
+}
+
+function getTranslationStatusText(status) {
+    switch (status) {
+        case 'ready': return 'SVF2 Ready';
+        case 'translating': return 'Translating...';
+        case 'error': return 'Translation Error';
+        default: return 'Translation Pending';
+    }
+}
+
+// Update model selection UI
+function updateModelSelectionUI() {
+    const preview = document.querySelector('.model-preview');
+    if (!preview) return;
+
+    if (selectedModels.length === 0) {
+        preview.innerHTML = `
+            <div class="preview-placeholder">
+                <h4>No Models Selected</h4>
+                <p>Check the boxes next to models to select them</p>
+                <small>Select models with SVF2 ready status</small>
+            </div>
+        `;
+    } else if (selectedModels.length === 1) {
+        const model = selectedModels[0];
+        preview.innerHTML = `
+            <div class="preview-placeholder">
+                <h4>${model.name}</h4>
+                <p>📁 ${model.folderName}</p>  
+                <p>📅 Modified: ${new Date(model.lastModified).toLocaleDateString()}</p>
+                <p>📏 Size: ${formatFileSize(model.size)}</p>
+                <p>🏗️ Status: ${getTranslationStatusText(model.translationStatus)}</p>
+                <small>Ready for architecture workflow</small>
+            </div>
+        `;
+    } else {
+        preview.innerHTML = `
+            <div class="preview-placeholder">
+                <h4>${selectedModels.length} Models Selected</h4>
+                <ul style="text-align: left; font-size: 0.75rem;">
+                    ${selectedModels.slice(0, 3).map(m => `<li>• ${m.name}</li>`).join('')}
+                    ${selectedModels.length > 3 ? `<li>• ... and ${selectedModels.length - 3} more</li>` : ''}
+                </ul>
+                <small>Multiple models for comparative analysis</small>
+            </div>
+        `;
+    }
+}
+
+// Update Load Model button state
+function updateLoadModelButton() {
+    const loadModelBtn = document.getElementById('loadModelBtn');
+    if (loadModelBtn) {
+        const readyModels = selectedModels.filter(m => m.translationStatus === 'ready');
+        loadModelBtn.disabled = readyModels.length === 0;
+
+        if (readyModels.length === 0) {
+            loadModelBtn.textContent = 'Select Ready Models';
+        } else if (readyModels.length === 1) {
+            loadModelBtn.textContent = 'Load Model';
+        } else {
+            loadModelBtn.textContent = `Load ${readyModels.length} Models`;
+        }
+    }
+}
+
 // Utility functions
+function selectAllModels() {
+    const readyModels = discoveredModels.filter(m => m.translationStatus === 'ready');
+    readyModels.forEach(model => {
+        const checkbox = document.getElementById(`model_${model.id}`);
+        if (checkbox && !checkbox.checked) {
+            checkbox.checked = true;
+            if (!selectedModels.find(m => m.id === model.id)) {
+                selectedModels.push({
+                    id: model.id,
+                    name: model.name,
+                    versionUrn: model.versionUrn,
+                    ...model
+                });
+            }
+        }
+    });
+    updateModelSelectionUI();
+    updateLoadModelButton();
+}
+
+function clearAllModels() {
+    selectedModels = [];
+    document.querySelectorAll('.model-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    updateModelSelectionUI();
+    updateLoadModelButton();
+}
+
+function refreshTranslationStatus() {
+    showNotification('Refreshing translation status...', 'info');
+    // Re-check translation status for all models
+    ensureModelsTranslatedToSVF2().then(() => {
+        showAlignedModelSelection();
+        showNotification('Translation status updated', 'success');
+    });
+}
+
 function formatFileSize(bytes) {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
