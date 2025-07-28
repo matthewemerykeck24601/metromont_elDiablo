@@ -216,29 +216,61 @@ async function initializeWithProjectData() {
 async function discoverRevitModels() {
     try {
         console.log('🔍 Discovering Revit models with enhanced metadata...');
+        console.log('Project ID:', selectedProject);
+        console.log('Project Data:', selectedProjectData);
 
         if (!forgeAccessToken || !selectedProject) {
             throw new Error('Missing authentication or project selection');
         }
 
-        // Get all project folders
-        const foldersResponse = await fetch(
-            `https://developer.api.autodesk.com/data/v1/projects/${selectedProject}/folders`, {
+        // First, try to get the root folder using the topFolders endpoint
+        const topFoldersResponse = await fetch(
+            `https://developer.api.autodesk.com/project/v1/hubs/${getHubId()}/projects/${selectedProject}/topFolders`, {
             headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
         });
 
-        if (!foldersResponse.ok) {
-            throw new Error(`Failed to load folders: ${foldersResponse.status}`);
+        if (!topFoldersResponse.ok) {
+            console.error('Failed to get top folders:', topFoldersResponse.status);
+            // Fallback to direct folder access
+            const foldersResponse = await fetch(
+                `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(selectedProject)}/folders`, {
+                headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+            });
+
+            if (!foldersResponse.ok) {
+                const errorText = await foldersResponse.text();
+                console.error('Folders API error:', errorText);
+                throw new Error(`Failed to load folders: ${foldersResponse.status}`);
+            }
+
+            const foldersData = await foldersResponse.json();
+            console.log('📁 Found folders:', foldersData.data.length);
+
+            // Process folders
+            const revitModels = [];
+            for (const folder of foldersData.data) {
+                const models = await findRevitModelsWithMetadata(folder);
+                revitModels.push(...models);
+            }
+
+            discoveredModels = revitModels;
+            return revitModels;
         }
 
-        const foldersData = await foldersResponse.json();
-        console.log('📁 Scanning folders:', foldersData.data.length);
+        // Process top folders response
+        const topFoldersData = await topFoldersResponse.json();
+        console.log('📁 Found top folders:', topFoldersData.data.length);
 
-        // Find Revit models with enhanced data
+        // Find Revit models in all folders
         const revitModels = [];
-        for (const folder of foldersData.data) {
+
+        // Process top folders first
+        for (const folder of topFoldersData.data) {
             const models = await findRevitModelsWithMetadata(folder);
             revitModels.push(...models);
+
+            // Also check subfolders
+            await scanSubfolders(folder, revitModels);
         }
 
         discoveredModels = revitModels;
@@ -248,7 +280,66 @@ async function discoverRevitModels() {
 
     } catch (error) {
         console.error('Error discovering models:', error);
-        throw error;
+
+        // If folder access fails, show a simplified model selection
+        showNotification('Unable to scan folders. You can still load models manually.', 'warning');
+
+        // Return empty array but don't throw - allow manual entry
+        discoveredModels = [];
+        return [];
+    }
+}
+
+// Helper function to get hub ID from project ID or global data
+function getHubId() {
+    // Try to extract from project ID (format: b.hubid-projectid)
+    if (selectedProject && selectedProject.startsWith('b.')) {
+        const parts = selectedProject.split('-');
+        if (parts.length > 0) {
+            return parts[0]; // Returns 'b.hubid'
+        }
+    }
+
+    // Fallback to globalHubData
+    if (globalHubData && globalHubData.hubId) {
+        return globalHubData.hubId;
+    }
+
+    // Extract from first project if available
+    if (globalHubData && globalHubData.projects && globalHubData.projects.length > 0) {
+        const firstProjectId = globalHubData.projects[0].id;
+        if (firstProjectId && firstProjectId.startsWith('b.')) {
+            const parts = firstProjectId.split('-');
+            if (parts.length > 0) {
+                return parts[0];
+            }
+        }
+    }
+
+    console.error('Unable to determine hub ID');
+    return null;
+}
+
+// Scan subfolders recursively
+async function scanSubfolders(parentFolder, revitModels) {
+    try {
+        const subfolderResponse = await fetch(
+            `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(selectedProject)}/folders/${parentFolder.id}/contents`, {
+            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+        });
+
+        if (!subfolderResponse.ok) return;
+
+        const subfolderData = await subfolderResponse.json();
+
+        for (const item of subfolderData.data) {
+            if (item.type === 'folders') {
+                // Recursively scan subfolder
+                await scanSubfolders(item, revitModels);
+            }
+        }
+    } catch (error) {
+        console.error(`Error scanning subfolder ${parentFolder.attributes.displayName}:`, error);
     }
 }
 
