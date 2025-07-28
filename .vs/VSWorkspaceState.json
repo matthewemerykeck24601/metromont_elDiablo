@@ -3,10 +3,11 @@
     "",
     "\\assets",
     "\\netlify",
+    "\\netlify\\edge-functions",
     "\\netlify\\functions",
     "\\scripts",
     "\\styles"
   ],
-  "SelectedNode": "\\scripts\\quality-control.js",
+  "SelectedNode": "\\scripts\\scopes-config.js",
   "PreviewInSolutionExplorer": false
 }

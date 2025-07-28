@@ -1,277 +1,628 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Engineering & Drafting - CastLink</title>
+    <title>Engineering & Drafting - Castillo Precast</title>
+    <link rel="stylesheet" href="styles/main.css">
     <link rel="stylesheet" href="styles/engineering.css">
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <script src="scripts/config.js"></script>
+    <link rel="icon" type="image/png" href="favicon.png">
 </head>
-
 <body>
-    <div class="container">
-        <header class="main-header">
-            <div class="header-content">
-                <div class="nav-section">
-                    <button class="back-button" onclick="goBack()">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M19 12H5m7-7l-7 7 7 7" />
-                        </svg>
-                        Back to Dashboard
-                    </button>
-                </div>
-                <div class="logo-section">
-                    <h1 class="main-title">Engineering & Drafting</h1>
-                    <p class="main-subtitle">Design Automation & Technical Management</p>
-                </div>
-                <div class="auth-section">
-                    <div class="auth-status">
-                        <div class="status-indicator" id="authIndicator"></div>
-                        <span id="authStatus">Checking authentication...</span>
-                    </div>
-                    <div class="auth-info" id="authInfo">Connecting to ACC...</div>
-                </div>
-            </div>
-        </header>
-
-        <main class="main-content">
-            <section class="module-header">
-                <div class="module-header-content">
-                    <div class="module-info">
-                        <h2 class="module-title">Design Automation Hub</h2>
-                        <p class="module-description">
-                            Comprehensive engineering tools for design calculations, technical documentation,
-                            issue management, and bill of materials integration with ACC and Revit.
-                        </p>
-                    </div>
-                    <div class="project-selection-panel" id="projectSelectionPanel">
-                        <label for="projectSelect">Project:</label>
-                        <select id="projectSelect" onchange="onProjectChange()">
-                            <option value="">Select a project...</option>
-                            <option value="">Loading projects...</option>
-                        </select>
-                        <div class="project-info" id="projectInfo">
-                            <span class="project-name" id="projectName">No project selected</span>
-                            <span class="project-details" id="projectDetails">Select a project to view design requirements</span>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Split Screen Engineering Tools -->
-            <section class="engineering-split-screen">
-                <!-- Left Column: Design & Analysis Tools -->
-                <div class="engineering-column left-column">
-                    <h3 class="column-title">Design & Analysis</h3>
-
-                    <!-- Engineering Calculator -->
-                    <div class="engineering-card calculator" onclick="openEngineeringTool('calculator')">
-                        <div class="card-header">
-                            <div class="card-icon">
-                                <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" />
-                                    <path d="M6.5 7.5h3v1h-3zm0 2h3v1h-3zm0 2h3v1h-3zm5-4h5v1h-5zm0 2h5v1h-5zm0 2h5v1h-5zm-5 2h11v1H6.5z" />
-                                    <circle cx="16" cy="8" r="1" />
-                                    <path d="M14.5 16.5h3v1h-3z" />
-                                </svg>
-                            </div>
-                            <div class="card-title-section">
-                                <h3 class="card-title">Engineering Calculator</h3>
-                                <p class="card-subtitle">Precast design calculations & analysis</p>
-                            </div>
-                            <div class="card-status">
-                                <span class="status-badge status-active">Ready</span>
-                            </div>
-                        </div>
-                        <div class="card-content">
-                            <p class="card-description">
-                                Comprehensive calculation tools for concrete stress analysis, prestress design,
-                                load calculations, and structural verification specific to precast elements.
-                            </p>
-                            <div class="card-features">
-                                <span class="feature-tag">Point Loads</span>
-                                <span class="feature-tag">Columns</span>
-                                <span class="feature-tag">Wall Panels</span>
-                                <span class="feature-tag">Beams</span>
-                                <span class="feature-tag">Double Tees</span>
-                            </div>
-                            <div class="card-actions">
-                                <span class="action-hint">Click to open calculator →</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Design Summary Generator -->
-                    <div class="engineering-card design-summary" onclick="openEngineeringTool('design-summary')">
-                        <div class="card-header">
-                            <div class="card-icon">
-                                <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                    <path d="M14 2v6h6" />
-                                    <line x1="16" y1="13" x2="8" y2="13" />
-                                    <line x1="16" y1="17" x2="8" y2="17" />
-                                    <polyline points="10,9 9,9 8,9" />
-                                </svg>
-                            </div>
-                            <div class="card-title-section">
-                                <h3 class="card-title">Design Summary Generator</h3>
-                                <p class="card-subtitle">Automated design documentation</p>
-                            </div>
-                            <div class="card-status">
-                                <span class="status-badge status-development">In Development</span>
-                            </div>
-                        </div>
-                        <div class="card-content">
-                            <p class="card-description">
-                                Automatically generate comprehensive design summaries from calculation data,
-                                model information, and production requirements for project documentation.
-                            </p>
-                            <div class="card-features">
-                                <span class="feature-tag">Auto Generation</span>
-                                <span class="feature-tag">PDF Export</span>
-                                <span class="feature-tag">Template Based</span>
-                            </div>
-                            <div class="card-actions">
-                                <span class="action-hint">Coming soon</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Right Column: Project Management Tools -->
-                <div class="engineering-column right-column">
-                    <h3 class="column-title">Project Management</h3>
-
-                    <!-- Piece Issue Management -->
-                    <div class="engineering-card piece-issue" onclick="openEngineeringTool('piece-issue')">
-                        <div class="card-header">
-                            <div class="card-icon">
-                                <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                                    <circle cx="12" cy="12" r="3" />
-                                    <path d="M12 1v6m0 6v6m-5-7h6m-6 0h6" />
-                                </svg>
-                            </div>
-                            <div class="card-title-section">
-                                <h3 class="card-title">Piece Issue Management</h3>
-                                <p class="card-subtitle">Track and resolve design issues</p>
-                            </div>
-                            <div class="card-status">
-                                <span class="status-badge status-development">In Development</span>
-                            </div>
-                        </div>
-                        <div class="card-content">
-                            <p class="card-description">
-                                Centralized issue tracking for precast pieces including design conflicts,
-                                manufacturing constraints, and field coordination requirements.
-                            </p>
-                            <div class="card-features">
-                                <span class="feature-tag">Issue Tracking</span>
-                                <span class="feature-tag">ACC Integration</span>
-                                <span class="feature-tag">Notifications</span>
-                            </div>
-                            <div class="card-actions">
-                                <span class="action-hint">Coming soon</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- BOM Query Tool -->
-                    <div class="engineering-card bom-query" onclick="openEngineeringTool('bom-query')">
-                        <div class="card-header">
-                            <div class="card-icon">
-                                <svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                    <path d="M14 2v6h6" />
-                                    <path d="M9 13h2v2H9z" />
-                                    <path d="M13 13h5v1h-5z" />
-                                    <path d="M13 15h3v1h-3z" />
-                                    <path d="M9 17h2v2H9z" />
-                                    <path d="M13 17h5v1h-5z" />
-                                    <path d="M13 19h3v1h-3z" />
-                                </svg>
-                            </div>
-                            <div class="card-title-section">
-                                <h3 class="card-title">BOM Query Tool</h3>
-                                <p class="card-subtitle">Bill of materials analysis</p>
-                            </div>
-                            <div class="card-status">
-                                <span class="status-badge status-development">In Development</span>
-                            </div>
-                        </div>
-                        <div class="card-content">
-                            <p class="card-description">
-                                Advanced querying and analysis of bill of materials data from Revit models
-                                with integration to production scheduling and inventory systems.
-                            </p>
-                            <div class="card-features">
-                                <span class="feature-tag">Revit Integration</span>
-                                <span class="feature-tag">Material Takeoffs</span>
-                                <span class="feature-tag">Production Links</span>
-                            </div>
-                            <div class="card-actions">
-                                <span class="action-hint">Coming soon</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Quick Actions Section -->
-            <section class="quick-actions-section">
-                <h3 class="section-title">Quick Actions</h3>
-                <div class="quick-actions-grid">
-                    <button class="quick-action-btn" onclick="openEngineeringTool('calculator')" disabled>
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" />
-                            <path d="M9 9h2v2H9z" />
-                            <path d="M13 9h2v2H13z" />
-                            <path d="M9 13h2v2H9z" />
-                            <path d="M13 13h2v2H13z" />
-                        </svg>
-                        New Calculation
-                    </button>
-                    <button class="quick-action-btn" onclick="showNotification('Feature coming soon', 'info')">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <path d="M14 2v6h6" />
-                        </svg>
-                        Generate Report
-                    </button>
-                    <button class="quick-action-btn" onclick="showNotification('Feature coming soon', 'info')">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                            <polyline points="3.27,6.96 12,12.01 20.73,6.96" />
-                            <line x1="12" y1="22.08" x2="12" y2="12" />
-                        </svg>
-                        View 3D Model
-                    </button>
-                    <button class="quick-action-btn" onclick="showNotification('Feature coming soon', 'info')">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <circle cx="11" cy="11" r="8" />
-                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                        </svg>
-                        Search Issues
-                    </button>
-                </div>
-            </section>
-        </main>
-
-        <footer class="footer">
-            <div class="footer-content">
-                <p>&copy; 2025 Metromont Corporation - CastLink Engineering Module</p>
-                <p>Integrated with Autodesk Construction Cloud for seamless project management</p>
-            </div>
-        </footer>
-
-        <!-- Notification System -->
-        <div class="notification" id="notification">
-            <div class="notification-content" id="notificationText"></div>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Loading Engineering Modules...</p>
         </div>
     </div>
 
-    <script src="scripts/engineering.js"></script>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="header-left">
+                <button id="backBtn" class="back-button">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
+                    </svg>
+                    Back to Home
+                </button>
+                <h1>Engineering & Drafting</h1>
+            </div>
+            <div class="header-right">
+                <div id="authStatus" class="auth-status">
+                    <span class="status-indicator"></span>
+                    <span class="status-text">Connecting...</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Project Selection Panel -->
+        <div id="projectPanel" class="project-panel">
+            <div class="panel-header">
+                <h2>Project Selection</h2>
+                <div class="project-status">
+                    <span id="projectCount">Loading projects...</span>
+                </div>
+            </div>
+
+            <div class="project-dropdown-container">
+                <select id="projectSelect" class="project-select" disabled>
+                    <option value="">Loading projects...</option>
+                </select>
+                <button id="refreshProjects" class="refresh-button" disabled>
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
+                        <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+
+            <div id="selectedProjectInfo" class="selected-project-info" style="display: none;">
+                <div class="info-card">
+                    <h3>Selected Project</h3>
+                    <div class="project-details">
+                        <div class="detail-item">
+                            <span class="label">Project Name:</span>
+                            <span id="selectedProjectName" class="value">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">Hub:</span>
+                            <span id="selectedHubName" class="value">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">Project ID:</span>
+                            <span id="selectedProjectId" class="value">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Engineering Modules Grid -->
+        <div id="modulesGrid" class="modules-grid" style="display: none;">
+            <div class="grid-header">
+                <h2>Engineering & Drafting Modules</h2>
+                <p>Select a module to begin working with the selected project</p>
+            </div>
+
+            <!-- Engineering Calculator Module -->
+            <div class="module-card engineering-calculator" data-module="engineering-calculator">
+                <div class="card-header">
+                    <div class="card-icon calculator">
+                        <svg width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M12 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h8zM4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H4z" />
+                            <path d="M4 2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-1zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1zm3-6a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1zm0 3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-4z" />
+                        </svg>
+                    </div>
+                    <h3>Engineering Calculator</h3>
+                    <div class="module-status">Ready</div>
+                </div>
+                <div class="card-content">
+                    <p class="description">PCI-compliant structural calculations for precast concrete elements</p>
+                    <ul class="feature-list">
+                        <li>Point load analysis</li>
+                        <li>Column design (P-M interaction)</li>
+                        <li>Wall/Panel lateral analysis</li>
+                        <li>Beam/Spandrel design</li>
+                        <li>Double tee calculations</li>
+                    </ul>
+                    <div class="module-requirements">
+                        <span class="req-label">Requires:</span>
+                        <span class="req-items">Project Selection • 3D Models</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="module-button disabled" disabled>
+                        <span>Select Project First</span>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Design Summary Generator Module -->
+            <div class="module-card design-summary" data-module="design-summary">
+                <div class="card-header">
+                    <div class="card-icon summary">
+                        <svg width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2zM9.5 3A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5v2z" />
+                            <path d="M4.603 14.087a.81.81 0 0 1-.438-.42c-.195-.388-.13-.776.08-1.102.198-.307.526-.568.897-.787a7.68 7.68 0 0 1 1.482-.645 19.697 19.697 0 0 0 1.062-2.227 7.269 7.269 0 0 1-.43-1.295c-.086-.4-.119-.796-.046-1.136.075-.354.274-.672.65-.823.192-.077.4-.12.602-.077a.7.7 0 0 1 .477.365c.088.164.12.356.127.538.007.188-.012.396-.047.614-.084.51-.27 1.134-.52 1.794a10.954 10.954 0 0 0 .98 1.686 5.753 5.753 0 0 1 1.334.05c.364.066.734.195.96.465.12.144.193.32.2.518.007.192-.047.382-.138.563a1.04 1.04 0 0 1-.354.416.856.856 0 0 1-.51.138c-.331-.014-.654-.196-.933-.417a5.712 5.712 0 0 1-.911-.95 11.651 11.651 0 0 0-1.997.406 11.307 11.307 0 0 1-1.02 1.51c-.292.35-.609.656-.927.787a.793.793 0 0 1-.58.029zm1.379-1.901c-.166.076-.32.156-.459.238-.328.194-.541.383-.647.547-.094.145-.096.25-.04.361.01.022.02.036.026.044a.266.266 0 0 0 .035-.012c.137-.056.355-.235.635-.572a8.18 8.18 0 0 0 .45-.606zm1.64-1.33a12.71 12.71 0 0 1 1.01-.193 11.744 11.744 0 0 1-.51-.858 20.801 20.801 0 0 1-.5 1.05zm2.446.45c.15.163.296.3.435.41.24.19.407.253.498.256a.107.107 0 0 0 .07-.015.307.307 0 0 0 .094-.125.436.436 0 0 0 .059-.2.095.095 0 0 0-.026-.063c-.052-.062-.2-.152-.518-.209a3.876 3.876 0 0 0-.612-.053zM8.078 7.8a6.7 6.7 0 0 0 .2-.828c.031-.188.043-.343.038-.465a.613.613 0 0 0-.032-.198.517.517 0 0 0-.145.04c-.087.035-.158.106-.196.283-.04.192-.03.469.046.822.024.111.054.227.089.346z" />
+                        </svg>
+                    </div>
+                    <h3>Design Summary Generator</h3>
+                    <div class="module-status">Coming Soon</div>
+                </div>
+                <div class="card-content">
+                    <p class="description">Automated generation of design summary reports from calculation data</p>
+                    <ul class="feature-list">
+                        <li>Calculation summary compilation</li>
+                        <li>Design criteria verification</li>
+                        <li>Code compliance reporting</li>
+                        <li>Drawing references integration</li>
+                        <li>PDF report generation</li>
+                    </ul>
+                    <div class="module-requirements">
+                        <span class="req-label">Requires:</span>
+                        <span class="req-items">Engineering Calculations • Project Data</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="module-button disabled" disabled>
+                        <span>Coming Soon</span>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
+                            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Production Scheduler Module -->
+            <div class="module-card production-scheduler" data-module="production-scheduler">
+                <div class="card-header">
+                    <div class="card-icon scheduler">
+                        <svg width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z" />
+                            <path d="M6.445 11.688V6.354h-.633A12.6 12.6 0 0 0 4.5 7.16v.695c.375-.257.969-.62 1.258-.777h.012v4.61h.675zm1.188-1.305c.047.64.594 1.406 1.703 1.406 1.258 0 2-1.066 2-2.871 0-1.934-.781-2.668-1.953-2.668-.926 0-1.797.672-1.797 1.809 0 1.16.824 1.77 1.676 1.77.746 0 1.23-.376 1.383-.79h.027c-.004 1.316-.461 2.164-1.305 2.164-.664 0-1.008-.45-1.05-.82h-.684zm2.953-2.317c0 .696-.559 1.18-1.184 1.18-.601 0-1.144-.383-1.144-1.2 0-.823.582-1.21 1.168-1.21.633 0 1.16.398 1.16 1.23z" />
+                        </svg>
+                    </div>
+                    <h3>Production Scheduler</h3>
+                    <div class="module-status">In Development</div>
+                </div>
+                <div class="card-content">
+                    <p class="description">AI-powered production scheduling with resource optimization</p>
+                    <ul class="feature-list">
+                        <li>Intelligent pour scheduling</li>
+                        <li>Resource allocation optimization</li>
+                        <li>Weather integration</li>
+                        <li>Delivery coordination</li>
+                        <li>Real-time progress tracking</li>
+                    </ul>
+                    <div class="module-requirements">
+                        <span class="req-label">Requires:</span>
+                        <span class="req-items">Design Data • Production Resources</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="module-button disabled" disabled>
+                        <span>In Development</span>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z" />
+                            <path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Drafting Tools Module -->
+            <div class="module-card drafting-tools" data-module="drafting-tools">
+                <div class="card-header">
+                    <div class="card-icon drafting">
+                        <svg width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z" />
+                            <path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z" />
+                        </svg>
+                    </div>
+                    <h3>Drafting Tools</h3>
+                    <div class="module-status">Planned</div>
+                </div>
+                <div class="card-content">
+                    <p class="description">Automated drafting and detailing tools for precast elements</p>
+                    <ul class="feature-list">
+                        <li>Automated rebar detailing</li>
+                        <li>Connection drawings</li>
+                        <li>Shop drawing generation</li>
+                        <li>Detail library integration</li>
+                        <li>Drawing standards compliance</li>
+                    </ul>
+                    <div class="module-requirements">
+                        <span class="req-label">Requires:</span>
+                        <span class="req-items">Design Data • CAD Integration</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="module-button disabled" disabled>
+                        <span>Planned</span>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
+                            <path d="M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.061L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Display -->
+        <div id="errorDisplay" class="error-display" style="display: none;">
+            <div class="error-content">
+                <div class="error-icon">
+                    <svg width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z" />
+                    </svg>
+                </div>
+                <h3>Connection Error</h3>
+                <p id="errorMessage">Unable to connect to ACC projects. Please check your authentication and try again.</p>
+                <button id="retryConnection" class="retry-button">Retry Connection</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script>
+        // Global state management
+        let engineeringState = {
+            currentProjectId: null,
+            currentHubId: null,
+            currentProjectName: null,
+            currentHubName: null,
+            accToken: null,
+            projects: [],
+            isInitialized: false
+        };
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log('=== ENGINEERING & DRAFTING INITIALIZATION ===');
+            initializeEngineering();
+        });
+
+        async function initializeEngineering() {
+            try {
+                // Set up event listeners
+                setupEventListeners();
+
+                // Check authentication
+                await checkAuthentication();
+
+                // Load projects
+                await loadProjects();
+
+                // Mark as initialized
+                engineeringState.isInitialized = true;
+                hideLoadingOverlay();
+
+                console.log('Engineering module initialized successfully');
+
+            } catch (error) {
+                console.error('Failed to initialize engineering module:', error);
+                showError('Failed to initialize: ' + error.message);
+                hideLoadingOverlay();
+            }
+        }
+
+        function setupEventListeners() {
+            // Back button
+            document.getElementById('backBtn').addEventListener('click', function () {
+                window.location.href = 'index.html';
+            });
+
+            // Project selection
+            document.getElementById('projectSelect').addEventListener('change', handleProjectSelection);
+            document.getElementById('refreshProjects').addEventListener('click', refreshProjects);
+
+            // Module buttons
+            document.querySelectorAll('.module-card').forEach(card => {
+                const moduleButton = card.querySelector('.module-button');
+                if (moduleButton && !moduleButton.classList.contains('disabled')) {
+                    moduleButton.addEventListener('click', function () {
+                        const moduleName = card.dataset.module;
+                        openModule(moduleName);
+                    });
+                }
+            });
+
+            // Retry connection
+            document.getElementById('retryConnection').addEventListener('click', function () {
+                location.reload();
+            });
+        }
+
+        async function checkAuthentication() {
+            try {
+                // Try to get token from parent window first
+                if (window.parent && window.parent !== window) {
+                    try {
+                        engineeringState.accToken = window.parent.localStorage.getItem('accToken');
+                        if (engineeringState.accToken) {
+                            updateAuthStatus(true, 'Connected to ACC');
+                            return;
+                        }
+                    } catch (e) {
+                        console.log('Cannot access parent storage, checking local storage');
+                    }
+                }
+
+                // Check local storage
+                engineeringState.accToken = localStorage.getItem('accToken');
+                if (engineeringState.accToken) {
+                    // Verify token is still valid
+                    const response = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+                        headers: {
+                            'Authorization': `Bearer ${engineeringState.accToken}`
+                        }
+                    });
+
+                    if (response.ok) {
+                        updateAuthStatus(true, 'Connected to ACC');
+                        return;
+                    }
+                }
+
+                // No valid token found
+                throw new Error('No valid ACC authentication found');
+
+            } catch (error) {
+                updateAuthStatus(false, 'Authentication required');
+                throw error;
+            }
+        }
+
+        async function loadProjects() {
+            try {
+                if (!engineeringState.accToken) {
+                    throw new Error('No authentication token available');
+                }
+
+                updateProjectStatus('Loading ACC projects...');
+
+                // Get hubs
+                const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+                    headers: {
+                        'Authorization': `Bearer ${engineeringState.accToken}`
+                    }
+                });
+
+                if (!hubsResponse.ok) {
+                    throw new Error(`Failed to fetch hubs: ${hubsResponse.status}`);
+                }
+
+                const hubsData = await hubsResponse.json();
+                console.log('Found hubs:', hubsData.data?.length || 0);
+
+                if (!hubsData.data || hubsData.data.length === 0) {
+                    throw new Error('No ACC hubs found');
+                }
+
+                // Get projects from all hubs
+                const allProjects = [];
+                for (const hub of hubsData.data) {
+                    try {
+                        const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hub.id}/projects`, {
+                            headers: {
+                                'Authorization': `Bearer ${engineeringState.accToken}`
+                            }
+                        });
+
+                        if (projectsResponse.ok) {
+                            const projectsData = await projectsResponse.json();
+                            if (projectsData.data) {
+                                projectsData.data.forEach(project => {
+                                    allProjects.push({
+                                        id: project.id,
+                                        name: project.attributes.name,
+                                        hubId: hub.id,
+                                        hubName: hub.attributes.name,
+                                        fullData: project
+                                    });
+                                });
+                            }
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to load projects from hub ${hub.id}:`, error);
+                    }
+                }
+
+                if (allProjects.length === 0) {
+                    throw new Error('No projects found in any hub');
+                }
+
+                engineeringState.projects = allProjects;
+                populateProjectDropdown(allProjects);
+                updateProjectStatus(`Found ${allProjects.length} projects`);
+
+            } catch (error) {
+                console.error('Failed to load projects:', error);
+                updateProjectStatus('Failed to load projects');
+                throw error;
+            }
+        }
+
+        function populateProjectDropdown(projects) {
+            const select = document.getElementById('projectSelect');
+            const refreshBtn = document.getElementById('refreshProjects');
+
+            select.innerHTML = '<option value="">Select a project...</option>';
+
+            projects.forEach(project => {
+                const option = document.createElement('option');
+                option.value = JSON.stringify({
+                    projectId: project.id,
+                    hubId: project.hubId,
+                    name: project.name,
+                    hubName: project.hubName
+                });
+                option.textContent = `${project.name} (${project.hubName})`;
+                select.appendChild(option);
+            });
+
+            select.disabled = false;
+            refreshBtn.disabled = false;
+        }
+
+        function handleProjectSelection(event) {
+            const value = event.target.value;
+
+            if (value) {
+                try {
+                    const projectData = JSON.parse(value);
+
+                    // Update global state
+                    engineeringState.currentProjectId = projectData.projectId;
+                    engineeringState.currentHubId = projectData.hubId;
+                    engineeringState.currentProjectName = projectData.name;
+                    engineeringState.currentHubName = projectData.hubName;
+
+                    console.log('Selected project:', projectData);
+
+                    // Show project info and enable modules
+                    showSelectedProjectInfo(projectData);
+                    enableModules();
+
+                } catch (error) {
+                    console.error('Failed to parse project data:', error);
+                }
+            } else {
+                // Clear selection
+                clearProjectSelection();
+            }
+        }
+
+        function showSelectedProjectInfo(projectData) {
+            // Update project info display
+            document.getElementById('selectedProjectName').textContent = projectData.name;
+            document.getElementById('selectedHubName').textContent = projectData.hubName;
+            document.getElementById('selectedProjectId').textContent = projectData.projectId;
+
+            // Show the info card and modules grid
+            document.getElementById('selectedProjectInfo').style.display = 'block';
+            document.getElementById('modulesGrid').style.display = 'block';
+        }
+
+        function clearProjectSelection() {
+            engineeringState.currentProjectId = null;
+            engineeringState.currentHubId = null;
+            engineeringState.currentProjectName = null;
+            engineeringState.currentHubName = null;
+
+            document.getElementById('selectedProjectInfo').style.display = 'none';
+            document.getElementById('modulesGrid').style.display = 'none';
+        }
+
+        function enableModules() {
+            // Enable available modules
+            const calculatorCard = document.querySelector('.module-card.engineering-calculator');
+            const calculatorButton = calculatorCard.querySelector('.module-button');
+
+            calculatorButton.classList.remove('disabled');
+            calculatorButton.disabled = false;
+            calculatorButton.innerHTML = `
+                    <span>Launch Calculator</span>
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z"/>
+                    </svg>
+                `;
+
+            calculatorButton.addEventListener('click', function () {
+                openModule('engineering-calculator');
+            });
+        }
+
+        function openModule(moduleName) {
+            console.log('Opening module:', moduleName);
+
+            if (!engineeringState.currentProjectId) {
+                alert('Please select a project first');
+                return;
+            }
+
+            const currentProject = {
+                projectId: engineeringState.currentProjectId,
+                hubId: engineeringState.currentHubId,
+                name: engineeringState.currentProjectName,
+                hubName: engineeringState.currentHubName
+            };
+
+            switch (moduleName) {
+                case 'engineering-calculator':
+                    openEngineeringCalculator(currentProject);
+                    break;
+                case 'design-summary':
+                    alert('Design Summary Generator - Coming Soon');
+                    break;
+                case 'production-scheduler':
+                    alert('Production Scheduler - In Development');
+                    break;
+                case 'drafting-tools':
+                    alert('Drafting Tools - Planned');
+                    break;
+                default:
+                    console.warn('Unknown module:', moduleName);
+            }
+        }
+
+        function openEngineeringCalculator(projectData) {
+            console.log('Opening Engineering Calculator with project:', projectData);
+
+            // Store project data for the calculator
+            sessionStorage.setItem('selectedProject', JSON.stringify(projectData));
+
+            // Navigate to calculator with URL parameters as backup
+            const calculatorUrl = `engineering-calculator.html?projectId=${encodeURIComponent(projectData.projectId)}&hubId=${encodeURIComponent(projectData.hubId)}&projectName=${encodeURIComponent(projectData.name)}&hubName=${encodeURIComponent(projectData.hubName)}`;
+
+            window.location.href = calculatorUrl;
+        }
+
+        // Utility function that can be called by child pages
+        function getCurrentSelectedProject() {
+            if (!engineeringState.currentProjectId) {
+                return null;
+            }
+
+            return {
+                projectId: engineeringState.currentProjectId,
+                hubId: engineeringState.currentHubId,
+                name: engineeringState.currentProjectName,
+                hubName: engineeringState.currentHubName
+            };
+        }
+
+        function updateAuthStatus(connected, message) {
+            const statusElement = document.getElementById('authStatus');
+            const indicator = statusElement.querySelector('.status-indicator');
+            const text = statusElement.querySelector('.status-text');
+
+            indicator.className = `status-indicator ${connected ? 'connected' : 'disconnected'}`;
+            text.textContent = message;
+        }
+
+        function updateProjectStatus(message) {
+            document.getElementById('projectCount').textContent = message;
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorDisplay').style.display = 'block';
+            document.getElementById('projectPanel').style.display = 'none';
+            document.getElementById('modulesGrid').style.display = 'none';
+        }
+
+        function hideLoadingOverlay() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+
+        async function refreshProjects() {
+            document.getElementById('refreshProjects').disabled = true;
+            clearProjectSelection();
+
+            try {
+                await loadProjects();
+            } catch (error) {
+                showError('Failed to refresh projects: ' + error.message);
+            } finally {
+                document.getElementById('refreshProjects').disabled = false;
+            }
+        }
+
+        // Export function for child pages
+        window.getCurrentSelectedProject = getCurrentSelectedProject;
+
+        console.log('Engineering module loaded');
+    </script>
 </body>
 </html>
