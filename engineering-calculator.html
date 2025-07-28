@@ -1,0 +1,364 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engineering Calculator - CastLink</title>
+    <link rel="stylesheet" href="styles/calculator.css">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <script src="scripts/config.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="main-header">
+            <div class="header-content">
+                <div class="nav-section">
+                    <button class="back-button" onclick="goBack()">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 12H5m7-7l-7 7 7 7" />
+                        </svg>
+                        Back to Engineering
+                    </button>
+                </div>
+                <div class="logo-section">
+                    <h1 class="main-title">Engineering Calculator</h1>
+                    <p class="main-subtitle">PCI-Compliant Precast Design Analysis</p>
+                </div>
+                <div class="auth-section">
+                    <div class="auth-status">
+                        <div class="status-indicator" id="authIndicator"></div>
+                        <span id="authStatus">Checking authentication...</span>
+                    </div>
+                    <div class="auth-info" id="authInfo">Connecting to ACC...</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Project Selection Interface -->
+            <section class="project-selection" id="projectSelection">
+                <div class="project-panel">
+                    <div class="project-header">
+                        <h2>Select Project & Model</h2>
+                        <p>Choose a project and 3D model to begin engineering calculations</p>
+                    </div>
+
+                    <div class="project-selector">
+                        <div class="form-group">
+                            <label for="projectSelect">Project:</label>
+                            <select id="projectSelect" onchange="onProjectChange()">
+                                <option value="">Select a project...</option>
+                                <option value="">Loading projects...</option>
+                            </select>
+                        </div>
+
+                        <div class="project-info">
+                            <div class="project-details">
+                                <span class="project-name" id="projectName">No project selected</span>
+                                <span class="project-description" id="projectDetails">Select a project to begin calculations</span>
+                            </div>
+                            <button class="btn btn-primary" id="modelSelectBtn" onclick="openModelSelector()" disabled>
+                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                </svg>
+                                Select 3D Model
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Calculator Interface (Hidden by default) -->
+            <section class="calculator-interface" id="calculatorInterface" style="display: none;">
+                <!-- 3D Viewer Panel -->
+                <div class="viewer-panel">
+                    <div class="viewer-header">
+                        <h3>3D Model Viewer</h3>
+                        <div class="viewer-info">
+                            <span id="selectedModelName">No model loaded</span>
+                        </div>
+                        <div class="viewer-controls">
+                            <button class="btn btn-sm" onclick="resetViewerView()">Reset View</button>
+                            <button class="btn btn-sm" onclick="fitViewerToWindow()">Fit to Screen</button>
+                        </div>
+                    </div>
+                    <div class="forge-viewer-container">
+                        <div id="forgeViewer">
+                            <div id="viewerLoading" class="viewer-loading">
+                                <div class="loading-spinner"></div>
+                                <p>Loading 3D Model...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Calculation Panel -->
+                <div class="calculation-panel">
+                    <div class="calculation-tabs">
+                        <button class="tab-btn active" onclick="switchTab('pointLoads')">Point Loads</button>
+                        <button class="tab-btn" onclick="switchTab('columns')">Columns</button>
+                        <button class="tab-btn" onclick="switchTab('walls')">Walls/Panels</button>
+                        <button class="tab-btn" onclick="switchTab('beams')">Beams/Spandrels</button>
+                        <button class="tab-btn" onclick="switchTab('doubleTees')">Double Tees</button>
+                    </div>
+
+                    <!-- Point Loads Tab -->
+                    <div class="tab-content active" id="pointLoads">
+                        <h3>Point Load Analysis</h3>
+                        <form class="calculation-form" onsubmit="calculatePointLoads(event)">
+                            <div class="form-group">
+                                <label for="pointLoad">Point Load (kips):</label>
+                                <input type="number" id="pointLoad" step="0.1" required>
+                                <small>Applied concentrated load</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="loadFactor">Load Factor:</label>
+                                <select id="loadFactor" required>
+                                    <option value="1.2">1.2 (Dead Load)</option>
+                                    <option value="1.6">1.6 (Live Load)</option>
+                                    <option value="1.0">1.0 (Service)</option>
+                                </select>
+                                <small>LRFD load factors per ACI 318</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="contactArea">Contact Area (sq in):</label>
+                                <input type="number" id="contactArea" step="0.1" required>
+                                <small>Bearing area for stress calculation</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="concreteStrength">f'c (psi):</label>
+                                <input type="number" id="concreteStrength" value="5000" step="100" required>
+                                <small>Concrete compressive strength</small>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Calculate Point Load</button>
+                        </form>
+                    </div>
+
+                    <!-- Columns Tab -->
+                    <div class="tab-content" id="columns">
+                        <h3>Prestressed Column Design (PCI Standards)</h3>
+                        <form class="calculation-form" onsubmit="calculateColumn(event)">
+                            <div class="form-group">
+                                <label for="columnWidth">Width (in):</label>
+                                <input type="number" id="columnWidth" step="0.25" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="columnDepth">Depth (in):</label>
+                                <input type="number" id="columnDepth" step="0.25" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="columnHeight">Height (ft):</label>
+                                <input type="number" id="columnHeight" step="0.5" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="axialLoad">Axial Load (kips):</label>
+                                <input type="number" id="axialLoad" step="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="moment">Applied Moment (kip-ft):</label>
+                                <input type="number" id="moment" step="0.1">
+                                <small>Enter 0 for concentrically loaded columns</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="prestressStrands">Number of Strands:</label>
+                                <input type="number" id="prestressStrands" min="4" step="1" required>
+                                <small>Minimum 4 strands for columns per PCI</small>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Calculate Column</button>
+                        </form>
+                    </div>
+
+                    <!-- Walls Tab -->
+                    <div class="tab-content" id="walls">
+                        <h3>Wall Panel Design</h3>
+                        <form class="calculation-form" onsubmit="calculateWall(event)">
+                            <div class="form-group">
+                                <label for="wallLength">Length (ft):</label>
+                                <input type="number" id="wallLength" step="0.5" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="wallHeight">Height (ft):</label>
+                                <input type="number" id="wallHeight" step="0.5" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="wallThickness">Thickness (in):</label>
+                                <input type="number" id="wallThickness" step="0.25" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="windLoad">Wind Load (psf):</label>
+                                <input type="number" id="windLoad" step="1" required>
+                                <small>Design wind pressure</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="tensionTies">Tension Ties Required:</label>
+                                <select id="tensionTies" required>
+                                    <option value="true">Yes (Standard)</option>
+                                    <option value="false">No (Special Case)</option>
+                                </select>
+                                <small>PCI requires min 2 ties at 10,000 lbs each</small>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Calculate Wall Panel</button>
+                        </form>
+                    </div>
+
+                    <!-- Beams Tab -->
+                    <div class="tab-content" id="beams">
+                        <h3>Beam/Spandrel Design</h3>
+                        <form class="calculation-form" onsubmit="calculateBeam(event)">
+                            <div class="form-group">
+                                <label for="beamWidth">Width (in):</label>
+                                <input type="number" id="beamWidth" step="0.25" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="beamDepth">Depth (in):</label>
+                                <input type="number" id="beamDepth" step="0.25" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="beamSpan">Span (ft):</label>
+                                <input type="number" id="beamSpan" step="0.5" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="uniformLoad">Uniform Load (klf):</label>
+                                <input type="number" id="uniformLoad" step="0.1" required>
+                                <small>Distributed load including self-weight</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="prestressStrands">Prestress Strands:</label>
+                                <input type="number" id="prestressStrands" step="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="strandDiameter">Strand Diameter (in):</label>
+                                <select id="strandDiameter" required>
+                                    <option value="0.375">3/8" (0.375)</option>
+                                    <option value="0.5">1/2" (0.5)</option>
+                                    <option value="0.6">0.6" Special</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Calculate Beam</button>
+                        </form>
+                    </div>
+
+                    <!-- Double Tees Tab -->
+                    <div class="tab-content" id="doubleTees">
+                        <h3>Double Tee Design</h3>
+                        <form class="calculation-form" onsubmit="calculateDoubleTee(event)">
+                            <div class="form-group">
+                                <label for="dtWidth">Flange Width (ft):</label>
+                                <input type="number" id="dtWidth" step="0.5" required>
+                                <small>Total width of double tee</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="dtDepth">Depth (in):</label>
+                                <input type="number" id="dtDepth" step="2" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="dtSpan">Span (ft):</label>
+                                <input type="number" id="dtSpan" step="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="liveLoad">Live Load (psf):</label>
+                                <input type="number" id="liveLoad" step="5" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="stemWidth">Stem Width (in):</label>
+                                <input type="number" id="stemWidth" step="0.25" value="6" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="flangeThickness">Flange Thickness (in):</label>
+                                <input type="number" id="flangeThickness" step="0.25" value="2" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Calculate Double Tee</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Results Panel -->
+                <div class="results-panel" id="resultsPanel" style="display: none;">
+                    <div class="results-header">
+                        <h3>Calculation Results</h3>
+                        <div class="results-actions">
+                            <button class="btn btn-secondary" onclick="clearResults()">Clear</button>
+                            <button class="btn btn-secondary" onclick="exportResults()">Export</button>
+                            <button class="btn btn-primary" onclick="saveCalculation()">Save to ACC</button>
+                        </div>
+                    </div>
+                    <div class="results-content" id="resultsContent">
+                        <!-- Results will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- History Sidebar -->
+                <div class="history-sidebar">
+                    <div class="history-header">
+                        <h4>Recent Calculations</h4>
+                        <button class="btn btn-sm" onclick="refreshHistory()">Refresh</button>
+                    </div>
+                    <div class="history-list" id="historyList">
+                        <p class="text-gray-500">No recent calculations</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Model Selection Modal -->
+        <div class="modal" id="modelSelectionModal">
+            <div class="modal-content large">
+                <div class="modal-header">
+                    <h2>Select 3D Model</h2>
+                    <button class="close-btn" onclick="closeModelSelection()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="model-browser">
+                        <div class="folder-tree">
+                            <h4>Available Models</h4>
+                            <div class="tree-item" onclick="selectModel('model1', 'Main Building Structure')">
+                                <span class="tree-icon">🏗️</span>
+                                <span>Main Building Structure</span>
+                            </div>
+                            <div class="tree-item" onclick="selectModel('model2', 'Precast Elements')">
+                                <span class="tree-icon">🧱</span>
+                                <span>Precast Elements</span>
+                            </div>
+                            <div class="tree-item" onclick="selectModel('model3', 'Foundation System')">
+                                <span class="tree-icon">🏢</span>
+                                <span>Foundation System</span>
+                            </div>
+                            <div class="tree-item" onclick="selectModel('model4', 'Structural Frame')">
+                                <span class="tree-icon">⚡</span>
+                                <span>Structural Frame</span>
+                            </div>
+                            <div class="tree-item" onclick="selectModel('model5', 'Architectural Elements')">
+                                <span class="tree-icon">🎨</span>
+                                <span>Architectural Elements</span>
+                            </div>
+                        </div>
+                        <div class="model-preview">
+                            <div class="preview-placeholder">
+                                <h4>Model Preview</h4>
+                                <p>Select a model to see preview</p>
+                                <small>3D thumbnail will appear here</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeModelSelection()">Cancel</button>
+                    <button class="btn btn-primary" id="loadModelBtn" onclick="loadSelectedModel()" disabled>Load Model</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification System -->
+        <div class="notification" id="notification">
+            <div class="notification-content" id="notificationContent"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="scripts/calculator.js"></script>
+</body>
+</html>
