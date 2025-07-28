@@ -10,14 +10,28 @@ let projectId = null;
 let selectedProject = null;
 let selectedProjectData = null;
 
-// Token Management Functions (same as QC module)
+// Token Management Functions
 function getStoredToken() {
+    // Check session storage first
+    const sessionToken = sessionStorage.getItem('forge_token');
+    if (sessionToken) {
+        try {
+            return JSON.parse(sessionToken);
+        } catch (e) {
+            console.error('Failed to parse session token:', e);
+        }
+    }
+
+    // Then check localStorage
     const tokenData = localStorage.getItem('forgeToken');
     return tokenData ? JSON.parse(tokenData) : null;
 }
 
 function clearStoredToken() {
+    sessionStorage.removeItem('forge_token');
+    sessionStorage.removeItem('castlink_hub_data');
     localStorage.removeItem('forgeToken');
+    localStorage.removeItem('hubData');
 }
 
 function isTokenExpired(tokenData) {
@@ -59,20 +73,45 @@ async function verifyToken(token) {
     }
 }
 
-// Hub Data Loading - EXACT SAME as QC pattern
+// Hub Data Loading
 async function loadPreLoadedHubData() {
-    console.log('Loading pre-loaded hub data...');
+    console.log('Loading hub data...');
 
-    if (!globalHubData) {
-        console.log('No pre-loaded hub data available');
-        fallbackToStoredData();
+    // If we already have globalHubData, just populate the dropdown
+    if (globalHubData && globalHubData.projects) {
+        console.log('Using existing hub data:', globalHubData.projects.length, 'projects');
+        populateProjectDropdown();
         return;
     }
 
-    console.log('Using pre-loaded hub data:', globalHubData);
+    // Try session storage first
+    const sessionHubData = sessionStorage.getItem('castlink_hub_data');
+    if (sessionHubData) {
+        try {
+            globalHubData = JSON.parse(sessionHubData);
+            console.log('Loaded hub data from session storage');
+            populateProjectDropdown();
+            return;
+        } catch (e) {
+            console.error('Failed to parse session hub data:', e);
+        }
+    }
 
-    // Populate project dropdown immediately
-    populateProjectDropdown();
+    // Try localStorage as last resort
+    const storedData = localStorage.getItem('hubData');
+    if (storedData) {
+        try {
+            globalHubData = JSON.parse(storedData);
+            console.log('Loaded hub data from localStorage');
+            populateProjectDropdown();
+            return;
+        } catch (error) {
+            console.error('Failed to parse stored hub data:', error);
+        }
+    }
+
+    console.log('No hub data available');
+    showFallbackMessage();
 }
 
 function fallbackToStoredData() {
@@ -236,14 +275,18 @@ function openEngineeringTool(tool) {
 function openCalculator() {
     console.log('Opening Engineering Calculator...');
 
-    // Store current project info for calculator
-    const projectInfo = {
+    // Store current project info and auth data for calculator
+    const calculatorData = {
         projectId: selectedProject,
         projectName: selectedProjectData?.attributes?.name || 'Unknown Project',
-        hubId: selectedProjectData?.relationships?.hub?.data?.id || null
+        hubId: selectedProjectData?.relationships?.hub?.data?.id || null,
+        forgeAccessToken: forgeAccessToken,
+        globalHubData: globalHubData,
+        timestamp: Date.now()
     };
 
-    localStorage.setItem('selectedProject', JSON.stringify(projectInfo));
+    // Store in session storage for the calculator to use
+    sessionStorage.setItem('calculator_project_data', JSON.stringify(calculatorData));
 
     // Open the calculator page
     window.location.href = 'engineering-calculator.html';
@@ -287,51 +330,94 @@ async function initializeEngineering() {
     try {
         console.log('=== ENGINEERING MODULE INITIALIZATION ===');
 
-        // Initialize UI
+        // Initialize UI first
         initializeUI();
 
-        // Check if opened from main app (same as QC pattern)
+        // Update status
+        updateAuthStatus('Checking Authentication...', 'Verifying access to ACC...');
+
+        // Method 1: Check if we have the auth in session (from being opened by authenticated page)
+        const sessionHubData = sessionStorage.getItem('castlink_hub_data');
+        const sessionToken = sessionStorage.getItem('forge_token');
+
+        if (sessionToken && sessionHubData) {
+            console.log('Found session storage data');
+            try {
+                const tokenData = JSON.parse(sessionToken);
+                globalHubData = JSON.parse(sessionHubData);
+
+                if (!isTokenExpired(tokenData)) {
+                    forgeAccessToken = tokenData.access_token;
+                    console.log('Using session storage authentication');
+                    await completeAuthentication();
+                    return;
+                }
+            } catch (e) {
+                console.error('Failed to parse session data:', e);
+            }
+        }
+
+        // Method 2: Check if opened from main app (same as QC pattern)
         if (window.opener && window.opener.CastLinkAuth) {
+            console.log('Checking parent window authentication...');
             const parentAuth = window.opener.CastLinkAuth;
             const isParentAuth = await parentAuth.waitForAuth();
 
             if (isParentAuth) {
                 forgeAccessToken = parentAuth.getToken();
                 globalHubData = parentAuth.getHubData();
+
+                // Store in session for page refreshes
+                if (forgeAccessToken && globalHubData) {
+                    sessionStorage.setItem('forge_token', JSON.stringify({
+                        access_token: forgeAccessToken,
+                        expires_at: Date.now() + (3600 * 1000) // 1 hour
+                    }));
+                    sessionStorage.setItem('castlink_hub_data', JSON.stringify(globalHubData));
+                }
+
                 await completeAuthentication();
                 return;
             }
         }
 
-        // Fallback to stored token (same as QC pattern)
+        // Method 3: Fallback to stored token in localStorage
         const storedToken = getStoredToken();
         if (storedToken && !isTokenExpired(storedToken)) {
             forgeAccessToken = storedToken.access_token;
 
             const isValid = await verifyToken(forgeAccessToken);
             if (isValid) {
+                // Try to get hub data from localStorage too
+                const storedHubData = localStorage.getItem('hubData');
+                if (storedHubData) {
+                    try {
+                        globalHubData = JSON.parse(storedHubData);
+                    } catch (e) {
+                        console.error('Failed to parse stored hub data:', e);
+                    }
+                }
                 await completeAuthentication();
             } else {
                 clearStoredToken();
-                redirectToMainApp();
+                showFallbackMessage();
             }
         } else {
-            redirectToMainApp();
+            showFallbackMessage();
         }
     } catch (error) {
         console.error('Engineering module initialization failed:', error);
         showNotification('Failed to initialize: ' + error.message, 'error');
+        showFallbackMessage();
     } finally {
         authCheckComplete = true;
     }
 }
 
 function redirectToMainApp() {
-    updateAuthStatus('Redirecting to Login...', 'Taking you to the main app for authentication...');
-    showNotification('Redirecting to main app for authentication...', 'info');
-    setTimeout(() => {
-        window.location.href = 'index.html';
-    }, 2000);
+    updateAuthStatus('Not Authenticated', 'Please authenticate from the main dashboard');
+    showNotification('Please return to the main dashboard to authenticate', 'warning');
+    showFallbackMessage();
 }
 
 async function completeAuthentication() {
@@ -343,8 +429,8 @@ async function completeAuthentication() {
 
         isAuthenticated = true;
 
-        const projectCount = globalHubData ? globalHubData.projects.length : 0;
-        const accountName = globalHubData ? globalHubData.accountName : 'Unknown Account';
+        const projectCount = globalHubData && globalHubData.projects ? globalHubData.projects.length : 0;
+        const accountName = globalHubData && globalHubData.accountInfo ? globalHubData.accountInfo.name : 'ACC Account';
 
         updateAuthStatus('Authenticated', `Connected to ${accountName} (${projectCount} projects)`);
 
