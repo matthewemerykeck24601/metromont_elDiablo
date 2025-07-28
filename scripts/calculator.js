@@ -195,11 +195,18 @@ async function initializeWithProjectData() {
     try {
         updateAuthStatus('🔍 Discovering Models', `Scanning ${selectedProjectData.name} for Revit models...`);
 
-        // Step 1: Discover Revit models in ACC project
-        await discoverRevitModels();
+        // Log project data to understand the format
+        console.log('Selected Project ID:', selectedProject);
+        console.log('Selected Project Data:', selectedProjectData);
+        console.log('Global Hub Data:', globalHubData);
 
-        // Step 2: Ensure models are translated to SVF2 (required for Model Properties API)
-        await ensureModelsTranslatedToSVF2();
+        // Step 1: Discover Revit models in ACC project
+        const models = await discoverRevitModels();
+
+        if (models && models.length > 0) {
+            // Step 2: Ensure models are translated to SVF2 (required for Model Properties API)
+            await ensureModelsTranslatedToSVF2();
+        }
 
         // Step 3: Show enhanced model selection with translation status
         showAlignedModelSelection();
@@ -209,6 +216,9 @@ async function initializeWithProjectData() {
     } catch (error) {
         console.error('Enhanced initialization failed:', error);
         updateAuthStatus('❌ Error', 'Failed to initialize: ' + error.message);
+
+        // Show the selection dialog anyway to allow manual mode
+        showAlignedModelSelection();
     }
 }
 
@@ -223,96 +233,149 @@ async function discoverRevitModels() {
             throw new Error('Missing authentication or project selection');
         }
 
-        // First, try to get the root folder using the topFolders endpoint
-        const topFoldersResponse = await fetch(
-            `https://developer.api.autodesk.com/project/v1/hubs/${getHubId()}/projects/${selectedProject}/topFolders`, {
-            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-        });
+        // Check if we need to construct the full project ID
+        let fullProjectId = selectedProject;
 
-        if (!topFoldersResponse.ok) {
-            console.error('Failed to get top folders:', topFoldersResponse.status);
-            // Fallback to direct folder access
-            const foldersResponse = await fetch(
-                `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(selectedProject)}/folders`, {
-                headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-            });
+        // If the project ID doesn't start with 'b.', we need to construct it
+        if (!selectedProject.startsWith('b.')) {
+            // Try to get the hub ID from globalHubData
+            const hubId = getHubId();
+            if (hubId) {
+                // For ACC/BIM360 projects, the format is typically b.{account_id}.{project_guid}
+                // But if we only have the project number, we need to use the original ID from globalHubData
+                const projectFromHub = globalHubData?.projects?.find(p =>
+                    p.number === selectedProject ||
+                    p.name.includes(selectedProject) ||
+                    p.id === selectedProject
+                );
 
-            if (!foldersResponse.ok) {
-                const errorText = await foldersResponse.text();
-                console.error('Folders API error:', errorText);
-                throw new Error(`Failed to load folders: ${foldersResponse.status}`);
+                if (projectFromHub) {
+                    fullProjectId = projectFromHub.id;
+                    console.log('Found full project ID from hub data:', fullProjectId);
+                }
             }
-
-            const foldersData = await foldersResponse.json();
-            console.log('📁 Found folders:', foldersData.data.length);
-
-            // Process folders
-            const revitModels = [];
-            for (const folder of foldersData.data) {
-                const models = await findRevitModelsWithMetadata(folder);
-                revitModels.push(...models);
-            }
-
-            discoveredModels = revitModels;
-            return revitModels;
         }
 
-        // Process top folders response
-        const topFoldersData = await topFoldersResponse.json();
-        console.log('📁 Found top folders:', topFoldersData.data.length);
+        // Try different approaches to get folder data
+        const models = await tryMultipleFolderApproaches(fullProjectId);
 
-        // Find Revit models in all folders
-        const revitModels = [];
+        discoveredModels = models || [];
+        console.log('🏗️ Found Revit models:', discoveredModels.length);
 
-        // Process top folders first
-        for (const folder of topFoldersData.data) {
-            const models = await findRevitModelsWithMetadata(folder);
-            revitModels.push(...models);
-
-            // Also check subfolders
-            await scanSubfolders(folder, revitModels);
-        }
-
-        discoveredModels = revitModels;
-        console.log('🏗️ Found Revit models:', revitModels.length);
-
-        return revitModels;
+        return discoveredModels;
 
     } catch (error) {
         console.error('Error discovering models:', error);
 
-        // If folder access fails, show a simplified model selection
-        showNotification('Unable to scan folders. You can still load models manually.', 'warning');
-
-        // Return empty array but don't throw - allow manual entry
+        // Don't throw - allow manual mode
         discoveredModels = [];
         return [];
     }
 }
 
-// Helper function to get hub ID from project ID or global data
-function getHubId() {
-    // Try to extract from project ID (format: b.hubid-projectid)
-    if (selectedProject && selectedProject.startsWith('b.')) {
-        const parts = selectedProject.split('-');
-        if (parts.length > 0) {
-            return parts[0]; // Returns 'b.hubid'
+// Try multiple approaches to get folder data
+async function tryMultipleFolderApproaches(projectId) {
+    const models = [];
+
+    // Approach 1: Try topFolders endpoint
+    try {
+        const hubId = getHubId();
+        if (hubId) {
+            const topFoldersUrl = `https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${projectId}`;
+            console.log('Trying project endpoint:', topFoldersUrl);
+
+            const projectResponse = await fetch(topFoldersUrl, {
+                headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+            });
+
+            if (projectResponse.ok) {
+                const projectData = await projectResponse.json();
+                console.log('Project data retrieved:', projectData.data?.attributes?.name);
+
+                // Now try to get top folders
+                const topFoldersResponse = await fetch(
+                    `https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${projectId}/topFolders`, {
+                    headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+                });
+
+                if (topFoldersResponse.ok) {
+                    const topFoldersData = await topFoldersResponse.json();
+                    console.log('✅ Top folders found:', topFoldersData.data.length);
+
+                    for (const folder of topFoldersData.data) {
+                        const folderModels = await findRevitModelsWithMetadata(folder);
+                        models.push(...folderModels);
+                        await scanSubfolders(folder, models);
+                    }
+
+                    return models;
+                }
+            }
         }
+    } catch (error) {
+        console.error('TopFolders approach failed:', error);
     }
 
-    // Fallback to globalHubData
+    // Approach 2: Try direct folders endpoint
+    try {
+        const foldersUrl = `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(projectId)}/folders`;
+        console.log('Trying folders endpoint:', foldersUrl);
+
+        const foldersResponse = await fetch(foldersUrl, {
+            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+        });
+
+        if (foldersResponse.ok) {
+            const foldersData = await foldersResponse.json();
+            console.log('✅ Folders found:', foldersData.data.length);
+
+            for (const folder of foldersData.data) {
+                const folderModels = await findRevitModelsWithMetadata(folder);
+                models.push(...folderModels);
+            }
+
+            return models;
+        }
+    } catch (error) {
+        console.error('Folders approach failed:', error);
+    }
+
+    // Approach 3: Return empty array but don't fail
+    console.log('All folder discovery approaches failed. Manual mode will be available.');
+    return [];
+}
+
+// Helper function to get hub ID from project ID or global data
+function getHubId() {
+    // First check if we have it in globalHubData
     if (globalHubData && globalHubData.hubId) {
+        console.log('Hub ID from globalHubData:', globalHubData.hubId);
         return globalHubData.hubId;
     }
 
-    // Extract from first project if available
+    // Try to extract from any project ID in globalHubData
     if (globalHubData && globalHubData.projects && globalHubData.projects.length > 0) {
-        const firstProjectId = globalHubData.projects[0].id;
-        if (firstProjectId && firstProjectId.startsWith('b.')) {
-            const parts = firstProjectId.split('-');
-            if (parts.length > 0) {
-                return parts[0];
+        // Look for a project with a proper ACC format ID
+        const accProject = globalHubData.projects.find(p => p.id && p.id.startsWith('b.'));
+        if (accProject) {
+            // ACC project IDs are typically b.{account_id}.{project_guid}
+            // The hub ID is b.{account_id}
+            const parts = accProject.id.split('.');
+            if (parts.length >= 2) {
+                const hubId = `${parts[0]}.${parts[1]}`;
+                console.log('Hub ID extracted from project:', hubId);
+                return hubId;
             }
+        }
+    }
+
+    // Try to extract from selectedProject if it's in proper format
+    if (selectedProject && selectedProject.startsWith('b.')) {
+        const parts = selectedProject.split('.');
+        if (parts.length >= 2) {
+            const hubId = `${parts[0]}.${parts[1]}`;
+            console.log('Hub ID extracted from selectedProject:', hubId);
+            return hubId;
         }
     }
 
@@ -347,11 +410,14 @@ async function scanSubfolders(parentFolder, revitModels) {
 async function findRevitModelsWithMetadata(folder) {
     try {
         const folderContentsResponse = await fetch(
-            `https://developer.api.autodesk.com/data/v1/projects/${selectedProject}/folders/${folder.id}/contents`, {
+            `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(selectedProject)}/folders/${folder.id}/contents`, {
             headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
         });
 
-        if (!folderContentsResponse.ok) return [];
+        if (!folderContentsResponse.ok) {
+            console.error(`Failed to get contents for folder ${folder.attributes.displayName}:`, folderContentsResponse.status);
+            return [];
+        }
 
         const contentsData = await folderContentsResponse.json();
         const revitModels = [];
@@ -363,7 +429,7 @@ async function findRevitModelsWithMetadata(folder) {
                 try {
                     // Get latest version details
                     const versionsResponse = await fetch(
-                        `https://developer.api.autodesk.com/data/v1/projects/${selectedProject}/items/${item.id}/versions`, {
+                        `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(selectedProject)}/items/${item.id}/versions`, {
                         headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
                     });
 
@@ -517,14 +583,32 @@ function showAlignedModelSelection() {
 
     const folderTree = document.getElementById('folderTree');
     if (folderTree) {
-        // Populate with discovered models and their architecture status
-        folderTree.innerHTML = `
-            <h4>Revit Models in ${selectedProjectData.name}</h4>
-            <p class="architecture-note">🏗️ Following Forge Viewer + Model Properties + AEC Data workflow</p>
-            <div class="models-list">
-                ${discoveredModels.length === 0 ?
-                '<p class="no-models">No Revit models found in this project</p>' :
-                discoveredModels.map(model => `
+        // Check if we have discovered models
+        if (discoveredModels.length === 0) {
+            // Show manual entry option
+            folderTree.innerHTML = `
+                <h4>Model Selection for ${selectedProjectData.name}</h4>
+                <div class="no-models-found">
+                    <p>⚠️ Unable to automatically discover models in this project.</p>
+                    <p>This can happen if:</p>
+                    <ul style="text-align: left; margin: 1rem 0;">
+                        <li>The project doesn't have folders enabled</li>
+                        <li>The project uses a different structure</li>
+                        <li>Additional permissions are needed</li>
+                    </ul>
+                    <p>You can still proceed with the calculator:</p>
+                    <button class="btn btn-primary" onclick="proceedWithoutModel()">
+                        Continue Without Model
+                    </button>
+                </div>
+            `;
+        } else {
+            // Show discovered models
+            folderTree.innerHTML = `
+                <h4>Revit Models in ${selectedProjectData.name}</h4>
+                <p class="architecture-note">🏗️ Following Forge Viewer + Model Properties + AEC Data workflow</p>
+                <div class="models-list">
+                    ${discoveredModels.map(model => `
                         <div class="tree-item model-item enhanced" onclick="selectEnhancedModel('${model.id}', '${model.name}', '${model.versionUrn}')">
                             <input type="checkbox" class="model-checkbox" id="model_${model.id}" />
                             <span class="tree-icon">📋</span>
@@ -543,17 +627,15 @@ function showAlignedModelSelection() {
                                 </div>
                             </div>
                         </div>
-                    `).join('')
-            }
-            </div>
-            ${discoveredModels.length > 0 ?
-                `<div class="model-actions">
+                    `).join('')}
+                </div>
+                <div class="model-actions">
                     <button class="btn btn-sm" onclick="selectAllModels()">Select All Ready</button>
                     <button class="btn btn-sm" onclick="clearAllModels()">Clear Selection</button>
                     <button class="btn btn-sm" onclick="refreshTranslationStatus()">Refresh Status</button>
-                </div>` : ''
-            }
-        `;
+                </div>
+            `;
+        }
     }
 
     // Also populate models grid if it exists
@@ -1555,6 +1637,50 @@ function showNotification(message, type = 'info') {
 function initializeUI() {
     // Project selection event listener is already set in HTML
     console.log('UI event listeners initialized');
+}
+
+// Helper function to proceed without a model
+function proceedWithoutModel() {
+    selectedModel = {
+        id: 'no-model',
+        name: 'No Model Selected',
+        versionUrn: null
+    };
+
+    closeModelSelection();
+
+    // Show calculator interface without Forge viewer
+    const projectSelection = document.getElementById('projectSelection');
+    const calculatorInterface = document.getElementById('calculatorInterface');
+
+    if (projectSelection) projectSelection.style.display = 'none';
+    if (calculatorInterface) calculatorInterface.style.display = 'grid';
+
+    // Hide viewer panel or show placeholder
+    const viewerPanel = document.querySelector('.viewer-panel');
+    if (viewerPanel) {
+        const forgeViewer = document.getElementById('forgeViewer');
+        if (forgeViewer) {
+            forgeViewer.innerHTML = `
+                <div class="viewer-placeholder">
+                    <h3>No Model Loaded</h3>
+                    <p>You can still perform calculations without a 3D model.</p>
+                    <p>Element selection features are not available.</p>
+                </div>
+            `;
+        }
+    }
+
+    // Update model name display
+    const selectedModelName = document.getElementById('selectedModelName');
+    if (selectedModelName) {
+        selectedModelName.textContent = 'No model - Manual calculation mode';
+    }
+
+    // Load calculation history
+    updateCalculationHistoryUI();
+
+    showNotification('Calculator ready in manual mode', 'info');
 }
 
 // Navigation
