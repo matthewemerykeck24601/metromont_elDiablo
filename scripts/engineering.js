@@ -340,6 +340,7 @@ function openEngineeringTool(tool) {
     }
 }
 
+// FIXED: Pass project data to calculator
 function openCalculator() {
     console.log('Opening Engineering Calculator...');
 
@@ -348,8 +349,28 @@ function openCalculator() {
         return;
     }
 
-    // Open the dedicated calculator page
-    window.location.href = 'engineering-calculator.html';
+    console.log('🚀 Opening calculator with project:', selectedProjectData?.name);
+
+    // Store project data in sessionStorage for calculator to access
+    const calculatorData = {
+        selectedProject: selectedProject,
+        selectedProjectData: selectedProjectData,
+        forgeAccessToken: forgeAccessToken,
+        globalHubData: globalHubData,
+        timestamp: Date.now()
+    };
+
+    try {
+        sessionStorage.setItem('calculator_project_data', JSON.stringify(calculatorData));
+        console.log('✅ Stored project data for calculator');
+
+        // Open the dedicated calculator page
+        window.location.href = 'engineering-calculator.html';
+
+    } catch (error) {
+        console.error('❌ Failed to store project data:', error);
+        showNotification('Failed to prepare calculator data', 'error');
+    }
 }
 
 function openDesignSummary() {
