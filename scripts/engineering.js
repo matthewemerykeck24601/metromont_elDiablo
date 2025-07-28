@@ -1,611 +1,640 @@
-﻿// Engineering Calculator - Fixed Project Loading
-// This file should be saved as scripts/engineering.js
+// Engineering & Drafting Module - Main Page Only
 
-console.log('=== ENGINEERING CALCULATOR INITIALIZATION ===');
+// Global Variables (matching QC pattern)
+let forgeAccessToken = null;
+let isAuthenticated = false;
+let authCheckComplete = false;
+let selectedProject = null;
+let selectedProjectData = null;
+let globalHubData = null;
+let userProjects = []; // Added from QC pattern
+let hubId = null; // Added from QC pattern
+let projectId = null; // Added from QC pattern
 
-// Global state
-let globalProjectData = {
-    currentProjectId: null,
-    currentHubId: null,
-    accToken: null,
-    projects: []
-};
-
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', function () {
-    console.log('Engineering Calculator DOM loaded');
-    initializeEngineeringCalculator();
-});
-
-async function initializeEngineeringCalculator() {
+// Load pre-loaded hub data (EXACT SAME as QC Bed Report)
+async function loadPreLoadedHubData() {
     try {
-        console.log('Starting engineering calculator initialization...');
+        console.log('=== loadPreLoadedHubData START ===');
 
-        // Get authentication token
-        await getAuthToken();
+        // Try to get hub data from parent window first - FIXED: window.opener not window.parent
+        if (!globalHubData && window.opener && window.opener.CastLinkAuth) {
+            console.log('Trying window.opener...');
+            globalHubData = window.opener.CastLinkAuth.getHubData();
+            console.log('Got from window.opener:', globalHubData);
+        }
 
-        // Try to inherit project selection from parent page
-        const inheritedProject = await getInheritedProjectSelection();
+        // If not available, try to load from session storage
+        if (!globalHubData) {
+            console.log('Trying session storage...');
+            const storedHubData = sessionStorage.getItem('castlink_hub_data');
+            console.log('Session storage data exists:', !!storedHubData);
 
-        if (inheritedProject) {
-            console.log('Inherited project from parent:', inheritedProject.name);
-            globalProjectData.currentProjectId = inheritedProject.projectId;
-            globalProjectData.currentHubId = inheritedProject.hubId;
+            if (storedHubData) {
+                globalHubData = JSON.parse(storedHubData);
+                console.log('✅ Loaded hub data from session storage');
+                console.log('Projects in data:', globalHubData?.projects?.length);
+                console.log('First project:', globalHubData?.projects?.[0]);
+            }
+        }
 
-            // Skip project loading and go straight to showing calculator
-            updateProjectStatus(`Using project: ${inheritedProject.name}`);
-            showCalculatorOptions();
+        console.log('Final globalHubData check:');
+        console.log('- globalHubData exists:', !!globalHubData);
+        console.log('- globalHubData.projects exists:', !!globalHubData?.projects);
+        console.log('- Projects length:', globalHubData?.projects?.length);
 
-            // Load project folders for this specific project
-            await loadInitialProjectFolders();
+        if (globalHubData && globalHubData.projects && globalHubData.projects.length > 0) {
+            console.log('✅ CONDITIONS MET - Processing projects');
+
+            // Use the pre-loaded project data - EXACT SAME as QC
+            userProjects = globalHubData.projects;
+            hubId = globalHubData.hubId;
+
+            // Set default project - EXACT SAME as QC
+            if (globalHubData.projects.length > 0) {
+                projectId = globalHubData.projects[0].id;
+            }
+
+            // Call populateProjectDropdown HERE (not in completeAuthentication) - EXACT SAME as QC
+            console.log('🔥 CALLING populateProjectDropdown with', globalHubData.projects.length, 'projects');
+            populateProjectDropdown(globalHubData.projects);
+
+            console.log('✅ Using pre-loaded hub data:');
+            console.log('   Hub ID:', globalHubData.hubId);
+            console.log('   Projects:', globalHubData.projects.length);
+            console.log('   Loaded at:', globalHubData.loadedAt);
+
         } else {
-            console.log('No inherited project, loading all projects...');
-            // Load all projects for selection
-            await loadProjectsForCalculator();
+            console.warn('❌ CONDITIONS NOT MET - Falling back to manual entry');
+            console.log('- globalHubData:', globalHubData);
+            console.log('- globalHubData?.projects:', globalHubData?.projects);
+            console.log('- length:', globalHubData?.projects?.length);
+            await handleMissingHubData();
         }
 
-        console.log('Engineering calculator initialized successfully');
+        console.log('=== loadPreLoadedHubData END ===');
 
     } catch (error) {
-        console.error('Failed to initialize engineering calculator:', error);
-        showErrorMessage('Failed to initialize: ' + error.message);
-    }
-}
-
-async function getAuthToken() {
-    console.log('Getting authentication token...');
-
-    try {
-        // Try to get token from parent window (if embedded)
-        if (window.parent && window.parent !== window) {
-            try {
-                globalProjectData.accToken = window.parent.localStorage.getItem('accToken');
-                if (globalProjectData.accToken) {
-                    console.log('Found token in parent window');
-                    return;
-                }
-            } catch (e) {
-                console.log('Cannot access parent storage');
-            }
-        }
-
-        // Try local storage
-        globalProjectData.accToken = localStorage.getItem('accToken');
-        if (globalProjectData.accToken) {
-            console.log('Found token in local storage');
-            return;
-        }
-
-        // Try session storage
-        globalProjectData.accToken = sessionStorage.getItem('accToken');
-        if (globalProjectData.accToken) {
-            console.log('Found token in session storage');
-            return;
-        }
-
-        throw new Error('No ACC authentication token found. Please authenticate first.');
-
-    } catch (error) {
-        console.error('Authentication error:', error);
-        throw error;
-    }
-}
-
-async function loadProjectsForCalculator() {
-    console.log('Loading projects for engineering calculator...');
-
-    if (!globalProjectData.accToken) {
-        throw new Error('No authentication token available');
-    }
-
-    try {
-        // Update UI to show loading
-        updateProjectStatus('Loading ACC projects...');
-
-        // Get hubs first
-        console.log('Fetching hubs...');
-        const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
-            headers: {
-                'Authorization': `Bearer ${globalProjectData.accToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!hubsResponse.ok) {
-            throw new Error(`Failed to fetch hubs: ${hubsResponse.status} ${hubsResponse.statusText}`);
-        }
-
-        const hubsData = await hubsResponse.json();
-        console.log('Hubs received:', hubsData.data?.length || 0);
-
-        if (!hubsData.data || hubsData.data.length === 0) {
-            throw new Error('No ACC hubs found for this account');
-        }
-
-        // Get projects from all hubs
-        const allProjects = [];
-        for (const hub of hubsData.data) {
-            console.log(`Loading projects from hub: ${hub.attributes.name}`);
-
-            try {
-                const projectsResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hub.id}/projects`, {
-                    headers: {
-                        'Authorization': `Bearer ${globalProjectData.accToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (projectsResponse.ok) {
-                    const projectsData = await projectsResponse.json();
-                    if (projectsData.data && projectsData.data.length > 0) {
-                        projectsData.data.forEach(project => {
-                            allProjects.push({
-                                id: project.id,
-                                name: project.attributes.name,
-                                hubId: hub.id,
-                                hubName: hub.attributes.name,
-                                fullData: project
-                            });
-                        });
-                        console.log(`Found ${projectsData.data.length} projects in hub ${hub.attributes.name}`);
-                    }
-                } else {
-                    console.warn(`Failed to load projects from hub ${hub.id}: ${projectsResponse.status}`);
-                }
-            } catch (error) {
-                console.warn(`Error loading projects from hub ${hub.id}:`, error);
-            }
-        }
-
-        if (allProjects.length === 0) {
-            throw new Error('No projects found in any accessible hub');
-        }
-
-        console.log(`Total projects found: ${allProjects.length}`);
-        globalProjectData.projects = allProjects;
-
-        // Populate the project dropdown
-        populateProjectDropdown(allProjects);
-
-        updateProjectStatus(`Found ${allProjects.length} projects`);
-
-    } catch (error) {
-        console.error('Failed to load projects:', error);
-        updateProjectStatus('Failed to load projects');
-        throw error;
+        console.error('❌ Error loading pre-loaded hub data:', error);
+        await handleMissingHubData();
     }
 }
 
 function populateProjectDropdown(projects) {
-    console.log('Populating project dropdown...');
-
-    // Find the project select element
-    const projectSelect = document.getElementById('projectSelect') ||
-        document.querySelector('select[name="project"]') ||
-        document.querySelector('.project-select');
-
-    if (!projectSelect) {
-        console.error('Project select element not found');
-        return;
-    }
-
-    // Clear existing options
-    projectSelect.innerHTML = '<option value="">Select a project...</option>';
-
-    // Add project options
-    projects.forEach(project => {
-        const option = document.createElement('option');
-        option.value = JSON.stringify({
-            projectId: project.id,
-            hubId: project.hubId,
-            name: project.name
-        });
-        option.textContent = `${project.name} (${project.hubName})`;
-        projectSelect.appendChild(option);
-    });
-
-    // Enable the dropdown
-    projectSelect.disabled = false;
-
-    // Add change event listener
-    projectSelect.addEventListener('change', handleProjectChange);
-
-    console.log('Project dropdown populated successfully');
-}
-
-function handleProjectChange(event) {
-    const value = event.target.value;
-
-    if (value) {
-        try {
-            const projectData = JSON.parse(value);
-            globalProjectData.currentProjectId = projectData.projectId;
-            globalProjectData.currentHubId = projectData.hubId;
-
-            console.log('Selected project:', projectData.name);
-            console.log('Project ID:', projectData.projectId);
-            console.log('Hub ID:', projectData.hubId);
-
-            // Show calculator options or next steps
-            showCalculatorOptions();
-
-        } catch (error) {
-            console.error('Failed to parse project data:', error);
-        }
-    } else {
-        // Clear selection
-        globalProjectData.currentProjectId = null;
-        globalProjectData.currentHubId = null;
-        hideCalculatorOptions();
-    }
-}
-
-function showCalculatorOptions() {
-    console.log('Showing calculator options for selected project');
-
-    // Show calculator grid if it exists
-    const calculatorGrid = document.getElementById('calculatorGrid') ||
-        document.querySelector('.calculator-grid');
-
-    if (calculatorGrid) {
-        calculatorGrid.style.display = 'grid';
-    }
-
-    // Enable calculator buttons
-    const calculatorButtons = document.querySelectorAll('.calculator-card, .calculator-button');
-    calculatorButtons.forEach(button => {
-        button.classList.remove('disabled');
-        button.style.pointerEvents = 'auto';
-        button.style.opacity = '1';
-    });
-
-    // Update status
-    updateProjectStatus(`Project selected: ${globalProjectData.currentProjectId}`);
-}
-
-function hideCalculatorOptions() {
-    console.log('Hiding calculator options');
-
-    // Hide calculator grid
-    const calculatorGrid = document.getElementById('calculatorGrid') ||
-        document.querySelector('.calculator-grid');
-
-    if (calculatorGrid) {
-        calculatorGrid.style.display = 'none';
-    }
-
-    // Disable calculator buttons
-    const calculatorButtons = document.querySelectorAll('.calculator-card, .calculator-button');
-    calculatorButtons.forEach(button => {
-        button.classList.add('disabled');
-        button.style.pointerEvents = 'none';
-        button.style.opacity = '0.5';
-    });
-}
-
-async function getInheritedProjectSelection() {
-    console.log('Checking for inherited project selection...');
-
     try {
-        // Method 1: Try to get from parent window (if calculator opened from engineering.html)
-        if (window.parent && window.parent !== window) {
-            try {
-                const parentProjectData = window.parent.getCurrentSelectedProject ?
-                    window.parent.getCurrentSelectedProject() : null;
+        console.log('=== populateProjectDropdown START ===');
+        console.log('Projects passed in:', projects?.length);
+        console.log('First project sample:', projects?.[0]);
 
-                if (parentProjectData && parentProjectData.projectId) {
-                    console.log('Found project in parent window:', parentProjectData);
-                    return parentProjectData;
-                }
-            } catch (e) {
-                console.log('Cannot access parent window project data');
-            }
-        }
+        userProjects = projects; // EXACT SAME as QC
+        const projectSelect = document.getElementById('projectSelect'); // FIXED: Use correct ID
 
-        // Method 2: Try to get from URL parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const projectId = urlParams.get('projectId');
-        const hubId = urlParams.get('hubId');
-        const projectName = urlParams.get('projectName');
+        console.log('Looking for element with ID: projectSelect');
+        console.log('Element found:', !!projectSelect);
 
-        if (projectId && hubId) {
-            console.log('Found project in URL parameters');
-            return {
-                projectId: projectId,
-                hubId: hubId,
-                name: projectName || 'Selected Project'
-            };
-        }
-
-        // Method 3: Try to get from session storage
-        const sessionProject = sessionStorage.getItem('selectedProject');
-        if (sessionProject) {
-            try {
-                const projectData = JSON.parse(sessionProject);
-                if (projectData.projectId && projectData.hubId) {
-                    console.log('Found project in session storage');
-                    return projectData;
-                }
-            } catch (e) {
-                console.log('Failed to parse session project data');
-            }
-        }
-
-        // Method 4: Try to get from local storage
-        const localProject = localStorage.getItem('selectedProject');
-        if (localProject) {
-            try {
-                const projectData = JSON.parse(localProject);
-                if (projectData.projectId && projectData.hubId) {
-                    console.log('Found project in local storage');
-                    return projectData;
-                }
-            } catch (e) {
-                console.log('Failed to parse local project data');
-            }
-        }
-
-        console.log('No inherited project selection found');
-        return null;
-
-    } catch (error) {
-        console.error('Error checking for inherited project:', error);
-        return null;
-    }
-}
-
-async function loadInitialProjectFolders() {
-    console.log('Loading initial project folders for selected project...');
-
-    try {
-        const folders = await loadProjectFolders(
-            globalProjectData.currentProjectId,
-            globalProjectData.currentHubId
-        );
-
-        console.log(`Loaded ${folders.length} top-level folders`);
-
-        // Display the folders in UI if there's a folder display element
-        displayProjectFolders(folders);
-
-    } catch (error) {
-        console.error('Failed to load initial project folders:', error);
-        showErrorMessage('Failed to load project folders: ' + error.message);
-    }
-}
-
-function displayProjectFolders(folders) {
-    console.log('Displaying project folders in UI...');
-
-    // Find folder display container
-    const folderContainer = document.getElementById('folderDisplay') ||
-        document.querySelector('.folder-display') ||
-        document.querySelector('.project-folders');
-
-    if (!folderContainer) {
-        console.log('No folder display container found');
-        return;
-    }
-
-    // Clear existing content
-    folderContainer.innerHTML = '';
-
-    if (folders.length === 0) {
-        folderContainer.innerHTML = '<p class="no-folders">No folders found in this project</p>';
-        return;
-    }
-
-    // Create folder list
-    const folderList = document.createElement('div');
-    folderList.className = 'folder-list';
-
-    folders.forEach(folder => {
-        const folderItem = document.createElement('div');
-        folderItem.className = 'folder-item';
-        folderItem.innerHTML = `
-            <div class="folder-header" data-folder-id="${folder.id}">
-                <span class="folder-icon">📁</span>
-                <span class="folder-name">${folder.attributes.displayName || folder.attributes.name}</span>
-            </div>
-        `;
-
-        // Add click handler to expand folder
-        folderItem.addEventListener('click', function () {
-            expandFolder(folder.id, folderItem);
-        });
-
-        folderList.appendChild(folderItem);
-    });
-
-    folderContainer.appendChild(folderList);
-    folderContainer.style.display = 'block';
-}
-
-async function expandFolder(folderId, folderElement) {
-    console.log('Expanding folder:', folderId);
-
-    try {
-        const contents = await loadFolderContents(globalProjectData.currentProjectId, folderId);
-
-        // Create or update folder contents display
-        let contentsDiv = folderElement.querySelector('.folder-contents');
-        if (!contentsDiv) {
-            contentsDiv = document.createElement('div');
-            contentsDiv.className = 'folder-contents';
-            folderElement.appendChild(contentsDiv);
-        }
-
-        if (contentsDiv.style.display === 'block') {
-            contentsDiv.style.display = 'none';
+        if (!projectSelect) {
+            console.error('❌ Project select element not found');
             return;
         }
 
-        contentsDiv.innerHTML = '';
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
+        console.log('Account name:', accountName);
 
-        if (contents.length === 0) {
-            contentsDiv.innerHTML = '<p class="empty-folder">No items in this folder</p>';
+        projectSelect.innerHTML = `<option value="">Select a project from ${accountName}...</option>`;
+        console.log('✅ Set default option');
+
+        projects.forEach((project, index) => {
+            console.log(`Adding project ${index + 1}:`, project.name);
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ' (' + project.number + ')' : ''}`;
+            option.dataset.projectNumber = project.number || '';
+            option.dataset.location = project.location || '';
+            option.dataset.permissions = project.permissions || 'basic';
+            projectSelect.appendChild(option);
+        });
+
+        projectSelect.disabled = false;
+        console.log('✅ Projects added, dropdown enabled');
+
+        // Auto-select first project - EXACT SAME as QC
+        if (projects.length > 0) {
+            console.log('🔥 Auto-selecting first project:', projects[0].name);
+            setTimeout(() => {
+                console.log('Setting dropdown value to:', projects[0].id);
+                projectSelect.value = projects[0].id;
+                projectId = projects[0].id;
+                console.log('Calling onProjectChange()...');
+                onProjectChange(); // Use our function name instead of onProjectSelected
+            }, 100);
+        }
+
+        console.log('=== populateProjectDropdown END ===');
+
+    } catch (error) {
+        console.error('❌ Error in populateProjectDropdown:', error);
+        throw error;
+    }
+}
+
+async function handleMissingHubData() {
+    console.log('=== handleMissingHubData called ===');
+    console.log('This should NOT be called if projects are available!');
+
+    const projectSelect = document.getElementById('projectSelect');
+    if (projectSelect) {
+        projectSelect.innerHTML = '<option value="">No projects available - please authenticate from main dashboard</option>';
+        projectSelect.disabled = true;
+        console.log('❌ Set fallback message in dropdown');
+    }
+}
+
+// Initialize the engineering page
+// Initialize the engineering page - EXACT SAME pattern as QC
+async function initializeEngineering() {
+    try {
+        console.log('=== ENGINEERING MODULE INITIALIZATION ===');
+
+        // Check if opened from main app (same as QC pattern)
+        if (window.opener && window.opener.CastLinkAuth) {
+            const parentAuth = window.opener.CastLinkAuth;
+            const isParentAuth = await parentAuth.waitForAuth();
+
+            if (isParentAuth) {
+                forgeAccessToken = parentAuth.getToken();
+                globalHubData = parentAuth.getHubData();
+                await completeAuthentication();
+                return;
+            }
+        }
+
+        // Fallback to stored token (same as QC pattern)
+        const storedToken = getStoredToken();
+        if (storedToken && !isTokenExpired(storedToken)) {
+            forgeAccessToken = storedToken.access_token;
+
+            const isValid = await verifyToken(forgeAccessToken);
+            if (isValid) {
+                await completeAuthentication();
+            } else {
+                clearStoredToken();
+                redirectToMainApp();
+            }
         } else {
-            contents.forEach(item => {
-                const itemDiv = document.createElement('div');
-                itemDiv.className = item.type === 'folders' ? 'subfolder-item' : 'file-item';
-                itemDiv.innerHTML = `
-                    <span class="item-icon">${item.type === 'folders' ? '📁' : '📄'}</span>
-                    <span class="item-name">${item.attributes.displayName || item.attributes.name}</span>
-                `;
+            redirectToMainApp();
+        }
+    } catch (error) {
+        console.error('Engineering module initialization failed:', error);
+        showNotification('Failed to initialize: ' + error.message, 'error');
+    } finally {
+        authCheckComplete = true;
+    }
+}
 
-                if (item.type === 'folders') {
-                    itemDiv.addEventListener('click', function () {
-                        expandFolder(item.id, itemDiv);
-                    });
+function redirectToMainApp() {
+    updateAuthStatus('Redirecting to Login...', 'Taking you to the main app for authentication...');
+    setTimeout(() => {
+        window.location.href = 'index.html';
+    }, 2000);
+}
+
+async function completeAuthentication() {
+    try {
+        updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
+
+        // Load the hub data that was already loaded during main authentication
+        // This now calls populateProjectDropdown() internally - EXACT SAME as QC
+        await loadPreLoadedHubData();
+
+        isAuthenticated = true; // Set this flag
+
+        const projectCount = globalHubData ? globalHubData.projects.length : 0;
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
+
+        updateAuthStatus('✅ Connected', `Connected to ${accountName} with ${projectCount} projects available`);
+
+        // Initialize UI after data is loaded - same as QC pattern
+        initializeUI();
+
+        console.log('✅ Engineering module ready with pre-loaded data');
+
+    } catch (error) {
+        console.error('Authentication completion failed:', error);
+        showNotification('Failed to load project data: ' + error.message, 'error');
+    }
+}
+
+// Authentication Functions
+async function checkAuthentication() {
+    console.log('Checking authentication...');
+
+    try {
+        // Method 1: Check if parent app has authentication (same as QC Bed Report)
+        if (window.parent && window.parent !== window && window.parent.CastLinkAuth) {
+            console.log('Checking parent app authentication...');
+            const isAuth = await window.parent.CastLinkAuth.waitForAuth();
+            if (isAuth) {
+                forgeAccessToken = window.parent.CastLinkAuth.getToken();
+                globalHubData = window.parent.CastLinkAuth.getHubData();
+                if (forgeAccessToken) {
+                    isAuthenticated = true;
+                    updateAuthStatus('✅ Connected', 'Authenticated with ACC');
+                    console.log('Successfully authenticated via parent app');
+                    return;
                 }
-
-                contentsDiv.appendChild(itemDiv);
-            });
+            }
         }
 
-        contentsDiv.style.display = 'block';
+        // Method 2: Check stored token (same pattern as QC Bed Report)
+        console.log('Checking stored token...');
+        const storedToken = getStoredToken();
+        if (storedToken && !isTokenExpired(storedToken)) {
+            // Verify token is still valid
+            const isValid = await verifyToken(storedToken.access_token);
+            if (isValid) {
+                forgeAccessToken = storedToken.access_token;
+                isAuthenticated = true;
+                updateAuthStatus('✅ Connected', 'Using stored authentication');
+                console.log('Successfully authenticated via stored token');
+                return;
+            } else {
+                console.log('Stored token is invalid, clearing...');
+                clearStoredToken();
+            }
+        }
+
+        // Method 3: No valid authentication found
+        console.log('No valid authentication found - redirecting to main app');
+        isAuthenticated = false;
+        updateAuthStatus('❌ Authentication Required', 'Redirecting to main app for authentication...');
+
+        // Redirect to main app for authentication
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 2000);
 
     } catch (error) {
-        console.error('Failed to expand folder:', error);
-        showErrorMessage('Failed to load folder contents: ' + error.message);
+        console.error('Authentication check failed:', error);
+        isAuthenticated = false;
+        updateAuthStatus('❌ Authentication Error', error.message);
     }
 }
 
-function showErrorMessage(message) {
-    console.error('Error message:', message);
-
-    // Try to find and show error display
-    const errorDisplay = document.getElementById('errorDisplay') ||
-        document.querySelector('.error-display');
-
-    if (errorDisplay) {
-        const errorMessage = errorDisplay.querySelector('#errorMessage') ||
-            errorDisplay.querySelector('.error-message');
-
-        if (errorMessage) {
-            errorMessage.textContent = message;
-        }
-
-        errorDisplay.style.display = 'block';
-    } else {
-        // Fallback to alert
-        alert('Engineering Calculator Error: ' + message);
+function handleMissingHubData() {
+    const projectSelect = document.getElementById('projectSelect');
+    if (projectSelect) {
+        projectSelect.innerHTML = '<option value="">No projects available - please authenticate from main dashboard</option>';
+        projectSelect.disabled = true;
     }
+    console.warn('No hub data available - user may need to authenticate from main dashboard');
 }
 
-// Utility function to get current project data
-function getCurrentProject() {
-    return {
-        projectId: globalProjectData.currentProjectId,
-        hubId: globalProjectData.currentHubId,
-        token: globalProjectData.accToken
-    };
-}
-
-// Function to load project folders (for model selection)
-async function loadProjectFolders(projectId, hubId) {
-    console.log('Loading folders for project:', projectId);
-
-    if (!globalProjectData.accToken) {
-        throw new Error('No authentication token available');
-    }
+async function loadProjects() {
+    console.log('Loading projects...');
 
     try {
-        const response = await fetch(`https://developer.api.autodesk.com/data/v1/projects/${projectId}/topFolders`, {
-            headers: {
-                'Authorization': `Bearer ${globalProjectData.accToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to load project folders: ${response.status} ${response.statusText}`);
+        if (!globalHubData || !globalHubData.projects) {
+            console.log('No hub data available, using placeholder projects');
+            populateProjectDropdown([]);
+            return;
         }
 
-        const data = await response.json();
-        console.log('Project folders loaded:', data.data?.length || 0);
-
-        return data.data || [];
+        populateProjectDropdown(globalHubData.projects);
+        console.log('Projects loaded successfully:', globalHubData.projects.length);
 
     } catch (error) {
-        console.error('Failed to load project folders:', error);
-        throw error;
+        console.error('Failed to load projects:', error);
+        populateProjectDropdown([]);
     }
 }
 
-// Function to load folder contents
-async function loadFolderContents(projectId, folderId) {
-    console.log('Loading contents for folder:', folderId);
+function populateProjectDropdown(projects) {
+    const projectSelect = document.getElementById('projectSelect');
+    if (!projectSelect) return;
 
-    if (!globalProjectData.accToken) {
-        throw new Error('No authentication token available');
+    projectSelect.innerHTML = '<option value="">Select a project...</option>';
+
+    if (projects.length === 0) {
+        projectSelect.innerHTML += '<option value="" disabled>No projects available</option>';
+        projectSelect.disabled = true;
+        return;
     }
 
-    try {
-        const response = await fetch(`https://developer.api.autodesk.com/data/v1/projects/${projectId}/folders/${folderId}/contents`, {
-            headers: {
-                'Authorization': `Bearer ${globalProjectData.accToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to load folder contents: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        console.log('Folder contents loaded:', data.data?.length || 0);
-
-        return data.data || [];
-
-    } catch (error) {
-        console.error('Failed to load folder contents:', error);
-        throw error;
-    }
-}
-
-function updateProjectStatus(message) {
-    console.log('Status update:', message);
-
-    // Find status elements and update them
-    const statusElements = [
-        document.getElementById('projectStatus'),
-        document.getElementById('projectCount'),
-        document.querySelector('.project-status'),
-        document.querySelector('.status-text')
-    ];
-
-    statusElements.forEach(element => {
-        if (element) {
-            element.textContent = message;
-        }
+    projects.forEach(project => {
+        const option = document.createElement('option');
+        option.value = project.id;
+        option.textContent = project.attributes.name;
+        projectSelect.appendChild(option);
     });
+
+    projectSelect.disabled = false;
 }
 
-// Function that the parent engineering.html page can call to pass project data
-function setSelectedProject(projectData) {
-    console.log('Project selection received from parent:', projectData);
+// Project Selection
+// Project Selection - Updated to match QC pattern
+function onProjectChange() {
+    console.log('=== onProjectChange START ===');
 
-    globalProjectData.currentProjectId = projectData.projectId;
-    globalProjectData.currentHubId = projectData.hubId;
+    const projectSelect = document.getElementById('projectSelect');
+    if (!projectSelect) {
+        console.error('❌ projectSelect element not found');
+        return;
+    }
 
-    // Store in session storage for persistence
-    sessionStorage.setItem('selectedProject', JSON.stringify(projectData));
+    const selectedOption = projectSelect.selectedOptions[0];
+    console.log('Selected option:', selectedOption?.textContent);
 
-    // Update UI and load folders
-    updateProjectStatus(`Using project: ${projectData.name}`);
-    showCalculatorOptions();
-    loadInitialProjectFolders();
+    if (selectedOption && selectedOption.value) {
+        const projectNumber = selectedOption.dataset.projectNumber || '';
+        const location = selectedOption.dataset.location || '';
+        const permissions = selectedOption.dataset.permissions || 'basic';
+
+        projectId = selectedOption.value;
+        selectedProject = selectedOption.value; // Keep both for compatibility
+
+        console.log('Project selected:', selectedProject);
+        console.log('Project number:', projectNumber);
+
+        // Find project data
+        if (globalHubData && globalHubData.projects) {
+            selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
+            console.log('Found project data:', selectedProjectData?.name);
+        }
+
+        // Update project info display
+        const projectName = document.getElementById('projectName');
+        const projectDetails = document.getElementById('projectDetails');
+
+        console.log('Looking for projectName element:', !!projectName);
+        console.log('Looking for projectDetails element:', !!projectDetails);
+
+        if (projectName && selectedProjectData) {
+            projectName.textContent = selectedProjectData.name;
+            console.log('✅ Updated projectName display');
+        }
+
+        if (projectDetails) {
+            projectDetails.textContent = 'Project selected - ready for engineering tools';
+            console.log('✅ Updated projectDetails display');
+        }
+
+        console.log('✅ Project selected:', selectedProjectData?.name || selectedProject);
+
+    } else {
+        // No selection
+        console.log('No project selected');
+
+        projectId = null;
+        selectedProject = null;
+        selectedProjectData = null;
+
+        const projectName = document.getElementById('projectName');
+        const projectDetails = document.getElementById('projectDetails');
+
+        if (projectName) {
+            projectName.textContent = 'No project selected';
+        }
+
+        if (projectDetails) {
+            projectDetails.textContent = 'Select a project to view design requirements';
+        }
+    }
+
+    console.log('=== onProjectChange END ===');
 }
 
-// Export this function so parent pages can access it
-window.setSelectedProject = setSelectedProject;
+// Engineering Tool Functions
+function openEngineeringTool(tool) {
+    if (!isAuthenticated) {
+        showNotification('Please authenticate with ACC first', 'warning');
+        return;
+    }
 
-// Export functions for use by other scripts
-window.EngineeringCalculator = {
-    getCurrentProject: getCurrentProject,
-    loadProjectFolders: loadProjectFolders,
-    loadFolderContents: loadFolderContents,
-    setSelectedProject: setSelectedProject,
-    globalProjectData: globalProjectData
+    switch (tool) {
+        case 'calculator':
+            openCalculator();
+            break;
+        case 'design-summary':
+            openDesignSummary();
+            break;
+        case 'piece-issue':
+            openPieceIssue();
+            break;
+        case 'bom-query':
+            openBOMQuery();
+            break;
+        default:
+            showNotification('Tool not yet implemented', 'info');
+    }
+}
+
+function openCalculator() {
+    console.log('Opening Engineering Calculator...');
+
+    if (!selectedProject) {
+        showNotification('Please select a project first', 'warning');
+        return;
+    }
+
+    // Open the dedicated calculator page
+    window.location.href = 'engineering-calculator.html';
+}
+
+function openDesignSummary() {
+    showNotification('Opening Design Summary Generator...', 'info');
+    console.log('Design summary tool opened for project:', selectedProject);
+
+    if (!selectedProject) {
+        showNotification('Please select a project first', 'warning');
+        return;
+    }
+
+    // Placeholder for design summary functionality
+    console.log('Design Summary Generator - Project:', selectedProjectData?.attributes?.name);
+}
+
+function openPieceIssue() {
+    showNotification('Opening Piece Issue Management...', 'info');
+    console.log('Piece issue tool opened for project:', selectedProject);
+
+    if (!selectedProject) {
+        showNotification('Please select a project first', 'warning');
+        return;
+    }
+
+    // Placeholder for piece issue functionality
+    console.log('Piece Issue Management - Project:', selectedProjectData?.attributes?.name);
+}
+
+function openBOMQuery() {
+    showNotification('Opening BOM Query Tool...', 'info');
+    console.log('BOM query tool opened for project:', selectedProject);
+
+    if (!selectedProject) {
+        showNotification('Please select a project first', 'warning');
+        return;
+    }
+
+    // Placeholder for BOM query functionality
+    console.log('BOM Query Tool - Project:', selectedProjectData?.attributes?.name);
+}
+
+// Authentication Helper Functions
+// Token Management - EXACT SAME as QC
+function getStoredToken() {
+    let stored = sessionStorage.getItem('forge_token');
+    if (!stored) {
+        stored = localStorage.getItem('forge_token_backup');
+        if (stored) {
+            sessionStorage.setItem('forge_token', stored);
+        }
+    }
+    return stored ? JSON.parse(stored) : null;
+}
+
+function isTokenExpired(tokenInfo) {
+    const now = Date.now();
+    const expiresAt = tokenInfo.expires_at;
+    const timeUntilExpiry = expiresAt - now;
+    return timeUntilExpiry < (5 * 60 * 1000);
+}
+
+function clearStoredToken() {
+    sessionStorage.removeItem('forge_token');
+    localStorage.removeItem('forge_token_backup');
+    console.log('Token cleared');
+}
+
+async function verifyToken(token) {
+    try {
+        const response = await fetch('https://developer.api.autodesk.com/userprofile/v1/users/@me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.ok;
+    } catch (error) {
+        console.error('Token verification failed:', error);
+        return false;
+    }
+}
+
+// UI Functions
+function updateAuthStatus(status, description) {
+    const authStatus = document.getElementById('authStatus');
+    const authInfo = document.getElementById('authInfo');
+    const authIndicator = document.getElementById('authIndicator');
+
+    if (authStatus) authStatus.textContent = status;
+    if (authInfo) authInfo.textContent = description;
+
+    if (authIndicator) {
+        authIndicator.className = 'status-indicator';
+        if (status.includes('✅')) {
+            authIndicator.classList.add('authenticated');
+        } else if (status.includes('❌')) {
+            authIndicator.classList.add('error');
+        }
+    }
+}
+
+function showNotification(message, type = 'info') {
+    // Try to find notification element
+    let notification = document.getElementById('notification');
+    let notificationText = document.getElementById('notificationText');
+
+    if (notification && notificationText) {
+        notificationText.textContent = message;
+        notification.className = `notification ${type} show`;
+
+        setTimeout(() => {
+            notification.classList.remove('show');
+        }, 4000);
+    } else {
+        // Fallback to console if notification element not found
+        console.log(`Notification (${type}): ${message}`);
+
+        // Try to create a simple notification if possible
+        if (document.body) {
+            const tempNotification = document.createElement('div');
+            tempNotification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: white;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                padding: 1rem;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                z-index: 1000;
+                max-width: 300px;
+            `;
+            tempNotification.textContent = message;
+            document.body.appendChild(tempNotification);
+
+            setTimeout(() => {
+                if (tempNotification.parentNode) {
+                    tempNotification.parentNode.removeChild(tempNotification);
+                }
+            }, 4000);
+        }
+    }
+}
+
+function initializeUI() {
+    console.log('Initializing UI...');
+
+    // Add any general UI initialization here
+    const projectSelect = document.getElementById('projectSelect');
+    if (projectSelect) {
+        projectSelect.addEventListener('change', onProjectChange);
+    }
+
+    // Add hover effects to engineering cards
+    const engineeringCards = document.querySelectorAll('.engineering-card');
+    engineeringCards.forEach(card => {
+        card.addEventListener('mouseenter', function () {
+            this.style.transform = 'translateY(-4px)';
+        });
+
+        card.addEventListener('mouseleave', function () {
+            this.style.transform = 'translateY(0)';
+        });
+    });
+
+    console.log('UI initialized');
+}
+
+// Navigation Functions
+function goBack() {
+    console.log('Navigating back to dashboard...');
+    window.location.href = 'index.html';
+}
+
+// Global error handler to prevent page redirects
+window.addEventListener('error', function (event) {
+    console.error('Page error caught:', event.error);
+    // Don't let errors cause navigation issues
+    event.preventDefault();
+});
+
+// Prevent any unhandled promise rejections from causing issues
+window.addEventListener('unhandledrejection', function (event) {
+    console.error('Unhandled promise rejection:', event.reason);
+    event.preventDefault();
+});
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', function () {
+    console.log('DOM loaded, initializing engineering page...');
+
+    // Small delay to ensure everything is ready
+    setTimeout(() => {
+        initializeEngineering();
+    }, 100);
+});
+
+// Export functions for global access if needed
+window.EngineeringModule = {
+    openEngineeringTool,
+    onProjectChange,
+    goBack,
+    showNotification
 };
