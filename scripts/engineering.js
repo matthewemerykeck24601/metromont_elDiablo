@@ -1,31 +1,109 @@
-﻿// Engineering & Drafting Module - Main Page Only
+﻿// Engineering & Drafting Module - Main JavaScript
+console.log('Engineering module loading...');
 
-// Global Variables (matching QC pattern)
+// Global variables - EXACT SAME as QC
 let forgeAccessToken = null;
 let isAuthenticated = false;
-let authCheckComplete = false;
+let authToken = null;
+let globalHubData = null;
+let projectId = null;
 let selectedProject = null;
 let selectedProjectData = null;
-let globalHubData = null;
-let userProjects = []; // Added from QC pattern
-let hubId = null; // Added from QC pattern
-let projectId = null; // Added from QC pattern
+let userProjects = [];
+let hubId = null;
+let authCheckComplete = false;
 
-// Load pre-loaded hub data (EXACT SAME as QC Bed Report)
+// Initialize Engineering Module - EXACT SAME pattern as QC
+async function initializeEngineering() {
+    console.log('🚀 Engineering module initializing...');
+
+    try {
+        console.log('=== ENGINEERING MODULE INITIALIZATION ===');
+
+        // Check if opened from main app (same as QC pattern)
+        if (window.opener && window.opener.CastLinkAuth) {
+            const parentAuth = window.opener.CastLinkAuth;
+            const isParentAuth = await parentAuth.waitForAuth();
+
+            if (isParentAuth) {
+                forgeAccessToken = parentAuth.getToken();
+                globalHubData = parentAuth.getHubData();
+                await completeAuthentication();
+                return;
+            }
+        }
+
+        // Fallback to stored token (same as QC pattern)
+        const storedToken = getStoredToken();
+        if (storedToken && !isTokenExpired(storedToken)) {
+            forgeAccessToken = storedToken.access_token;
+
+            const isValid = await verifyToken(forgeAccessToken);
+            if (isValid) {
+                await completeAuthentication();
+            } else {
+                clearStoredToken();
+                redirectToMainApp();
+            }
+        } else {
+            redirectToMainApp();
+        }
+
+    } catch (error) {
+        console.error('❌ Engineering initialization failed:', error);
+        updateAuthStatus('❌ Connection Failed', 'Failed to initialize engineering module');
+    } finally {
+        authCheckComplete = true;
+    }
+}
+
+function redirectToMainApp() {
+    updateAuthStatus('Redirecting to Login...', 'Taking you to the main app for authentication...');
+    setTimeout(() => {
+        window.location.href = 'index.html';
+    }, 2000);
+}
+
+async function completeAuthentication() {
+    try {
+        updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
+
+        // Load the hub data that was already loaded during main authentication
+        // This now calls populateProjectDropdown() internally - EXACT SAME as QC
+        await loadPreLoadedHubData();
+
+        isAuthenticated = true; // Set this flag
+
+        const projectCount = globalHubData ? globalHubData.projects.length : 0;
+        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
+
+        updateAuthStatus('✅ Connected', `Connected to ${accountName} with ${projectCount} projects available`);
+
+        // Initialize UI
+        initializeUI();
+
+        console.log('✅ Engineering module ready with pre-loaded data');
+
+    } catch (error) {
+        console.error('Authentication completion failed:', error);
+        updateAuthStatus('❌ Auth Error', 'Failed to load project data: ' + error.message);
+    }
+}
+
+// NEW: Load pre-loaded hub data instead of making API calls - EXACT SAME as QC
 async function loadPreLoadedHubData() {
     try {
         console.log('=== loadPreLoadedHubData START ===');
 
-        // Try to get hub data from parent window first - FIXED: window.opener not window.parent
+        // Try to get hub data from parent window first
         if (!globalHubData && window.opener && window.opener.CastLinkAuth) {
-            console.log('Trying window.opener...');
             globalHubData = window.opener.CastLinkAuth.getHubData();
-            console.log('Got from window.opener:', globalHubData);
+            console.log('📱 Got hub data from parent window');
         }
 
         // If not available, try to load from session storage
         if (!globalHubData) {
-            console.log('Trying session storage...');
+            console.log('🔍 Trying session storage...');
             const storedHubData = sessionStorage.getItem('castlink_hub_data');
             console.log('Session storage data exists:', !!storedHubData);
 
@@ -79,6 +157,7 @@ async function loadPreLoadedHubData() {
     }
 }
 
+// FIXED: Use correct element ID and match QC pattern exactly
 function populateProjectDropdown(projects) {
     try {
         console.log('=== populateProjectDropdown START ===');
@@ -86,7 +165,7 @@ function populateProjectDropdown(projects) {
         console.log('First project sample:', projects?.[0]);
 
         userProjects = projects; // EXACT SAME as QC
-        const projectSelect = document.getElementById('projectSelect'); // FIXED: Use correct ID
+        const projectSelect = document.getElementById('projectSelect'); // Use the ID that exists in engineering.html
 
         console.log('Looking for element with ID: projectSelect');
         console.log('Element found:', !!projectSelect);
@@ -97,48 +176,31 @@ function populateProjectDropdown(projects) {
         }
 
         const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
-        console.log('Account name:', accountName);
-
         projectSelect.innerHTML = `<option value="">Select a project from ${accountName}...</option>`;
-        console.log('✅ Set default option');
 
-        projects.forEach((project, index) => {
-            console.log(`Adding project ${index + 1}:`, project.name);
+        projects.forEach((project) => {
             const option = document.createElement('option');
             option.value = project.id;
-            option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ' (' + project.number + ')' : ''}`;
+            option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ` (${project.number})` : ''}`;
+
+            // Add data attributes for additional info
             option.dataset.projectNumber = project.number || '';
             option.dataset.location = project.location || '';
             option.dataset.permissions = project.permissions || 'basic';
+
             projectSelect.appendChild(option);
         });
 
         projectSelect.disabled = false;
-        console.log('✅ Projects added, dropdown enabled');
-
-        // Auto-select first project - EXACT SAME as QC
-        if (projects.length > 0) {
-            console.log('🔥 Auto-selecting first project:', projects[0].name);
-            setTimeout(() => {
-                console.log('Setting dropdown value to:', projects[0].id);
-                projectSelect.value = projects[0].id;
-                projectId = projects[0].id;
-                console.log('Calling onProjectChange()...');
-                onProjectChange(); // Use our function name instead of onProjectSelected
-            }, 100);
-        }
-
-        console.log('=== populateProjectDropdown END ===');
+        console.log('✅ Populated dropdown with', projects.length, 'projects');
 
     } catch (error) {
-        console.error('❌ Error in populateProjectDropdown:', error);
-        throw error;
+        console.error('❌ Error populating project dropdown:', error);
     }
 }
 
 async function handleMissingHubData() {
-    console.log('=== handleMissingHubData called ===');
-    console.log('This should NOT be called if projects are available!');
+    console.log('Setting up manual entry fallback...');
 
     const projectSelect = document.getElementById('projectSelect');
     if (projectSelect) {
@@ -148,200 +210,18 @@ async function handleMissingHubData() {
     }
 }
 
-// Initialize the engineering page
-// Initialize the engineering page - EXACT SAME pattern as QC
-async function initializeEngineering() {
-    try {
-        console.log('=== ENGINEERING MODULE INITIALIZATION ===');
-
-        // Check if opened from main app (same as QC pattern)
-        if (window.opener && window.opener.CastLinkAuth) {
-            const parentAuth = window.opener.CastLinkAuth;
-            const isParentAuth = await parentAuth.waitForAuth();
-
-            if (isParentAuth) {
-                forgeAccessToken = parentAuth.getToken();
-                globalHubData = parentAuth.getHubData();
-                await completeAuthentication();
-                return;
-            }
-        }
-
-        // Fallback to stored token (same as QC pattern)
-        const storedToken = getStoredToken();
-        if (storedToken && !isTokenExpired(storedToken)) {
-            forgeAccessToken = storedToken.access_token;
-
-            const isValid = await verifyToken(forgeAccessToken);
-            if (isValid) {
-                await completeAuthentication();
-            } else {
-                clearStoredToken();
-                redirectToMainApp();
-            }
-        } else {
-            redirectToMainApp();
-        }
-    } catch (error) {
-        console.error('Engineering module initialization failed:', error);
-        showNotification('Failed to initialize: ' + error.message, 'error');
-    } finally {
-        authCheckComplete = true;
-    }
-}
-
-function redirectToMainApp() {
-    updateAuthStatus('Redirecting to Login...', 'Taking you to the main app for authentication...');
-    setTimeout(() => {
-        window.location.href = 'index.html';
-    }, 2000);
-}
-
-async function completeAuthentication() {
-    try {
-        updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
-
-        // Load the hub data that was already loaded during main authentication
-        // This now calls populateProjectDropdown() internally - EXACT SAME as QC
-        await loadPreLoadedHubData();
-
-        isAuthenticated = true; // Set this flag
-
-        const projectCount = globalHubData ? globalHubData.projects.length : 0;
-        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
-
-        updateAuthStatus('✅ Connected', `Connected to ${accountName} with ${projectCount} projects available`);
-
-        // Initialize UI after data is loaded - same as QC pattern
-        initializeUI();
-
-        console.log('✅ Engineering module ready with pre-loaded data');
-
-    } catch (error) {
-        console.error('Authentication completion failed:', error);
-        showNotification('Failed to load project data: ' + error.message, 'error');
-    }
-}
-
-// Authentication Functions
-async function checkAuthentication() {
-    console.log('Checking authentication...');
-
-    try {
-        // Method 1: Check if parent app has authentication (same as QC Bed Report)
-        if (window.parent && window.parent !== window && window.parent.CastLinkAuth) {
-            console.log('Checking parent app authentication...');
-            const isAuth = await window.parent.CastLinkAuth.waitForAuth();
-            if (isAuth) {
-                forgeAccessToken = window.parent.CastLinkAuth.getToken();
-                globalHubData = window.parent.CastLinkAuth.getHubData();
-                if (forgeAccessToken) {
-                    isAuthenticated = true;
-                    updateAuthStatus('✅ Connected', 'Authenticated with ACC');
-                    console.log('Successfully authenticated via parent app');
-                    return;
-                }
-            }
-        }
-
-        // Method 2: Check stored token (same pattern as QC Bed Report)
-        console.log('Checking stored token...');
-        const storedToken = getStoredToken();
-        if (storedToken && !isTokenExpired(storedToken)) {
-            // Verify token is still valid
-            const isValid = await verifyToken(storedToken.access_token);
-            if (isValid) {
-                forgeAccessToken = storedToken.access_token;
-                isAuthenticated = true;
-                updateAuthStatus('✅ Connected', 'Using stored authentication');
-                console.log('Successfully authenticated via stored token');
-                return;
-            } else {
-                console.log('Stored token is invalid, clearing...');
-                clearStoredToken();
-            }
-        }
-
-        // Method 3: No valid authentication found
-        console.log('No valid authentication found - redirecting to main app');
-        isAuthenticated = false;
-        updateAuthStatus('❌ Authentication Required', 'Redirecting to main app for authentication...');
-
-        // Redirect to main app for authentication
-        setTimeout(() => {
-            window.location.href = 'index.html';
-        }, 2000);
-
-    } catch (error) {
-        console.error('Authentication check failed:', error);
-        isAuthenticated = false;
-        updateAuthStatus('❌ Authentication Error', error.message);
-    }
-}
-
-function handleMissingHubData() {
-    const projectSelect = document.getElementById('projectSelect');
-    if (projectSelect) {
-        projectSelect.innerHTML = '<option value="">No projects available - please authenticate from main dashboard</option>';
-        projectSelect.disabled = true;
-    }
-    console.warn('No hub data available - user may need to authenticate from main dashboard');
-}
-
-async function loadProjects() {
-    console.log('Loading projects...');
-
-    try {
-        if (!globalHubData || !globalHubData.projects) {
-            console.log('No hub data available, using placeholder projects');
-            populateProjectDropdown([]);
-            return;
-        }
-
-        populateProjectDropdown(globalHubData.projects);
-        console.log('Projects loaded successfully:', globalHubData.projects.length);
-
-    } catch (error) {
-        console.error('Failed to load projects:', error);
-        populateProjectDropdown([]);
-    }
-}
-
-function populateProjectDropdown(projects) {
-    const projectSelect = document.getElementById('projectSelect');
-    if (!projectSelect) return;
-
-    projectSelect.innerHTML = '<option value="">Select a project...</option>';
-
-    if (projects.length === 0) {
-        projectSelect.innerHTML += '<option value="" disabled>No projects available</option>';
-        projectSelect.disabled = true;
-        return;
-    }
-
-    projects.forEach(project => {
-        const option = document.createElement('option');
-        option.value = project.id;
-        option.textContent = project.attributes.name;
-        projectSelect.appendChild(option);
-    });
-
-    projectSelect.disabled = false;
-}
-
-// Project Selection
-// Project Selection - Updated to match QC pattern
+// Project Change Handler - EXACT SAME pattern as QC
 function onProjectChange() {
     console.log('=== onProjectChange START ===');
 
     const projectSelect = document.getElementById('projectSelect');
     if (!projectSelect) {
-        console.error('❌ projectSelect element not found');
+        console.log('No projectSelect element found');
         return;
     }
 
     const selectedOption = projectSelect.selectedOptions[0];
-    console.log('Selected option:', selectedOption?.textContent);
+    console.log('Selected option:', selectedOption?.value, selectedOption?.textContent);
 
     if (selectedOption && selectedOption.value) {
         const projectNumber = selectedOption.dataset.projectNumber || '';
@@ -351,23 +231,20 @@ function onProjectChange() {
         projectId = selectedOption.value;
         selectedProject = selectedOption.value; // Keep both for compatibility
 
-        console.log('Project selected:', selectedProject);
-        console.log('Project number:', projectNumber);
-
-        // Find project data
+        // Find project data - SAFE way to get project name
         if (globalHubData && globalHubData.projects) {
             selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
-            console.log('Found project data:', selectedProjectData?.name);
+            console.log('Found project data:', !!selectedProjectData);
         }
 
-        // Update project info display
+        // Update project info display - SAFE way to handle undefined
         const projectName = document.getElementById('projectName');
         const projectDetails = document.getElementById('projectDetails');
 
         console.log('Looking for projectName element:', !!projectName);
         console.log('Looking for projectDetails element:', !!projectDetails);
 
-        if (projectName && selectedProjectData) {
+        if (projectName && selectedProjectData && selectedProjectData.name) {
             projectName.textContent = selectedProjectData.name;
             console.log('✅ Updated projectName display');
         }
@@ -400,6 +277,42 @@ function onProjectChange() {
     }
 
     console.log('=== onProjectChange END ===');
+}
+
+// Token Management - EXACT SAME as QC
+function getStoredToken() {
+    let stored = sessionStorage.getItem('forge_token');
+    if (!stored) {
+        stored = localStorage.getItem('forge_token_backup');
+        if (stored) {
+            sessionStorage.setItem('forge_token', stored);
+        }
+    }
+    return stored ? JSON.parse(stored) : null;
+}
+
+function isTokenExpired(tokenInfo) {
+    const now = Date.now();
+    const expiresAt = tokenInfo.expires_at;
+    const timeUntilExpiry = expiresAt - now;
+    return timeUntilExpiry < (5 * 60 * 1000);
+}
+
+function clearStoredToken() {
+    sessionStorage.removeItem('forge_token');
+    localStorage.removeItem('forge_token_backup');
+    console.log('Token cleared');
+}
+
+async function verifyToken(token) {
+    try {
+        const response = await fetch('https://developer.api.autodesk.com/userprofile/v1/users/@me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
 }
 
 // Engineering Tool Functions
@@ -449,12 +362,13 @@ function openDesignSummary() {
     }
 
     // Placeholder for design summary functionality
-    console.log('Design Summary Generator - Project:', selectedProjectData?.attributes?.name);
+    console.log('Design Summary Generator - Project:', selectedProjectData?.name);
+    showNotification('Design Summary Generator coming soon', 'info');
 }
 
 function openPieceIssue() {
-    showNotification('Opening Piece Issue Management...', 'info');
-    console.log('Piece issue tool opened for project:', selectedProject);
+    showNotification('Opening Piece Issue Tracker...', 'info');
+    console.log('Piece issue tracker opened for project:', selectedProject);
 
     if (!selectedProject) {
         showNotification('Please select a project first', 'warning');
@@ -462,7 +376,8 @@ function openPieceIssue() {
     }
 
     // Placeholder for piece issue functionality
-    console.log('Piece Issue Management - Project:', selectedProjectData?.attributes?.name);
+    console.log('Piece Issue Tracker - Project:', selectedProjectData?.name);
+    showNotification('Piece Issue Tracker coming soon', 'info');
 }
 
 function openBOMQuery() {
@@ -475,48 +390,11 @@ function openBOMQuery() {
     }
 
     // Placeholder for BOM query functionality
-    console.log('BOM Query Tool - Project:', selectedProjectData?.attributes?.name);
+    console.log('BOM Query Tool - Project:', selectedProjectData?.name);
+    showNotification('BOM Query Tool coming soon', 'info');
 }
 
-// Authentication Helper Functions
-// Token Management - EXACT SAME as QC
-function getStoredToken() {
-    let stored = sessionStorage.getItem('forge_token');
-    if (!stored) {
-        stored = localStorage.getItem('forge_token_backup');
-        if (stored) {
-            sessionStorage.setItem('forge_token', stored);
-        }
-    }
-    return stored ? JSON.parse(stored) : null;
-}
-
-function isTokenExpired(tokenInfo) {
-    const now = Date.now();
-    const expiresAt = tokenInfo.expires_at;
-    const timeUntilExpiry = expiresAt - now;
-    return timeUntilExpiry < (5 * 60 * 1000);
-}
-
-function clearStoredToken() {
-    sessionStorage.removeItem('forge_token');
-    localStorage.removeItem('forge_token_backup');
-    console.log('Token cleared');
-}
-
-async function verifyToken(token) {
-    try {
-        const response = await fetch('https://developer.api.autodesk.com/userprofile/v1/users/@me', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        return response.ok;
-    } catch (error) {
-        console.error('Token verification failed:', error);
-        return false;
-    }
-}
-
-// UI Functions
+// Auth Status Functions
 function updateAuthStatus(status, description) {
     const authStatus = document.getElementById('authStatus');
     const authInfo = document.getElementById('authInfo');
@@ -535,56 +413,34 @@ function updateAuthStatus(status, description) {
     }
 }
 
+// Notification System
 function showNotification(message, type = 'info') {
-    // Try to find notification element
-    let notification = document.getElementById('notification');
-    let notificationText = document.getElementById('notificationText');
+    console.log(`Notification (${type}): ${message}`);
 
-    if (notification && notificationText) {
-        notificationText.textContent = message;
+    const notification = document.getElementById('notification');
+    const notificationContent = document.getElementById('notificationContent');
+
+    if (notification && notificationContent) {
+        notificationContent.textContent = message;
         notification.className = `notification ${type} show`;
 
         setTimeout(() => {
             notification.classList.remove('show');
         }, 4000);
-    } else {
-        // Fallback to console if notification element not found
-        console.log(`Notification (${type}): ${message}`);
-
-        // Try to create a simple notification if possible
-        if (document.body) {
-            const tempNotification = document.createElement('div');
-            tempNotification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: white;
-                border: 1px solid #ccc;
-                border-radius: 8px;
-                padding: 1rem;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                z-index: 1000;
-                max-width: 300px;
-            `;
-            tempNotification.textContent = message;
-            document.body.appendChild(tempNotification);
-
-            setTimeout(() => {
-                if (tempNotification.parentNode) {
-                    tempNotification.parentNode.removeChild(tempNotification);
-                }
-            }, 4000);
-        }
     }
 }
 
+// UI Initialization
 function initializeUI() {
     console.log('Initializing UI...');
 
-    // Add any general UI initialization here
+    // Project selection event listener
     const projectSelect = document.getElementById('projectSelect');
     if (projectSelect) {
         projectSelect.addEventListener('change', onProjectChange);
+        console.log('✅ Added project change listener');
+    } else {
+        console.warn('❌ No projectSelect element found for event listener');
     }
 
     // Add hover effects to engineering cards
