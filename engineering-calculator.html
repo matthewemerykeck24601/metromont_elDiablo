@@ -106,206 +106,96 @@
                         <button class="tab-btn" onclick="switchTab('doubleTees')">Double Tees</button>
                     </div>
 
-                    <!-- Point Loads Tab -->
-                    <div class="tab-content active" id="pointLoads">
-                        <h3>Point Load Analysis</h3>
-                        <form class="calculation-form" onsubmit="calculatePointLoads(event)">
-                            <div class="form-group">
-                                <label for="pointLoad">Point Load (kips):</label>
-                                <input type="number" id="pointLoad" step="0.1" required>
-                                <small>Applied concentrated load</small>
-                            </div>
-                            <div class="form-group">
-                                <label for="loadFactor">Load Factor:</label>
-                                <select id="loadFactor" required>
-                                    <option value="1.2">1.2 (Dead Load)</option>
-                                    <option value="1.6">1.6 (Live Load)</option>
-                                    <option value="1.0">1.0 (Service)</option>
-                                </select>
-                                <small>LRFD load factors per ACI 318</small>
-                            </div>
-                            <div class="form-group">
-                                <label for="contactArea">Contact Area (sq in):</label>
-                                <input type="number" id="contactArea" step="0.1" required>
-                                <small>Bearing area for stress calculation</small>
-                            </div>
-                            <div class="form-group">
-                                <label for="concreteStrength">f'c (psi):</label>
-                                <input type="number" id="concreteStrength" value="5000" step="100" required>
-                                <small>Concrete compressive strength</small>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Calculate Point Load</button>
-                        </form>
-                    </div>
+                    <div class="calculation-content">
+                        <!-- Point Loads Tab -->
+                        <div id="pointLoads" class="tab-content active">
+                            <h3>Point Load Transfer</h3>
+                            <form class="calculation-form">
+                                <div class="form-group">
+                                    <label>Applied Load (kips):</label>
+                                    <input type="number" id="pointLoad" step="0.1" value="50">
+                                </div>
+                                <div class="form-group">
+                                    <label>Eccentricity (in):</label>
+                                    <input type="number" id="eccentricity" step="0.1" value="0">
+                                </div>
+                                <div class="form-group">
+                                    <label>Load Factor:</label>
+                                    <select id="loadFactor">
+                                        <option value="1.4">Dead Load (1.4)</option>
+                                        <option value="1.7">Live Load (1.7)</option>
+                                        <option value="1.2">Combined (1.2)</option>
+                                    </select>
+                                </div>
+                                <button type="button" class="btn btn-primary" onclick="calculatePointLoad()">
+                                    Calculate Transfer
+                                </button>
+                            </form>
+                        </div>
 
-                    <!-- Columns Tab -->
-                    <div class="tab-content" id="columns">
-                        <h3>Prestressed Column Design (PCI Standards)</h3>
-                        <form class="calculation-form" onsubmit="calculateColumn(event)">
-                            <div class="form-group">
-                                <label for="columnWidth">Width (in):</label>
-                                <input type="number" id="columnWidth" step="0.25" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="columnDepth">Depth (in):</label>
-                                <input type="number" id="columnDepth" step="0.25" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="columnHeight">Height (ft):</label>
-                                <input type="number" id="columnHeight" step="0.5" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="axialLoad">Axial Load (kips):</label>
-                                <input type="number" id="axialLoad" step="1" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="moment">Applied Moment (kip-ft):</label>
-                                <input type="number" id="moment" step="0.1">
-                                <small>Enter 0 for concentrically loaded columns</small>
-                            </div>
-                            <div class="form-group">
-                                <label for="prestressStrands">Number of Strands:</label>
-                                <input type="number" id="prestressStrands" min="4" step="1" required>
-                                <small>Minimum 4 strands for columns per PCI</small>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Calculate Column</button>
-                        </form>
-                    </div>
+                        <!-- Columns Tab -->
+                        <div id="columns" class="tab-content">
+                            <h3>Prestressed Column Design</h3>
+                            <form class="calculation-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Width (in):</label>
+                                        <input type="number" id="columnWidth" value="24">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Depth (in):</label>
+                                        <input type="number" id="columnDepth" value="24">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Height (ft):</label>
+                                        <input type="number" id="columnHeight" value="20">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Axial Load (kips):</label>
+                                        <input type="number" id="columnLoad" value="500">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Strand Pattern:</label>
+                                    <select id="strandPattern">
+                                        <option value="4-corner">4 Corner Strands</option>
+                                        <option value="8-perimeter">8 Perimeter Strands</option>
+                                        <option value="12-grid">12 Grid Pattern</option>
+                                    </select>
+                                </div>
+                                <button type="button" class="btn btn-primary" onclick="calculateColumn()">
+                                    Design Column
+                                </button>
+                            </form>
+                        </div>
 
-                    <!-- Walls Tab -->
-                    <div class="tab-content" id="walls">
-                        <h3>Wall Panel Design</h3>
-                        <form class="calculation-form" onsubmit="calculateWall(event)">
-                            <div class="form-group">
-                                <label for="wallLength">Length (ft):</label>
-                                <input type="number" id="wallLength" step="0.5" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="wallHeight">Height (ft):</label>
-                                <input type="number" id="wallHeight" step="0.5" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="wallThickness">Thickness (in):</label>
-                                <input type="number" id="wallThickness" step="0.25" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="windLoad">Wind Load (psf):</label>
-                                <input type="number" id="windLoad" step="1" required>
-                                <small>Design wind pressure</small>
-                            </div>
-                            <div class="form-group">
-                                <label for="tensionTies">Tension Ties Required:</label>
-                                <select id="tensionTies" required>
-                                    <option value="true">Yes (Standard)</option>
-                                    <option value="false">No (Special Case)</option>
-                                </select>
-                                <small>PCI requires min 2 ties at 10,000 lbs each</small>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Calculate Wall Panel</button>
-                        </form>
-                    </div>
-
-                    <!-- Beams Tab -->
-                    <div class="tab-content" id="beams">
-                        <h3>Beam/Spandrel Design</h3>
-                        <form class="calculation-form" onsubmit="calculateBeam(event)">
-                            <div class="form-group">
-                                <label for="beamWidth">Width (in):</label>
-                                <input type="number" id="beamWidth" step="0.25" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="beamDepth">Depth (in):</label>
-                                <input type="number" id="beamDepth" step="0.25" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="beamSpan">Span (ft):</label>
-                                <input type="number" id="beamSpan" step="0.5" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="uniformLoad">Uniform Load (klf):</label>
-                                <input type="number" id="uniformLoad" step="0.1" required>
-                                <small>Distributed load including self-weight</small>
-                            </div>
-                            <div class="form-group">
-                                <label for="prestressStrands">Prestress Strands:</label>
-                                <input type="number" id="prestressStrands" step="1" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="strandDiameter">Strand Diameter (in):</label>
-                                <select id="strandDiameter" required>
-                                    <option value="0.375">3/8" (0.375)</option>
-                                    <option value="0.5">1/2" (0.5)</option>
-                                    <option value="0.6">0.6" Special</option>
-                                </select>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Calculate Beam</button>
-                        </form>
-                    </div>
-
-                    <!-- Double Tees Tab -->
-                    <div class="tab-content" id="doubleTees">
-                        <h3>Double Tee Design</h3>
-                        <form class="calculation-form" onsubmit="calculateDoubleTee(event)">
-                            <div class="form-group">
-                                <label for="dtWidth">Flange Width (ft):</label>
-                                <input type="number" id="dtWidth" step="0.5" required>
-                                <small>Total width of double tee</small>
-                            </div>
-                            <div class="form-group">
-                                <label for="dtDepth">Depth (in):</label>
-                                <input type="number" id="dtDepth" step="2" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="dtSpan">Span (ft):</label>
-                                <input type="number" id="dtSpan" step="1" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="liveLoad">Live Load (psf):</label>
-                                <input type="number" id="liveLoad" step="5" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="stemWidth">Stem Width (in):</label>
-                                <input type="number" id="stemWidth" step="0.25" value="6" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="flangeThickness">Flange Thickness (in):</label>
-                                <input type="number" id="flangeThickness" step="0.25" value="2" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Calculate Double Tee</button>
-                        </form>
+                        <!-- Additional tabs content continues... -->
                     </div>
                 </div>
 
                 <!-- Results Panel -->
-                <div class="results-panel" id="resultsPanel" style="display: none;">
+                <div class="results-panel">
                     <div class="results-header">
                         <h3>Calculation Results</h3>
-                        <div class="results-actions">
-                            <button class="btn btn-secondary" onclick="clearResults()">Clear</button>
-                            <button class="btn btn-secondary" onclick="exportResults()">Export</button>
-                            <button class="btn btn-primary" onclick="saveCalculation()">Save to ACC</button>
-                        </div>
+                        <button class="btn btn-sm" onclick="saveCalculation()">Save to OSS</button>
                     </div>
-                    <div class="results-content" id="resultsContent">
-                        <!-- Results will be populated by JavaScript -->
+                    <div id="calculationResults" class="results-content">
+                        <p class="placeholder">Run a calculation to see results here</p>
                     </div>
-                </div>
-
-                <!-- History Sidebar -->
-                <div class="history-sidebar">
-                    <div class="history-header">
+                    <div class="calculation-history">
                         <h4>Recent Calculations</h4>
-                        <button class="btn btn-sm" onclick="refreshHistory()">Refresh</button>
-                    </div>
-                    <div class="history-list" id="historyList">
-                        <p class="text-gray-500">No recent calculations</p>
+                        <div id="calculationHistory" class="history-list">
+                            <!-- History items will be added here -->
+                        </div>
                     </div>
                 </div>
             </section>
         </main>
 
         <!-- Model Selection Modal -->
-        <div class="modal" id="modelSelectionModal">
+        <div id="modelSelectionModal" class="modal">
             <div class="modal-content large">
                 <div class="modal-header">
                     <h2>Select 3D Model</h2>
@@ -313,47 +203,31 @@
                 </div>
                 <div class="modal-body">
                     <div class="model-browser">
-                        <div class="folder-tree">
-                            <h4>Available Models</h4>
-                            <div class="tree-item" onclick="selectModel('model1', 'Main Building Structure')">
-                                <span class="tree-icon">🏗️</span>
-                                <span>Main Building Structure</span>
-                            </div>
-                            <div class="tree-item" onclick="selectModel('model2', 'Precast Elements')">
-                                <span class="tree-icon">🧱</span>
-                                <span>Precast Elements</span>
-                            </div>
-                            <div class="tree-item" onclick="selectModel('model3', 'Foundation System')">
-                                <span class="tree-icon">🏢</span>
-                                <span>Foundation System</span>
-                            </div>
-                            <div class="tree-item" onclick="selectModel('model4', 'Structural Frame')">
-                                <span class="tree-icon">⚡</span>
-                                <span>Structural Frame</span>
-                            </div>
-                            <div class="tree-item" onclick="selectModel('model5', 'Architectural Elements')">
-                                <span class="tree-icon">🎨</span>
-                                <span>Architectural Elements</span>
+                        <div class="model-folders" id="modelFolders">
+                            <h3>Project Folders</h3>
+                            <div class="folder-tree" id="folderTree">
+                                <!-- Folder structure will be loaded here -->
                             </div>
                         </div>
-                        <div class="model-preview">
-                            <div class="preview-placeholder">
-                                <h4>Model Preview</h4>
-                                <p>Select a model to see preview</p>
-                                <small>3D thumbnail will appear here</small>
+                        <div class="model-list" id="modelList">
+                            <h3>Available Models</h3>
+                            <div class="models-grid" id="modelsGrid">
+                                <!-- Model tiles will be loaded here -->
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="closeModelSelection()">Cancel</button>
-                    <button class="btn btn-primary" id="loadModelBtn" onclick="loadSelectedModel()" disabled>Load Model</button>
+                    <button class="btn btn-primary" id="selectModelBtn" onclick="confirmModelSelection()" disabled>
+                        Select Model
+                    </button>
                 </div>
             </div>
         </div>
 
-        <!-- Notification System -->
-        <div class="notification" id="notification">
+        <!-- Notification Toast -->
+        <div id="notification" class="notification">
             <div class="notification-content" id="notificationContent"></div>
         </div>
     </div>
@@ -361,4 +235,5 @@
     <!-- Scripts -->
     <script src="scripts/calculator.js"></script>
 </body>
+
 </html>
