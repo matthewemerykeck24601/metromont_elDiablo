@@ -73,7 +73,7 @@ async function verifyToken(token) {
     }
 }
 
-// Hub Data Loading
+// Hub Data Loading - Fixed to work with the actual data structure
 async function loadPreLoadedHubData() {
     console.log('Loading hub data...');
 
@@ -90,6 +90,7 @@ async function loadPreLoadedHubData() {
         try {
             globalHubData = JSON.parse(sessionHubData);
             console.log('Loaded hub data from session storage');
+            console.log('Projects found:', globalHubData.projects?.length || 0);
             populateProjectDropdown();
             return;
         } catch (e) {
@@ -133,7 +134,7 @@ function fallbackToStoredData() {
     }
 }
 
-// Project Dropdown Population
+// Project Dropdown Population - Fixed to match actual data structure
 function populateProjectDropdown() {
     console.log('=== POPULATING PROJECT DROPDOWN ===');
 
@@ -154,13 +155,20 @@ function populateProjectDropdown() {
 
     console.log(`Adding ${globalHubData.projects.length} projects to dropdown`);
 
+    // Fixed: Use the correct property names from the actual data structure
     globalHubData.projects.forEach((project, index) => {
         const option = document.createElement('option');
         option.value = project.id;
-        option.textContent = project.attributes.name;
-        option.dataset.hubId = project.relationships.hub.data.id;
+        option.textContent = project.name || project.displayName || 'Unnamed Project';
+
+        // Store additional data attributes
         option.dataset.projectIndex = index;
+        option.dataset.projectNumber = project.number || '';
+        option.dataset.location = project.location || '';
+
         projectSelect.appendChild(option);
+
+        console.log(`Added project: ${option.textContent} (${project.id})`);
     });
 
     projectSelect.disabled = false;
@@ -182,7 +190,7 @@ function showNotification(message, type = 'info') {
     }, 3000);
 }
 
-// Project Selection Handler
+// Project Selection Handler - Fixed to match actual data structure
 function onProjectChange() {
     console.log('=== onProjectChange START ===');
 
@@ -213,14 +221,16 @@ function onProjectChange() {
         const projectDetails = document.getElementById('projectDetails');
 
         if (projectName && selectedProjectData) {
-            projectName.textContent = selectedProjectData.attributes.name;
+            projectName.textContent = selectedProjectData.name || selectedProjectData.displayName || 'Unknown Project';
         }
 
-        if (projectDetails) {
-            projectDetails.textContent = 'Project selected - ready for engineering tools';
+        if (projectDetails && selectedProjectData) {
+            const projectNumber = selectedProjectData.number || 'N/A';
+            const location = selectedProjectData.location || 'Location not specified';
+            projectDetails.textContent = `Project ${projectNumber} - ${location}`;
         }
 
-        console.log('✅ Project selected:', selectedProjectData?.attributes?.name || selectedProject);
+        console.log('✅ Project selected:', selectedProjectData?.name || selectedProject);
 
     } else {
         // No selection
@@ -278,10 +288,11 @@ function openCalculator() {
     // Store current project info and auth data for calculator
     const calculatorData = {
         projectId: selectedProject,
-        projectName: selectedProjectData?.attributes?.name || 'Unknown Project',
-        hubId: selectedProjectData?.relationships?.hub?.data?.id || null,
+        projectName: selectedProjectData?.name || selectedProjectData?.displayName || 'Unknown Project',
+        hubId: globalHubData?.hubId || null,
         forgeAccessToken: forgeAccessToken,
         globalHubData: globalHubData,
+        selectedProjectData: selectedProjectData,
         timestamp: Date.now()
     };
 
@@ -435,6 +446,7 @@ async function completeAuthentication() {
         updateAuthStatus('Authenticated', `Connected to ${accountName} (${projectCount} projects)`);
 
         console.log('✅ Authentication complete');
+        console.log('Projects available:', projectCount);
 
     } catch (error) {
         console.error('Failed to complete authentication:', error);
