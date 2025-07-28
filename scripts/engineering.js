@@ -14,21 +14,37 @@ let projectId = null; // Added from QC pattern
 // Load pre-loaded hub data (EXACT SAME as QC Bed Report)
 async function loadPreLoadedHubData() {
     try {
+        console.log('=== loadPreLoadedHubData START ===');
+
         // Try to get hub data from parent window first - FIXED: window.opener not window.parent
         if (!globalHubData && window.opener && window.opener.CastLinkAuth) {
+            console.log('Trying window.opener...');
             globalHubData = window.opener.CastLinkAuth.getHubData();
+            console.log('Got from window.opener:', globalHubData);
         }
 
         // If not available, try to load from session storage
         if (!globalHubData) {
+            console.log('Trying session storage...');
             const storedHubData = sessionStorage.getItem('castlink_hub_data');
+            console.log('Session storage data exists:', !!storedHubData);
+
             if (storedHubData) {
                 globalHubData = JSON.parse(storedHubData);
                 console.log('✅ Loaded hub data from session storage');
+                console.log('Projects in data:', globalHubData?.projects?.length);
+                console.log('First project:', globalHubData?.projects?.[0]);
             }
         }
 
+        console.log('Final globalHubData check:');
+        console.log('- globalHubData exists:', !!globalHubData);
+        console.log('- globalHubData.projects exists:', !!globalHubData?.projects);
+        console.log('- Projects length:', globalHubData?.projects?.length);
+
         if (globalHubData && globalHubData.projects && globalHubData.projects.length > 0) {
+            console.log('✅ CONDITIONS MET - Processing projects');
+
             // Use the pre-loaded project data - EXACT SAME as QC
             userProjects = globalHubData.projects;
             hubId = globalHubData.hubId;
@@ -39,6 +55,7 @@ async function loadPreLoadedHubData() {
             }
 
             // Call populateProjectDropdown HERE (not in completeAuthentication) - EXACT SAME as QC
+            console.log('🔥 CALLING populateProjectDropdown with', globalHubData.projects.length, 'projects');
             populateProjectDropdown(globalHubData.projects);
 
             console.log('✅ Using pre-loaded hub data:');
@@ -47,30 +64,46 @@ async function loadPreLoadedHubData() {
             console.log('   Loaded at:', globalHubData.loadedAt);
 
         } else {
-            console.warn('⚠️ No pre-loaded hub data available, falling back to manual entry');
+            console.warn('❌ CONDITIONS NOT MET - Falling back to manual entry');
+            console.log('- globalHubData:', globalHubData);
+            console.log('- globalHubData?.projects:', globalHubData?.projects);
+            console.log('- length:', globalHubData?.projects?.length);
             await handleMissingHubData();
         }
 
+        console.log('=== loadPreLoadedHubData END ===');
+
     } catch (error) {
-        console.error('Error loading pre-loaded hub data:', error);
+        console.error('❌ Error loading pre-loaded hub data:', error);
         await handleMissingHubData();
     }
 }
 
 function populateProjectDropdown(projects) {
     try {
+        console.log('=== populateProjectDropdown START ===');
+        console.log('Projects passed in:', projects?.length);
+        console.log('First project sample:', projects?.[0]);
+
         userProjects = projects; // EXACT SAME as QC
-        const projectSelect = document.getElementById('projectSelect');
+        const projectSelect = document.getElementById('projectSelect'); // FIXED: Use correct ID
+
+        console.log('Looking for element with ID: projectSelect');
+        console.log('Element found:', !!projectSelect);
 
         if (!projectSelect) {
-            console.error('Project select element not found');
+            console.error('❌ Project select element not found');
             return;
         }
 
         const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
-        projectSelect.innerHTML = `<option value="">Select a project from ${accountName}...</option>`;
+        console.log('Account name:', accountName);
 
-        projects.forEach((project) => {
+        projectSelect.innerHTML = `<option value="">Select a project from ${accountName}...</option>`;
+        console.log('✅ Set default option');
+
+        projects.forEach((project, index) => {
+            console.log(`Adding project ${index + 1}:`, project.name);
             const option = document.createElement('option');
             option.value = project.id;
             option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ' (' + project.number + ')' : ''}`;
@@ -81,29 +114,37 @@ function populateProjectDropdown(projects) {
         });
 
         projectSelect.disabled = false;
+        console.log('✅ Projects added, dropdown enabled');
 
         // Auto-select first project - EXACT SAME as QC
         if (projects.length > 0) {
+            console.log('🔥 Auto-selecting first project:', projects[0].name);
             setTimeout(() => {
+                console.log('Setting dropdown value to:', projects[0].id);
                 projectSelect.value = projects[0].id;
                 projectId = projects[0].id;
+                console.log('Calling onProjectChange()...');
                 onProjectChange(); // Use our function name instead of onProjectSelected
             }, 100);
         }
 
+        console.log('=== populateProjectDropdown END ===');
+
     } catch (error) {
-        console.error('Error in populateProjectDropdown:', error);
+        console.error('❌ Error in populateProjectDropdown:', error);
         throw error;
     }
 }
 
 async function handleMissingHubData() {
-    console.log('Setting up manual entry fallback...');
+    console.log('=== handleMissingHubData called ===');
+    console.log('This should NOT be called if projects are available!');
 
     const projectSelect = document.getElementById('projectSelect');
     if (projectSelect) {
         projectSelect.innerHTML = '<option value="">No projects available - please authenticate from main dashboard</option>';
         projectSelect.disabled = true;
+        console.log('❌ Set fallback message in dropdown');
     }
 }
 
@@ -185,7 +226,7 @@ async function completeAuthentication() {
 // Authentication Functions
 async function checkAuthentication() {
     console.log('Checking authentication...');
-    
+
     try {
         // Method 1: Check if parent app has authentication (same as QC Bed Report)
         if (window.parent && window.parent !== window && window.parent.CastLinkAuth) {
@@ -202,7 +243,7 @@ async function checkAuthentication() {
                 }
             }
         }
-        
+
         // Method 2: Check stored token (same pattern as QC Bed Report)
         console.log('Checking stored token...');
         const storedToken = getStoredToken();
@@ -220,17 +261,17 @@ async function checkAuthentication() {
                 clearStoredToken();
             }
         }
-        
+
         // Method 3: No valid authentication found
         console.log('No valid authentication found - redirecting to main app');
         isAuthenticated = false;
         updateAuthStatus('❌ Authentication Required', 'Redirecting to main app for authentication...');
-        
+
         // Redirect to main app for authentication
         setTimeout(() => {
             window.location.href = 'index.html';
         }, 2000);
-        
+
     } catch (error) {
         console.error('Authentication check failed:', error);
         isAuthenticated = false;
@@ -249,17 +290,17 @@ function handleMissingHubData() {
 
 async function loadProjects() {
     console.log('Loading projects...');
-    
+
     try {
         if (!globalHubData || !globalHubData.projects) {
             console.log('No hub data available, using placeholder projects');
             populateProjectDropdown([]);
             return;
         }
-        
+
         populateProjectDropdown(globalHubData.projects);
         console.log('Projects loaded successfully:', globalHubData.projects.length);
-        
+
     } catch (error) {
         console.error('Failed to load projects:', error);
         populateProjectDropdown([]);
@@ -269,32 +310,38 @@ async function loadProjects() {
 function populateProjectDropdown(projects) {
     const projectSelect = document.getElementById('projectSelect');
     if (!projectSelect) return;
-    
+
     projectSelect.innerHTML = '<option value="">Select a project...</option>';
-    
+
     if (projects.length === 0) {
         projectSelect.innerHTML += '<option value="" disabled>No projects available</option>';
         projectSelect.disabled = true;
         return;
     }
-    
+
     projects.forEach(project => {
         const option = document.createElement('option');
         option.value = project.id;
         option.textContent = project.attributes.name;
         projectSelect.appendChild(option);
     });
-    
+
     projectSelect.disabled = false;
 }
 
 // Project Selection
 // Project Selection - Updated to match QC pattern
 function onProjectChange() {
+    console.log('=== onProjectChange START ===');
+
     const projectSelect = document.getElementById('projectSelect');
-    if (!projectSelect) return;
+    if (!projectSelect) {
+        console.error('❌ projectSelect element not found');
+        return;
+    }
 
     const selectedOption = projectSelect.selectedOptions[0];
+    console.log('Selected option:', selectedOption?.textContent);
 
     if (selectedOption && selectedOption.value) {
         const projectNumber = selectedOption.dataset.projectNumber || '';
@@ -303,28 +350,39 @@ function onProjectChange() {
 
         projectId = selectedOption.value;
         selectedProject = selectedOption.value; // Keep both for compatibility
-        
+
+        console.log('Project selected:', selectedProject);
+        console.log('Project number:', projectNumber);
+
         // Find project data
         if (globalHubData && globalHubData.projects) {
             selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
+            console.log('Found project data:', selectedProjectData?.name);
         }
 
         // Update project info display
         const projectName = document.getElementById('projectName');
         const projectDetails = document.getElementById('projectDetails');
 
+        console.log('Looking for projectName element:', !!projectName);
+        console.log('Looking for projectDetails element:', !!projectDetails);
+
         if (projectName && selectedProjectData) {
             projectName.textContent = selectedProjectData.name;
+            console.log('✅ Updated projectName display');
         }
 
         if (projectDetails) {
             projectDetails.textContent = 'Project selected - ready for engineering tools';
+            console.log('✅ Updated projectDetails display');
         }
 
-        console.log('Project selected:', selectedProjectData?.name || selectedProject);
+        console.log('✅ Project selected:', selectedProjectData?.name || selectedProject);
 
     } else {
         // No selection
+        console.log('No project selected');
+
         projectId = null;
         selectedProject = null;
         selectedProjectData = null;
@@ -340,6 +398,8 @@ function onProjectChange() {
             projectDetails.textContent = 'Select a project to view design requirements';
         }
     }
+
+    console.log('=== onProjectChange END ===');
 }
 
 // Engineering Tool Functions
@@ -348,7 +408,7 @@ function openEngineeringTool(tool) {
         showNotification('Please authenticate with ACC first', 'warning');
         return;
     }
-    
+
     switch (tool) {
         case 'calculator':
             openCalculator();
@@ -369,12 +429,12 @@ function openEngineeringTool(tool) {
 
 function openCalculator() {
     console.log('Opening Engineering Calculator...');
-    
+
     if (!selectedProject) {
         showNotification('Please select a project first', 'warning');
         return;
     }
-    
+
     // Open the dedicated calculator page
     window.location.href = 'engineering-calculator.html';
 }
@@ -382,12 +442,12 @@ function openCalculator() {
 function openDesignSummary() {
     showNotification('Opening Design Summary Generator...', 'info');
     console.log('Design summary tool opened for project:', selectedProject);
-    
+
     if (!selectedProject) {
         showNotification('Please select a project first', 'warning');
         return;
     }
-    
+
     // Placeholder for design summary functionality
     console.log('Design Summary Generator - Project:', selectedProjectData?.attributes?.name);
 }
@@ -395,12 +455,12 @@ function openDesignSummary() {
 function openPieceIssue() {
     showNotification('Opening Piece Issue Management...', 'info');
     console.log('Piece issue tool opened for project:', selectedProject);
-    
+
     if (!selectedProject) {
         showNotification('Please select a project first', 'warning');
         return;
     }
-    
+
     // Placeholder for piece issue functionality
     console.log('Piece Issue Management - Project:', selectedProjectData?.attributes?.name);
 }
@@ -408,12 +468,12 @@ function openPieceIssue() {
 function openBOMQuery() {
     showNotification('Opening BOM Query Tool...', 'info');
     console.log('BOM query tool opened for project:', selectedProject);
-    
+
     if (!selectedProject) {
         showNotification('Please select a project first', 'warning');
         return;
     }
-    
+
     // Placeholder for BOM query functionality
     console.log('BOM Query Tool - Project:', selectedProjectData?.attributes?.name);
 }
@@ -461,10 +521,10 @@ function updateAuthStatus(status, description) {
     const authStatus = document.getElementById('authStatus');
     const authInfo = document.getElementById('authInfo');
     const authIndicator = document.getElementById('authIndicator');
-    
+
     if (authStatus) authStatus.textContent = status;
     if (authInfo) authInfo.textContent = description;
-    
+
     if (authIndicator) {
         authIndicator.className = 'status-indicator';
         if (status.includes('✅')) {
@@ -479,18 +539,18 @@ function showNotification(message, type = 'info') {
     // Try to find notification element
     let notification = document.getElementById('notification');
     let notificationText = document.getElementById('notificationText');
-    
+
     if (notification && notificationText) {
         notificationText.textContent = message;
         notification.className = `notification ${type} show`;
-        
+
         setTimeout(() => {
             notification.classList.remove('show');
         }, 4000);
     } else {
         // Fallback to console if notification element not found
         console.log(`Notification (${type}): ${message}`);
-        
+
         // Try to create a simple notification if possible
         if (document.body) {
             const tempNotification = document.createElement('div');
@@ -508,7 +568,7 @@ function showNotification(message, type = 'info') {
             `;
             tempNotification.textContent = message;
             document.body.appendChild(tempNotification);
-            
+
             setTimeout(() => {
                 if (tempNotification.parentNode) {
                     tempNotification.parentNode.removeChild(tempNotification);
@@ -520,25 +580,25 @@ function showNotification(message, type = 'info') {
 
 function initializeUI() {
     console.log('Initializing UI...');
-    
+
     // Add any general UI initialization here
     const projectSelect = document.getElementById('projectSelect');
     if (projectSelect) {
         projectSelect.addEventListener('change', onProjectChange);
     }
-    
+
     // Add hover effects to engineering cards
     const engineeringCards = document.querySelectorAll('.engineering-card');
     engineeringCards.forEach(card => {
-        card.addEventListener('mouseenter', function() {
+        card.addEventListener('mouseenter', function () {
             this.style.transform = 'translateY(-4px)';
         });
-        
-        card.addEventListener('mouseleave', function() {
+
+        card.addEventListener('mouseleave', function () {
             this.style.transform = 'translateY(0)';
         });
     });
-    
+
     console.log('UI initialized');
 }
 
@@ -549,22 +609,22 @@ function goBack() {
 }
 
 // Global error handler to prevent page redirects
-window.addEventListener('error', function(event) {
+window.addEventListener('error', function (event) {
     console.error('Page error caught:', event.error);
     // Don't let errors cause navigation issues
     event.preventDefault();
 });
 
 // Prevent any unhandled promise rejections from causing issues
-window.addEventListener('unhandledrejection', function(event) {
+window.addEventListener('unhandledrejection', function (event) {
     console.error('Unhandled promise rejection:', event.reason);
     event.preventDefault();
 });
 
 // Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM loaded, initializing engineering page...');
-    
+
     // Small delay to ensure everything is ready
     setTimeout(() => {
         initializeEngineering();
