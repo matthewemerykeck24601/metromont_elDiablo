@@ -61,6 +61,25 @@ async function initializeCalculator() {
     }
 }
 
+// Get project data from engineering page
+function getCalculatorProjectData() {
+    try {
+        const data = sessionStorage.getItem('calculator_project_data');
+        if (data) {
+            const parsed = JSON.parse(data);
+            // Check if data is recent (within 5 minutes)
+            const age = Date.now() - parsed.timestamp;
+            if (age < 5 * 60 * 1000) {
+                return parsed;
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error('Error reading calculator project data:', error);
+        return null;
+    }
+}
+
 // Get authentication data
 async function getAuthenticationData() {
     try {
@@ -104,6 +123,72 @@ async function getAuthenticationData() {
     } catch (error) {
         console.error('Error getting authentication:', error);
         updateAuthStatus('❌ Not Connected', 'Authentication required');
+    }
+}
+
+// Complete authentication with project
+async function completeAuthenticationWithProject() {
+    try {
+        // We already have the data from initializeCalculator, no need to re-read from sessionStorage
+        if (selectedProject && forgeAccessToken) {
+            console.log('Using pre-loaded project data');
+
+            updateAuthStatus('✅ Project Selected', `${selectedProjectData?.name || 'Unknown Project'}`);
+
+            // Hide project selection interface
+            const projectSelection = document.getElementById('projectSelection');
+            if (projectSelection) {
+                projectSelection.style.display = 'none';
+            }
+
+            // Start model discovery immediately
+            console.log('Starting model discovery...');
+            showNotification('Scanning project for 3D models...', 'info');
+
+            // Discover models
+            await discoverProjectModels();
+
+            // Show model selection dialog
+            showAlignedModelSelection();
+
+        } else {
+            console.error('Missing project data, falling back to normal auth');
+            await completeAuthentication();
+        }
+
+    } catch (error) {
+        console.error('Enhanced authentication failed:', error);
+        updateAuthStatus('❌ Error', 'Failed to load project: ' + error.message);
+        showNotification('Error loading project data', 'error');
+    }
+}
+
+// Complete authentication (normal flow)
+async function completeAuthentication() {
+    try {
+        updateAuthStatus('Loading Projects...', 'Fetching project data...');
+
+        // Populate project dropdown
+        const projectSelect = document.getElementById('projectSelect');
+        if (projectSelect && globalHubData?.projects) {
+            projectSelect.innerHTML = '<option value="">Select a project...</option>';
+
+            globalHubData.projects.forEach((project, index) => {
+                const option = document.createElement('option');
+                option.value = project.id;
+                option.textContent = project.name || project.displayName || 'Unnamed Project';
+                option.dataset.projectIndex = index;
+                projectSelect.appendChild(option);
+            });
+
+            projectSelect.disabled = false;
+        }
+
+        updateAuthStatus('✅ Connected', 'Please select a project');
+
+    } catch (error) {
+        console.error('Authentication completion failed:', error);
+        showNotification('Failed to load project data: ' + error.message, 'error');
     }
 }
 
