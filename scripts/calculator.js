@@ -3,6 +3,7 @@ console.log('Calculator.js loading...');
 
 // Global variables
 let selectedProject = null;
+let selectedProjectData = null;
 let globalHubData = null;
 let forgeAccessToken = null;
 let discoveredModels = [];
