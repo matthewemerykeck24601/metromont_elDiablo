@@ -11,60 +11,53 @@ let forgeViewer = null;
 let currentCalculationType = 'pointLoad';
 let calculationHistory = [];
 
-// Initialize calculator
+// Initialize Calculator
 async function initializeCalculator() {
-    console.log('Initializing Engineering Calculator...');
+    try {
+        console.log('=== ENGINEERING CALCULATOR INITIALIZATION ===');
 
-    // Get project and hub data from parent
-    const calculatorData = getCalculatorProjectData();
+        // Initialize UI
+        initializeUI();
 
-    if (calculatorData) {
-        console.log('📦 Received project data from engineering page');
+        // Update status
+        updateAuthStatus('Checking Authentication...', 'Verifying access...');
 
-        // Restore authentication and project context
-        forgeAccessToken = calculatorData.forgeAccessToken;
-        selectedProject = calculatorData.projectId;
-        selectedProjectData = calculatorData.selectedProjectData || {
-            id: calculatorData.projectId,
-            name: calculatorData.projectName
-        };
-        globalHubData = calculatorData.globalHubData;
+        // Check for project data from engineering page
+        const calculatorData = getCalculatorProjectData();
 
-        console.log('Restored project context:');
-        console.log('- Project ID:', selectedProject);
-        console.log('- Project Name:', calculatorData.projectName);
-        console.log('- Hub ID:', globalHubData?.hubId);
-        console.log('- Token exists:', !!forgeAccessToken);
+        if (calculatorData) {
+            console.log('📦 Received project data from engineering page');
 
-        // Hide project selection interface and go straight to model discovery
-        const projectSelection = document.getElementById('projectSelection');
-        if (projectSelection) {
-            projectSelection.style.display = 'none';
+            // Restore authentication and project context
+            forgeAccessToken = calculatorData.forgeAccessToken;
+            selectedProject = calculatorData.projectId;
+            selectedProjectData = calculatorData.selectedProjectData || {
+                id: calculatorData.projectId,
+                name: calculatorData.projectName
+            };
+            globalHubData = calculatorData.globalHubData;
+
+            console.log('Restored project context:');
+            console.log('- Project ID:', selectedProject);
+            console.log('- Project Name:', calculatorData.projectName);
+            console.log('- Hub ID:', globalHubData?.hubId);
+            console.log('- Token exists:', !!forgeAccessToken);
+
+            // Call the function that handles project-specific initialization
+            await completeAuthenticationWithProject();
+
+        } else {
+            console.log('No project data from engineering page, showing project selection');
+            // Get authentication data first
+            await getAuthenticationData();
+            // Then complete normal authentication
+            await completeAuthentication();
         }
 
-        // Initialize with the project data from engineering page
-        await initializeWithProjectData();
-
-    } else {
-        console.log('No project data from engineering page, showing project selection');
-        // Continue with normal authentication flow
-        await getAuthenticationData();
-        await completeAuthentication();
+    } catch (error) {
+        console.error('Calculator initialization failed:', error);
+        showNotification('Failed to initialize calculator: ' + error.message, 'error');
     }
-
-    console.log('Selected project:', selectedProject);
-
-    // Get authentication data
-    await getAuthenticationData();
-
-    // Initialize UI
-    initializeUI();
-
-    // Load calculation history
-    loadCalculationHistory();
-
-    // Initialize project data
-    await initializeWithProjectData();
 }
 
 // Get authentication data
