@@ -1126,11 +1126,358 @@ function formatLabel(key) {
     return key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
 }
 
-// Initialize Forge Viewer (placeholder)
+// Initialize Forge Viewer
 function initializeForgeViewer() {
     console.log('Initializing Forge Viewer with model:', selectedModels[0]);
-    // Actual Forge Viewer initialization would go here
+
+    // Check if Autodesk Viewer is loaded
+    if (typeof Autodesk === 'undefined') {
+        console.error('Autodesk Viewer library not loaded');
+        showViewerError('Forge Viewer library not loaded. Please refresh the page.');
+        return;
+    }
+
+    if (!selectedModels || selectedModels.length === 0) {
+        console.error('No model selected');
+        return;
+    }
+
+    const model = selectedModels[0];
+    console.log('Model URN:', model.versionUrn);
+
+    // Initialize viewer
+    const viewerDiv = document.getElementById('forgeViewer');
+    if (!viewerDiv) {
+        console.error('Viewer div not found');
+        return;
+    }
+
+    // Clear the loading message
+    viewerDiv.innerHTML = '';
+
+    // Viewer options
+    const options = {
+        env: 'AutodeskProduction',
+        api: 'derivativeV2',
+        getAccessToken: getForgeToken
+    };
+
+    // Initialize the viewer
+    Autodesk.Viewing.Initializer(options, function onInitialized() {
+        console.log('Forge Viewer initialized');
+
+        // Create viewer instance
+        const config = {
+            extensions: ['Autodesk.DocumentBrowser']
+        };
+
+        forgeViewer = new Autodesk.Viewing.GuiViewer3D(viewerDiv, config);
+        const startedCode = forgeViewer.start();
+
+        if (startedCode > 0) {
+            console.error('Failed to create viewer: WebGL not supported.');
+            showViewerError('WebGL not supported in your browser.');
+            return;
+        }
+
+        console.log('Viewer started successfully');
+
+        // Load the model
+        loadModel(model.versionUrn);
+    });
 }
+
+// Get access token for Forge
+function getForgeToken(callback) {
+    console.log('Getting Forge access token...');
+    callback(forgeAccessToken, 3600);
+}
+
+// Load model into viewer
+function loadModel(urn) {
+    console.log('Loading model with URN:', urn);
+
+    if (!forgeViewer) {
+        console.error('Viewer not initialized');
+        return;
+    }
+
+    // Document URN - needs to be prefixed
+    const documentId = 'urn:' + urn;
+    console.log('Document ID:', documentId);
+
+    // Load document
+    Autodesk.Viewing.Document.load(
+        documentId,
+        onDocumentLoadSuccess,
+        onDocumentLoadFailure
+    );
+}
+
+// Document load success callback
+function onDocumentLoadSuccess(doc) {
+    console.log('Document loaded successfully');
+
+    // Get the default viewable
+    const viewables = doc.getRoot().getDefaultGeometry();
+
+    if (!viewables) {
+        console.error('No viewables found in document');
+        return;
+    }
+
+    // Load the viewable
+    forgeViewer.loadDocumentNode(doc, viewables).then(function (model) {
+        console.log('Model loaded successfully');
+
+        // Fit to view
+        forgeViewer.fitToView();
+
+        // Enable selection
+        forgeViewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, onSelectionChanged);
+
+        // Update UI
+        const viewerContainer = document.getElementById('forgeViewer');
+        if (viewerContainer) {
+            viewerContainer.classList.add('loaded');
+        }
+    }).catch(function (error) {
+        console.error('Error loading model:', error);
+        showViewerError('Failed to load model: ' + error.message);
+    });
+}
+
+// Document load failure callback
+function onDocumentLoadFailure(errorCode, errorMsg) {
+    console.error('Failed to load document:', errorCode, errorMsg);
+
+    // Check if it's a translation error
+    if (errorCode === 4) {
+        showViewerError('Model translation in progress. Please try again in a few moments.');
+        // Optionally trigger translation
+        triggerModelTranslation(selectedModels[0]);
+    } else {
+        showViewerError(`Failed to load model: ${errorMsg} (Code: ${errorCode})`);
+    }
+}
+
+// Handle selection changes in viewer
+function onSelectionChanged(event) {
+    const selection = event.dbIdArray;
+    console.log('Selection changed:', selection);
+
+    if (selection.length > 0) {
+        // Get properties of selected element
+        forgeViewer.getProperties(selection[0], function (props) {
+            console.log('Selected element properties:', props);
+            // You can display these properties in the UI
+        });
+    }
+}
+
+// Show error in viewer area
+function showViewerError(message) {
+    const viewerDiv = document.getElementById('forgeViewer');
+    if (viewerDiv) {
+        viewerDiv.innerHTML = `
+            <div class="viewer-error">
+                <p>⚠️ ${message}</p>
+                <button class="btn btn-sm" onclick="retryModelLoad()">Retry</button>
+            </div>
+        `;
+    }
+}
+
+// Retry model load
+function retryModelLoad() {
+    if (selectedModels && selectedModels.length > 0) {
+        initializeForgeViewer();
+    }
+}
+
+// Trigger model translation
+async function triggerModelTranslation(model) {
+    console.log('Triggering model translation for:', model.name);
+
+    try {
+        const translationJob = {
+            input: {
+                urn: model.versionUrn
+            },
+            output: {
+                formats: [
+                    {
+                        type: "svf2",
+                        views: ["2d", "3d"]
+                    }
+                ]
+            }
+        };
+
+        const response = await fetch(
+            'https://developer.api.autodesk.com/modelderivative/v2/designdata/job',
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${forgeAccessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(translationJob)
+            }
+        );
+
+        if (response.ok) {
+            const result = await response.json();
+            console.log('Translation job started:', result);
+
+            showViewerError('Model translation started. Please wait a few moments and retry.');
+
+            // Check translation status after delay
+            setTimeout(() => checkTranslationStatus(model.versionUrn), 5000);
+        } else {
+            const error = await response.text();
+            console.error('Translation request failed:', error);
+        }
+    } catch (error) {
+        console.error('Error triggering translation:', error);
+    }
+}
+
+// Check translation status
+async function checkTranslationStatus(urn) {
+    try {
+        const response = await fetch(
+            `https://developer.api.autodesk.com/modelderivative/v2/designdata/${urn}/manifest`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${forgeAccessToken}`
+                }
+            }
+        );
+
+        if (response.ok) {
+            const manifest = await response.json();
+            console.log('Translation status:', manifest.status, manifest.progress);
+
+            if (manifest.status === 'success') {
+                console.log('Translation complete, retrying load...');
+                retryModelLoad();
+            } else if (manifest.status === 'inprogress') {
+                // Check again in a few seconds
+                setTimeout(() => checkTranslationStatus(urn), 5000);
+            }
+        }
+    } catch (error) {
+        console.error('Error checking translation status:', error);
+    }
+}
+
+// Viewer control functions
+function resetView() {
+    if (forgeViewer) {
+        forgeViewer.fitToView();
+    }
+}
+
+function toggleIsolate() {
+    if (forgeViewer) {
+        const selected = forgeViewer.getSelection();
+        if (selected.length > 0) {
+            forgeViewer.isolate(selected);
+        } else {
+            forgeViewer.isolate([]);
+        }
+    }
+}
+
+// Clean up viewer on page unload
+window.addEventListener('beforeunload', function () {
+    if (forgeViewer) {
+        forgeViewer.finish();
+        forgeViewer = null;
+    }
+});
+
+// Test API endpoints (for debugging)
+async function testAPIEndpoints() {
+    console.log('=== TESTING API ENDPOINTS ===');
+
+    if (!forgeAccessToken) {
+        console.error('No access token available');
+        return;
+    }
+
+    if (!selectedProject) {
+        console.error('No project selected');
+        return;
+    }
+
+    const hubId = globalHubData?.hubId || getHubId();
+    console.log('Token:', forgeAccessToken.substring(0, 20) + '...');
+    console.log('Hub ID:', hubId);
+    console.log('Project ID:', selectedProject);
+
+    // Test 1: Project Info
+    try {
+        console.log('\n1. Testing Project Info...');
+        const projectUrl = `https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${selectedProject}`;
+        const response = await fetch(projectUrl, {
+            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+        });
+        console.log(`Project endpoint: ${response.status} ${response.statusText}`);
+        if (response.ok) {
+            const data = await response.json();
+            console.log('Project name:', data.data?.attributes?.name);
+        }
+    } catch (error) {
+        console.error('Project test failed:', error);
+    }
+
+    // Test 2: Top Folders
+    try {
+        console.log('\n2. Testing Top Folders...');
+        const topFoldersUrl = `https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${selectedProject}/topFolders`;
+        const response = await fetch(topFoldersUrl, {
+            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+        });
+        console.log(`Top folders endpoint: ${response.status} ${response.statusText}`);
+        if (response.ok) {
+            const data = await response.json();
+            console.log('Top folders count:', data.data?.length || 0);
+            data.data?.forEach(folder => {
+                console.log(`- ${folder.attributes?.displayName} (${folder.id})`);
+            });
+        }
+    } catch (error) {
+        console.error('Top folders test failed:', error);
+    }
+
+    // Test 3: Model Translation Status
+    if (selectedModels && selectedModels.length > 0) {
+        try {
+            console.log('\n3. Testing Model Translation Status...');
+            const model = selectedModels[0];
+            const manifestUrl = `https://developer.api.autodesk.com/modelderivative/v2/designdata/${model.versionUrn}/manifest`;
+            const response = await fetch(manifestUrl, {
+                headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+            });
+            console.log(`Manifest endpoint: ${response.status} ${response.statusText}`);
+            if (response.ok) {
+                const manifest = await response.json();
+                console.log('Translation status:', manifest.status);
+                console.log('Progress:', manifest.progress);
+                console.log('Derivatives:', manifest.derivatives?.length || 0);
+            }
+        } catch (error) {
+            console.error('Manifest test failed:', error);
+        }
+    }
+
+    console.log('\n=== END API TESTS ===');
+}
+
+// Add to window for easy testing
+window.testAPIEndpoints = testAPIEndpoints;
 
 // UI Functions
 function updateAuthStatus(status, info = '') {
@@ -1201,5 +1548,9 @@ window.CalculatorModule = {
     saveCalculation,
     loadHistoryItem,
     goBack,
-    showNotification
+    showNotification,
+    resetView,
+    toggleIsolate,
+    retryModelLoad,
+    testAPIEndpoints
 };

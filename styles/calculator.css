@@ -490,6 +490,7 @@ body {
         background: var(--gray-200);
     }
 
+/* Viewer Container */
 .viewer-container {
     flex: 1;
     position: relative;
@@ -498,6 +499,10 @@ body {
     align-items: center;
     justify-content: center;
 }
+
+    .viewer-container.loaded {
+        background: transparent;
+    }
 
 .loading-message,
 .no-model-message {
@@ -509,6 +514,51 @@ body {
         font-weight: 600;
         margin-bottom: 0.5rem;
     }
+
+.viewer-error {
+    text-align: center;
+    padding: 2rem;
+    color: var(--danger-red);
+}
+
+    .viewer-error p {
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+
+    .viewer-error button {
+        background: var(--primary-blue);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+        .viewer-error button:hover {
+            background: var(--secondary-blue);
+        }
+
+/* Forge Viewer Overrides */
+#forgeViewer {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+    #forgeViewer canvas {
+        outline: none !important;
+    }
+
+/* Hide some default Forge UI elements if needed */
+.adsk-viewing-viewer .adsk-button.HomeViewWrapper {
+    /* Customize home button if needed */
+}
+
+.adsk-viewing-viewer .docking-panel {
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
 
 /* Calculation Panel */
 .calculation-panel {
