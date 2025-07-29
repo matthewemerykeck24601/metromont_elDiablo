@@ -439,6 +439,25 @@ body {
         margin: 0.5rem 0;
     }
 
+.model-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 8px;
+}
+
+    .model-type-badge.cloud {
+        background: #e3f2fd;
+        color: #1976d2;
+    }
+
+    .model-type-badge.static {
+        background: #f3e5f5;
+        color: #7b1fa2;
+    }
+
 /* Calculator Interface */
 .calculator-interface {
     display: grid;

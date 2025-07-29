@@ -313,6 +313,11 @@ async function searchFolderForModels(folder, hubId, parentPath = '') {
                             const versionId = latestVersion.id;
                             const versionUrn = btoa(versionId).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 
+                            // Check if it's a cloud model (C4R/Cloud Worksharing)
+                            const isCloudModel = latestVersion.attributes.extension?.type === 'items:autodesk.bim360:C4RModel' ||
+                                latestVersion.attributes.extension?.type === 'items:autodesk.core:File' ||
+                                latestVersion.relationships?.storage?.data?.type === 'objects';
+
                             discoveredModels.push({
                                 id: item.id,
                                 name: item.attributes.displayName,
@@ -322,7 +327,9 @@ async function searchFolderForModels(folder, hubId, parentPath = '') {
                                 versionUrn: versionUrn,
                                 versionNumber: latestVersion.attributes.versionNumber,
                                 lastModified: latestVersion.attributes.lastModifiedTime,
-                                size: latestVersion.attributes.storageSize
+                                size: latestVersion.attributes.storageSize,
+                                isCloudModel: isCloudModel,
+                                storageType: isCloudModel ? 'Cloud' : 'Static'
                             });
                         }
                     }
@@ -1328,18 +1335,23 @@ function showModelsInFolder(models) {
     }
 
     modelsList.innerHTML = models.map((model, index) => `
-        <div class="model-item" onclick="selectDiscoveredModel(${discoveredModels.indexOf(model)})">
-            <div class="model-icon">📄</div>
-            <div class="model-info">
-                <div class="model-name">${model.name}</div>
-                <div class="model-details">
-                    Version ${model.versionNumber} • 
-                    ${new Date(model.lastModified).toLocaleDateString()} • 
-                    ${formatFileSize(model.size)}
-                </div>
+    <div class="model-item" onclick="selectDiscoveredModel(${discoveredModels.indexOf(model)})">
+        <div class="model-icon">📄</div>
+        <div class="model-info">
+            <div class="model-name">
+                ${model.name}
+                <span class="model-type-badge ${model.isCloudModel ? 'cloud' : 'static'}">
+                    ${model.storageType}
+                </span>
+            </div>
+            <div class="model-details">
+                Version ${model.versionNumber} • 
+                ${new Date(model.lastModified).toLocaleDateString()} • 
+                ${formatFileSize(model.size)}
             </div>
         </div>
-    `).join('');
+    </div>
+`).join('');
 }
 
 // Format file size
