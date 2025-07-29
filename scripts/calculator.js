@@ -16,13 +16,40 @@ async function initializeCalculator() {
     console.log('Initializing Engineering Calculator...');
 
     // Get project and hub data from parent
-    const urlParams = new URLSearchParams(window.location.search);
-    selectedProject = urlParams.get('project');
+    const calculatorData = getCalculatorProjectData();
 
-    if (!selectedProject) {
-        console.error('No project specified');
-        showNotification('No project selected. Please return to main page.', 'error');
-        return;
+    if (calculatorData) {
+        console.log('📦 Received project data from engineering page');
+
+        // Restore authentication and project context
+        forgeAccessToken = calculatorData.forgeAccessToken;
+        selectedProject = calculatorData.projectId;
+        selectedProjectData = calculatorData.selectedProjectData || {
+            id: calculatorData.projectId,
+            name: calculatorData.projectName
+        };
+        globalHubData = calculatorData.globalHubData;
+
+        console.log('Restored project context:');
+        console.log('- Project ID:', selectedProject);
+        console.log('- Project Name:', calculatorData.projectName);
+        console.log('- Hub ID:', globalHubData?.hubId);
+        console.log('- Token exists:', !!forgeAccessToken);
+
+        // Hide project selection interface and go straight to model discovery
+        const projectSelection = document.getElementById('projectSelection');
+        if (projectSelection) {
+            projectSelection.style.display = 'none';
+        }
+
+        // Initialize with the project data from engineering page
+        await initializeWithProjectData();
+
+    } else {
+        console.log('No project data from engineering page, showing project selection');
+        // Continue with normal authentication flow
+        await getAuthenticationData();
+        await completeAuthentication();
     }
 
     console.log('Selected project:', selectedProject);
