@@ -18,7 +18,7 @@
                 <div class="nav-section">
                     <button class="back-button" onclick="goBack()">
                         <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M19 12H5m7-7l-7 7 7 7" />
+                            <path d="M19 12H5m7-7l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
                         </svg>
                         Back to Engineering
                     </button>
@@ -52,7 +52,6 @@
                             <label for="projectSelect">Project:</label>
                             <select id="projectSelect" onchange="onProjectChange()">
                                 <option value="">Select a project...</option>
-                                <option value="">Loading projects...</option>
                             </select>
                         </div>
 
@@ -72,130 +71,14 @@
                 </div>
             </section>
 
-            <!-- Calculator Interface (Hidden by default) -->
+            <!-- Calculator Interface (Hidden by default, shown after model selection) -->
             <section class="calculator-interface" id="calculatorInterface" style="display: none;">
-                <!-- 3D Viewer Panel -->
-                <div class="viewer-panel">
-                    <div class="viewer-header">
-                        <h3>3D Model Viewer</h3>
-                        <div class="viewer-info">
-                            <span id="selectedModelName">No model loaded</span>
-                        </div>
-                        <div class="viewer-controls">
-                            <button class="btn btn-sm" onclick="resetViewerView()">Reset View</button>
-                            <button class="btn btn-sm" onclick="fitViewerToWindow()">Fit to Screen</button>
-                        </div>
-                    </div>
-                    <div class="forge-viewer-container">
-                        <div id="forgeViewer">
-                            <div id="viewerLoading" class="viewer-loading">
-                                <div class="loading-spinner"></div>
-                                <p>Loading 3D Model...</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Calculation Panel -->
-                <div class="calculation-panel">
-                    <div class="calculation-tabs">
-                        <button class="tab-btn active" onclick="switchTab('pointLoads')">Point Loads</button>
-                        <button class="tab-btn" onclick="switchTab('columns')">Columns</button>
-                        <button class="tab-btn" onclick="switchTab('walls')">Walls/Panels</button>
-                        <button class="tab-btn" onclick="switchTab('beams')">Beams/Spandrels</button>
-                        <button class="tab-btn" onclick="switchTab('doubleTees')">Double Tees</button>
-                    </div>
-
-                    <div class="calculation-content">
-                        <!-- Point Loads Tab -->
-                        <div id="pointLoads" class="tab-content active">
-                            <h3>Point Load Transfer</h3>
-                            <form class="calculation-form">
-                                <div class="form-group">
-                                    <label>Applied Load (kips):</label>
-                                    <input type="number" id="pointLoad" step="0.1" value="50">
-                                </div>
-                                <div class="form-group">
-                                    <label>Eccentricity (in):</label>
-                                    <input type="number" id="eccentricity" step="0.1" value="0">
-                                </div>
-                                <div class="form-group">
-                                    <label>Load Factor:</label>
-                                    <select id="loadFactor">
-                                        <option value="1.4">Dead Load (1.4)</option>
-                                        <option value="1.7">Live Load (1.7)</option>
-                                        <option value="1.2">Combined (1.2)</option>
-                                    </select>
-                                </div>
-                                <button type="button" class="btn btn-primary" onclick="calculatePointLoad()">
-                                    Calculate Transfer
-                                </button>
-                            </form>
-                        </div>
-
-                        <!-- Columns Tab -->
-                        <div id="columns" class="tab-content">
-                            <h3>Prestressed Column Design</h3>
-                            <form class="calculation-form">
-                                <div class="form-row">
-                                    <div class="form-group">
-                                        <label>Width (in):</label>
-                                        <input type="number" id="columnWidth" value="24">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Depth (in):</label>
-                                        <input type="number" id="columnDepth" value="24">
-                                    </div>
-                                </div>
-                                <div class="form-row">
-                                    <div class="form-group">
-                                        <label>Height (ft):</label>
-                                        <input type="number" id="columnHeight" value="20">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Axial Load (kips):</label>
-                                        <input type="number" id="columnLoad" value="500">
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Strand Pattern:</label>
-                                    <select id="strandPattern">
-                                        <option value="4-corner">4 Corner Strands</option>
-                                        <option value="8-perimeter">8 Perimeter Strands</option>
-                                        <option value="12-grid">12 Grid Pattern</option>
-                                    </select>
-                                </div>
-                                <button type="button" class="btn btn-primary" onclick="calculateColumn()">
-                                    Design Column
-                                </button>
-                            </form>
-                        </div>
-
-                        <!-- Additional tabs content continues... -->
-                    </div>
-                </div>
-
-                <!-- Results Panel -->
-                <div class="results-panel">
-                    <div class="results-header">
-                        <h3>Calculation Results</h3>
-                        <button class="btn btn-sm" onclick="saveCalculation()">Save to OSS</button>
-                    </div>
-                    <div id="calculationResults" class="results-content">
-                        <p class="placeholder">Run a calculation to see results here</p>
-                    </div>
-                    <div class="calculation-history">
-                        <h4>Recent Calculations</h4>
-                        <div id="calculationHistory" class="history-list">
-                            <!-- History items will be added here -->
-                        </div>
-                    </div>
-                </div>
+                <!-- Content will be added dynamically -->
             </section>
         </main>
 
         <!-- Model Selection Modal -->
-        <div id="modelSelectionModal" class="modal">
+        <div id="modelSelectionModal" class="modal" style="display: none;">
             <div class="modal-content large">
                 <div class="modal-header">
                     <h2>Select 3D Model</h2>
@@ -203,23 +86,23 @@
                 </div>
                 <div class="modal-body">
                     <div class="model-browser">
-                        <div class="model-folders" id="modelFolders">
+                        <div class="model-folders">
                             <h3>Project Folders</h3>
                             <div class="folder-tree" id="folderTree">
-                                <!-- Folder structure will be loaded here -->
+                                <p>Loading project folders...</p>
                             </div>
                         </div>
-                        <div class="model-list" id="modelList">
+                        <div class="model-list">
                             <h3>Available Models</h3>
-                            <div class="models-grid" id="modelsGrid">
-                                <!-- Model tiles will be loaded here -->
+                            <div id="availableModels" class="models-list">
+                                <p>Select a folder to view models</p>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="closeModelSelection()">Cancel</button>
-                    <button class="btn btn-primary" id="selectModelBtn" onclick="confirmModelSelection()" disabled>
+                    <button class="btn btn-primary" onclick="handleModelSelection()" disabled>
                         Select Model
                     </button>
                 </div>
