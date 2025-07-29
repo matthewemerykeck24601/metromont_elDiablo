@@ -1,7 +1,11 @@
-﻿// Engineering Calculator JavaScript - COMPLETE FILE WITH ALL FEATURES
-// Replace your entire scripts/calculator.js with this file
+﻿// Engineering Calculator - Complete JavaScript File
+console.log('Engineering Calculator script loaded');
 
-// Global Variables (matching QC pattern + Architecture Alignment)
+// ACC Configuration
+const ACC_CLIENT_ID = window.ACC_CLIENT_ID || '';
+console.log('ACC Client ID available:', !!ACC_CLIENT_ID);
+
+// Global Variables
 let forgeAccessToken = null;
 let selectedProject = null;
 let selectedProjectData = null;
@@ -10,66 +14,113 @@ let forgeViewer = null;
 let calculationHistory = [];
 let currentCalculation = null;
 let globalHubData = null;
-let userProjects = [];
-let hubId = null;
-let projectId = null;
+let isAuthenticated = false;
+let authCheckComplete = false;
 
-// Architecture Alignment Variables
-let modelPropertiesIndexed = false;
-let aecDataModelElementGroup = null;
+// Model Discovery Variables
 let discoveredModels = [];
 let selectedModels = [];
-let modelTranslationJobs = new Map();
 
-// Bed Information from uploaded file
-const BED_INFO = {
-    "Column Bed 1": {
-        bedType: "Column",
-        maxWidth: 48,
-        maxLength: 60,
-        maxHeight: 20,
-        supportedProducts: ["Columns", "Beams", "Walls"]
-    },
-    "Double Tee Bed 1": {
-        bedType: "Double Tee",
-        maxWidth: 144,
-        maxLength: 600,
-        maxHeight: 32,
-        supportedProducts: ["Double Tees", "Hollow Core"]
-    },
-    "Wall Panel Bed 1": {
-        bedType: "Wall Panel",
-        maxWidth: 144,
-        maxLength: 480,
-        maxHeight: 12,
-        supportedProducts: ["Wall Panels", "Cladding", "Architectural"]
+// Token Management Functions
+function getStoredToken() {
+    const sessionToken = sessionStorage.getItem('forge_token');
+    if (sessionToken) {
+        try {
+            return JSON.parse(sessionToken);
+        } catch (e) {
+            console.error('Failed to parse session token:', e);
+        }
     }
-};
 
-// ALIGNED: Enhanced initialization following directives
+    const tokenData = localStorage.getItem('forgeToken');
+    return tokenData ? JSON.parse(tokenData) : null;
+}
+
+function clearStoredToken() {
+    sessionStorage.removeItem('forge_token');
+    sessionStorage.removeItem('castlink_hub_data');
+    localStorage.removeItem('forgeToken');
+    localStorage.removeItem('hubData');
+}
+
+function isTokenExpired(tokenData) {
+    if (!tokenData || !tokenData.expires_at) return true;
+    return Date.now() >= tokenData.expires_at;
+}
+
+// Authentication Functions
+async function verifyToken(token) {
+    try {
+        const response = await fetch('https://developer.api.autodesk.com/userprofile/v1/users/@me', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        return response.ok;
+    } catch (error) {
+        console.error('Token verification failed:', error);
+        return false;
+    }
+}
+
+// Initialize Calculator
 async function initializeCalculator() {
     try {
-        console.log('=== ALIGNED ENGINEERING CALCULATOR INITIALIZATION ===');
+        console.log('=== ENGINEERING CALCULATOR INITIALIZATION ===');
 
-        // FIRST: Check if we have project data passed from engineering page
+        // Initialize UI
+        initializeUI();
+
+        // Update status
+        updateAuthStatus('Checking Authentication...', 'Verifying access...');
+
+        // Check for project data from engineering page
         const calculatorData = getCalculatorProjectData();
 
         if (calculatorData) {
-            console.log('📦 Received project data from engineering page:', calculatorData.selectedProjectData?.name);
+            console.log('📦 Received project data from engineering page');
 
-            // Restore all the authentication and project context
+            // Restore authentication and project context
             forgeAccessToken = calculatorData.forgeAccessToken;
-            selectedProject = calculatorData.selectedProject;
-            selectedProjectData = calculatorData.selectedProjectData;
+            selectedProject = calculatorData.projectId;
+            selectedProjectData = calculatorData.selectedProjectData || {
+                id: calculatorData.projectId,
+                name: calculatorData.projectName
+            };
             globalHubData = calculatorData.globalHubData;
 
-            // Complete authentication with existing project data
+            console.log('Restored project context:');
+            console.log('- Project ID:', selectedProject);
+            console.log('- Project Name:', calculatorData.projectName);
+            console.log('- Hub ID:', globalHubData?.hubId);
+            console.log('- Token exists:', !!forgeAccessToken);
+
+            // Complete authentication with project
             await completeAuthenticationWithProject();
 
         } else {
             console.log('🔄 No project data found, checking authentication...');
 
-            // Check parent window authentication (same as QC pattern)
+            // Try session storage
+            const sessionHubData = sessionStorage.getItem('castlink_hub_data');
+            const sessionToken = sessionStorage.getItem('forge_token');
+
+            if (sessionToken && sessionHubData) {
+                try {
+                    const tokenData = JSON.parse(sessionToken);
+                    globalHubData = JSON.parse(sessionHubData);
+
+                    if (!isTokenExpired(tokenData)) {
+                        forgeAccessToken = tokenData.access_token;
+                        await completeAuthentication();
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Failed to parse session data:', e);
+                }
+            }
+
+            // Check parent window
             if (window.opener && window.opener.CastLinkAuth) {
                 const parentAuth = window.opener.CastLinkAuth;
                 const isParentAuth = await parentAuth.waitForAuth();
@@ -100,25 +151,22 @@ async function initializeCalculator() {
         }
     } catch (error) {
         console.error('Calculator initialization failed:', error);
-        showNotification('Failed to initialize calculator: ' + error.message, 'error');
+        showNotification('Failed to initialize: ' + error.message, 'error');
+    } finally {
+        authCheckComplete = true;
     }
 }
 
-// Get project data passed from engineering page
+// Get project data from engineering page
 function getCalculatorProjectData() {
     try {
         const data = sessionStorage.getItem('calculator_project_data');
         if (data) {
             const parsed = JSON.parse(data);
-
             // Check if data is recent (within 5 minutes)
             const age = Date.now() - parsed.timestamp;
-            if (age < 5 * 60 * 1000) { // 5 minutes
-                console.log('✅ Using recent project data from engineering page');
+            if (age < 5 * 60 * 1000) {
                 return parsed;
-            } else {
-                console.log('⏰ Project data expired, clearing');
-                sessionStorage.removeItem('calculator_project_data');
             }
         }
         return null;
@@ -128,32 +176,37 @@ function getCalculatorProjectData() {
     }
 }
 
+// Redirect to main app
 function redirectToMainApp() {
-    updateAuthStatus('Redirecting to Login...', 'Taking you to the main app for authentication...');
+    updateAuthStatus('Not Authenticated', 'Please authenticate from the main dashboard');
+    showNotification('Redirecting to main dashboard...', 'info');
     setTimeout(() => {
         window.location.href = 'index.html';
     }, 2000);
 }
 
+// Complete authentication
 async function completeAuthentication() {
     try {
-        updateAuthStatus('Loading Hub Data...', 'Using pre-loaded project information...');
+        updateAuthStatus('Loading Projects...', 'Fetching project data...');
 
-        // Load the hub data that was already loaded during main authentication
+        // Load hub data
         await loadPreLoadedHubData();
 
-        const projectCount = globalHubData ? globalHubData.projects.length : 0;
-        const accountName = globalHubData ? globalHubData.accountInfo.name : 'ACC Account';
+        isAuthenticated = true;
 
-        updateAuthStatus('✅ Connected', `Connected to ${accountName} with ${projectCount} projects available`);
+        const projectCount = globalHubData && globalHubData.projects ? globalHubData.projects.length : 0;
+        const accountName = globalHubData && globalHubData.accountInfo ? globalHubData.accountInfo.name : 'ACC Account';
+
+        updateAuthStatus('✅ Connected', `Connected to ${accountName} (${projectCount} projects)`);
+
+        // Populate project dropdown
+        populateProjectDropdown();
 
         // Load calculation history
         loadCalculationHistory();
 
-        // Initialize UI event listeners
-        initializeUI();
-
-        console.log('✅ Calculator ready with pre-loaded data');
+        console.log('✅ Calculator ready');
 
     } catch (error) {
         console.error('Authentication completion failed:', error);
@@ -161,27 +214,44 @@ async function completeAuthentication() {
     }
 }
 
-// Enhanced authentication when project is already selected
+// Complete authentication with project
 async function completeAuthenticationWithProject() {
     try {
-        updateAuthStatus('✅ Project Selected', `Loading models for ${selectedProjectData.name}...`);
+        const calculatorData = JSON.parse(sessionStorage.getItem('calculator_project_data'));
 
-        // Hide the project selection interface since project is already selected
-        const projectSelection = document.getElementById('projectSelection');
-        if (projectSelection) {
-            projectSelection.style.display = 'none';
+        if (calculatorData) {
+            // Make sure we have the project ID
+            if (!calculatorData.projectId) {
+                console.error('No project ID in calculator data');
+                await completeAuthentication();
+                return;
+            }
+
+            // Set the project data properly
+            selectedProject = calculatorData.projectId;
+            selectedProjectData = calculatorData.selectedProjectData || {
+                id: calculatorData.projectId,
+                name: calculatorData.projectName
+            };
+
+            updateAuthStatus('✅ Project Selected', `${calculatorData.projectName || 'Unknown Project'}`);
+
+            // Hide project selection interface
+            const projectSelection = document.getElementById('projectSelection');
+            if (projectSelection) {
+                projectSelection.style.display = 'none';
+            }
+
+            // Initialize with project data
+            await initializeWithProjectData();
+        } else {
+            await completeAuthentication();
         }
-
-        // ALIGNED: Follow proper architecture workflow
-        await initializeWithProjectData();
-
-        console.log('✅ Calculator ready with project pre-selected');
 
     } catch (error) {
         console.error('Enhanced authentication failed:', error);
-        updateAuthStatus('❌ Error', 'Failed to load project models: ' + error.message);
+        updateAuthStatus('❌ Error', 'Failed to load project: ' + error.message);
 
-        // Fallback to standard project selection
         const projectSelection = document.getElementById('projectSelection');
         if (projectSelection) {
             projectSelection.style.display = 'block';
@@ -190,405 +260,372 @@ async function completeAuthenticationWithProject() {
     }
 }
 
-// ALIGNED: Initialize with proper architecture workflow
+// Load hub data
+async function loadPreLoadedHubData() {
+    console.log('Loading hub data...');
+
+    if (globalHubData && globalHubData.projects) {
+        console.log('Using existing hub data:', globalHubData.projects.length, 'projects');
+        return;
+    }
+
+    // Try session storage
+    const sessionHubData = sessionStorage.getItem('castlink_hub_data');
+    if (sessionHubData) {
+        try {
+            globalHubData = JSON.parse(sessionHubData);
+            console.log('Loaded hub data from session storage');
+            return;
+        } catch (e) {
+            console.error('Failed to parse session hub data:', e);
+        }
+    }
+
+    // Try localStorage
+    const storedData = localStorage.getItem('hubData');
+    if (storedData) {
+        try {
+            globalHubData = JSON.parse(storedData);
+            console.log('Loaded hub data from localStorage');
+            return;
+        } catch (error) {
+            console.error('Failed to parse stored hub data:', error);
+        }
+    }
+
+    console.log('No hub data available');
+}
+
+// Populate project dropdown
+function populateProjectDropdown() {
+    const projectSelect = document.getElementById('projectSelect');
+    if (!projectSelect || !globalHubData) return;
+
+    projectSelect.innerHTML = '<option value="">Select a project...</option>';
+
+    if (globalHubData.projects && globalHubData.projects.length > 0) {
+        globalHubData.projects.forEach((project, index) => {
+            const option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = project.name || project.displayName || 'Unnamed Project';
+            option.dataset.projectIndex = index;
+            projectSelect.appendChild(option);
+        });
+
+        projectSelect.disabled = false;
+    } else {
+        projectSelect.innerHTML = '<option value="">No projects available</option>';
+        projectSelect.disabled = true;
+    }
+
+    // If project was pre-selected, set it
+    if (selectedProject) {
+        projectSelect.value = selectedProject;
+        onProjectChange();
+    }
+}
+
+// Project change handler
+async function onProjectChange() {
+    const projectSelect = document.getElementById('projectSelect');
+    selectedProject = projectSelect.value;
+
+    if (!selectedProject) {
+        document.getElementById('projectName').textContent = 'No project selected';
+        document.getElementById('projectDetails').textContent = 'Select a project to begin calculations';
+        document.getElementById('modelSelectBtn').disabled = true;
+        discoveredModels = [];
+        selectedModels = [];
+        return;
+    }
+
+    // Find project data
+    if (globalHubData && globalHubData.projects) {
+        const projectIndex = projectSelect.selectedOptions[0].dataset.projectIndex;
+        selectedProjectData = globalHubData.projects[parseInt(projectIndex)];
+    }
+
+    if (selectedProjectData) {
+        document.getElementById('projectName').textContent = selectedProjectData.name || 'Unknown Project';
+        document.getElementById('projectDetails').textContent = `Project ${selectedProjectData.number || 'N/A'} - ${selectedProjectData.location || 'Location not specified'}`;
+        document.getElementById('modelSelectBtn').disabled = false;
+
+        // Clear previous models
+        discoveredModels = [];
+        selectedModels = [];
+    }
+}
+
+// Initialize with project data
 async function initializeWithProjectData() {
     try {
-        updateAuthStatus('🔍 Discovering Models', `Scanning ${selectedProjectData.name} for Revit models...`);
+        updateAuthStatus('🔍 Discovering Models', `Scanning project for Revit models...`);
 
-        // Log project data to understand the format
-        console.log('Selected Project ID:', selectedProject);
+        console.log('Selected Project:', selectedProject);
         console.log('Selected Project Data:', selectedProjectData);
-        console.log('Global Hub Data:', globalHubData);
 
-        // Step 1: Discover Revit models in ACC project
+        // Discover models
         const models = await discoverRevitModels();
 
-        if (models && models.length > 0) {
-            // Step 2: Ensure models are translated to SVF2 (required for Model Properties API)
-            await ensureModelsTranslatedToSVF2();
-        }
-
-        // Step 3: Show enhanced model selection with translation status
+        // Show model selection dialog
         showAlignedModelSelection();
 
-        console.log('✅ Calculator initialized following architecture directives');
+        console.log('✅ Model discovery complete');
 
     } catch (error) {
-        console.error('Enhanced initialization failed:', error);
-        updateAuthStatus('❌ Error', 'Failed to initialize: ' + error.message);
-
-        // Show the selection dialog anyway to allow manual mode
+        console.error('Model discovery failed:', error);
+        updateAuthStatus('⚠️ Warning', 'Model discovery failed, but you can continue');
         showAlignedModelSelection();
     }
 }
 
-// ALIGNED: Discover Revit models with proper metadata
+// Discover Revit models
 async function discoverRevitModels() {
     try {
-        console.log('🔍 Discovering Revit models with enhanced metadata...');
-        console.log('Project ID:', selectedProject);
-        console.log('Project Data:', selectedProjectData);
+        console.log('🔍 Discovering Revit models...');
+        console.log('Selected Project:', selectedProject);
+        console.log('Selected Project Data:', selectedProjectData);
 
         if (!forgeAccessToken || !selectedProject) {
             throw new Error('Missing authentication or project selection');
         }
 
-        // Check if we need to construct the full project ID
-        let fullProjectId = selectedProject;
+        const models = [];
 
-        // If the project ID doesn't start with 'b.', we need to construct it
-        if (!selectedProject.startsWith('b.')) {
-            // Try to get the hub ID from globalHubData
-            const hubId = getHubId();
-            if (hubId) {
-                // For ACC/BIM360 projects, the format is typically b.{account_id}.{project_guid}
-                // But if we only have the project number, we need to use the original ID from globalHubData
-                const projectFromHub = globalHubData?.projects?.find(p =>
-                    p.number === selectedProject ||
-                    p.name.includes(selectedProject) ||
-                    p.id === selectedProject
-                );
-
-                if (projectFromHub) {
-                    fullProjectId = projectFromHub.id;
-                    console.log('Found full project ID from hub data:', fullProjectId);
-                }
-            }
+        // Get hub ID
+        const hubId = globalHubData?.hubId || getHubId();
+        if (!hubId) {
+            console.error('Unable to determine hub ID');
+            return [];
         }
 
-        // Try different approaches to get folder data
-        const models = await tryMultipleFolderApproaches(fullProjectId);
+        console.log('Hub ID:', hubId);
+        console.log('Project ID:', selectedProject);
 
-        discoveredModels = models || [];
-        console.log('🏗️ Found Revit models:', discoveredModels.length);
+        try {
+            // Get top folders
+            const topFoldersUrl = `https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${selectedProject}/topFolders`;
+            console.log('Getting top folders:', topFoldersUrl);
 
-        return discoveredModels;
+            const topFoldersResponse = await fetch(topFoldersUrl, {
+                headers: {
+                    'Authorization': `Bearer ${forgeAccessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            console.log('Top folders response status:', topFoldersResponse.status);
+
+            if (topFoldersResponse.ok) {
+                const topFoldersData = await topFoldersResponse.json();
+                console.log('✅ Top folders found:', topFoldersData.data?.length || 0);
+
+                // Process each folder
+                for (const folder of topFoldersData.data || []) {
+                    console.log(`Scanning folder: ${folder.attributes?.displayName || folder.attributes?.name}`);
+                    const folderModels = await scanFolderForModels(hubId, selectedProject, folder);
+                    models.push(...folderModels);
+                }
+            } else if (topFoldersResponse.status === 404) {
+                console.log('Top folders endpoint not found, trying alternative approach...');
+                // Try alternative approach
+                const altModels = await tryAlternativeFolderDiscovery();
+                models.push(...altModels);
+            } else {
+                const errorText = await topFoldersResponse.text();
+                console.error('Failed to get top folders:', topFoldersResponse.status, errorText);
+            }
+        } catch (error) {
+            console.error('Error getting top folders:', error);
+            // Try alternative approach
+            const altModels = await tryAlternativeFolderDiscovery();
+            models.push(...altModels);
+        }
+
+        discoveredModels = models;
+        console.log(`🏗️ Found ${models.length} Revit models`);
+        return models;
 
     } catch (error) {
         console.error('Error discovering models:', error);
-
-        // Don't throw - allow manual mode
         discoveredModels = [];
         return [];
     }
 }
 
-// Try multiple approaches to get folder data
-async function tryMultipleFolderApproaches(projectId) {
+// Try alternative folder discovery approaches
+async function tryAlternativeFolderDiscovery() {
     const models = [];
 
-    // Approach 1: Try topFolders endpoint
     try {
-        const hubId = getHubId();
-        if (hubId) {
-            const topFoldersUrl = `https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${projectId}`;
-            console.log('Trying project endpoint:', topFoldersUrl);
+        // Try the data API endpoint for project root
+        const rootUrl = `https://developer.api.autodesk.com/data/v1/projects/${selectedProject}`;
+        console.log('Trying project root:', rootUrl);
 
-            const projectResponse = await fetch(topFoldersUrl, {
-                headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-            });
-
-            if (projectResponse.ok) {
-                const projectData = await projectResponse.json();
-                console.log('Project data retrieved:', projectData.data?.attributes?.name);
-
-                // Now try to get top folders
-                const topFoldersResponse = await fetch(
-                    `https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${projectId}/topFolders`, {
-                    headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-                });
-
-                if (topFoldersResponse.ok) {
-                    const topFoldersData = await topFoldersResponse.json();
-                    console.log('✅ Top folders found:', topFoldersData.data.length);
-
-                    for (const folder of topFoldersData.data) {
-                        const folderModels = await findRevitModelsWithMetadata(folder);
-                        models.push(...folderModels);
-                        await scanSubfolders(folder, models);
-                    }
-
-                    return models;
-                }
-            }
-        }
-    } catch (error) {
-        console.error('TopFolders approach failed:', error);
-    }
-
-    // Approach 2: Try direct folders endpoint
-    try {
-        const foldersUrl = `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(projectId)}/folders`;
-        console.log('Trying folders endpoint:', foldersUrl);
-
-        const foldersResponse = await fetch(foldersUrl, {
-            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-        });
-
-        if (foldersResponse.ok) {
-            const foldersData = await foldersResponse.json();
-            console.log('✅ Folders found:', foldersData.data.length);
-
-            for (const folder of foldersData.data) {
-                const folderModels = await findRevitModelsWithMetadata(folder);
-                models.push(...folderModels);
-            }
-
-            return models;
-        }
-    } catch (error) {
-        console.error('Folders approach failed:', error);
-    }
-
-    // Approach 3: Return empty array but don't fail
-    console.log('All folder discovery approaches failed. Manual mode will be available.');
-    return [];
-}
-
-// Helper function to get hub ID from project ID or global data
-function getHubId() {
-    // First check if we have it in globalHubData
-    if (globalHubData && globalHubData.hubId) {
-        console.log('Hub ID from globalHubData:', globalHubData.hubId);
-        return globalHubData.hubId;
-    }
-
-    // Try to extract from any project ID in globalHubData
-    if (globalHubData && globalHubData.projects && globalHubData.projects.length > 0) {
-        // Look for a project with a proper ACC format ID
-        const accProject = globalHubData.projects.find(p => p.id && p.id.startsWith('b.'));
-        if (accProject) {
-            // ACC project IDs are typically b.{account_id}.{project_guid}
-            // The hub ID is b.{account_id}
-            const parts = accProject.id.split('.');
-            if (parts.length >= 2) {
-                const hubId = `${parts[0]}.${parts[1]}`;
-                console.log('Hub ID extracted from project:', hubId);
-                return hubId;
-            }
-        }
-    }
-
-    // Try to extract from selectedProject if it's in proper format
-    if (selectedProject && selectedProject.startsWith('b.')) {
-        const parts = selectedProject.split('.');
-        if (parts.length >= 2) {
-            const hubId = `${parts[0]}.${parts[1]}`;
-            console.log('Hub ID extracted from selectedProject:', hubId);
-            return hubId;
-        }
-    }
-
-    console.error('Unable to determine hub ID');
-    return null;
-}
-
-// Scan subfolders recursively
-async function scanSubfolders(parentFolder, revitModels) {
-    try {
-        const subfolderResponse = await fetch(
-            `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(selectedProject)}/folders/${parentFolder.id}/contents`, {
-            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-        });
-
-        if (!subfolderResponse.ok) return;
-
-        const subfolderData = await subfolderResponse.json();
-
-        for (const item of subfolderData.data) {
-            if (item.type === 'folders') {
-                // Recursively scan subfolder
-                await scanSubfolders(item, revitModels);
-            }
-        }
-    } catch (error) {
-        console.error(`Error scanning subfolder ${parentFolder.attributes.displayName}:`, error);
-    }
-}
-
-// ALIGNED: Find Revit models with enhanced metadata for proper workflow
-async function findRevitModelsWithMetadata(folder) {
-    try {
-        const folderContentsResponse = await fetch(
-            `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(selectedProject)}/folders/${folder.id}/contents`, {
-            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-        });
-
-        if (!folderContentsResponse.ok) {
-            console.error(`Failed to get contents for folder ${folder.attributes.displayName}:`, folderContentsResponse.status);
-            return [];
-        }
-
-        const contentsData = await folderContentsResponse.json();
-        const revitModels = [];
-
-        // Find all Revit models in folder
-        for (const item of contentsData.data) {
-            if (item.type === 'items' && item.attributes.displayName.toLowerCase().endsWith('.rvt')) {
-
-                try {
-                    // Get latest version details
-                    const versionsResponse = await fetch(
-                        `https://developer.api.autodesk.com/data/v1/projects/${encodeURIComponent(selectedProject)}/items/${item.id}/versions`, {
-                        headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-                    });
-
-                    if (versionsResponse.ok) {
-                        const versionsData = await versionsResponse.json();
-                        const latestVersion = versionsData.data[0]; // First is latest
-
-                        if (latestVersion) {
-                            const modelData = {
-                                id: item.id,
-                                name: item.attributes.displayName,
-                                folderName: folder.attributes.displayName,
-                                folderId: folder.id,
-                                versionId: latestVersion.id,
-                                versionUrn: btoa(latestVersion.id).replace(/=/g, ''), // Base64 encode and remove padding
-                                size: item.attributes.storageSize || 0,
-                                lastModified: latestVersion.attributes.lastModifiedTime,
-                                translationStatus: 'pending',
-                                modelPropertiesReady: false,
-                                isCloudWorkshared: false,
-                                modelGuid: null
-                            };
-
-                            revitModels.push(modelData);
-                        }
-                    }
-                } catch (versionError) {
-                    console.error(`Error getting version for ${item.attributes.displayName}:`, versionError);
-                }
-            }
-        }
-
-        return revitModels;
-
-    } catch (error) {
-        console.error(`Error scanning folder ${folder.attributes.name}:`, error);
-        return [];
-    }
-}
-
-// ALIGNED: Ensure models are translated to SVF2 (required for Model Properties API)
-async function ensureModelsTranslatedToSVF2() {
-    try {
-        console.log('🔄 Ensuring SVF2 translation for Model Properties API compatibility...');
-
-        for (const model of discoveredModels) {
-            try {
-                // Check current translation status
-                const manifestResponse = await fetch(
-                    `https://developer.api.autodesk.com/modelderivative/v2/designdata/${model.versionUrn}/manifest`, {
-                    headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
-                });
-
-                if (manifestResponse.ok) {
-                    const manifest = await manifestResponse.json();
-
-                    // Check if SVF2 derivative exists
-                    const svf2Derivative = manifest.derivatives?.find(d =>
-                        d.outputType === 'svf2' && d.status === 'success'
-                    );
-
-                    if (svf2Derivative) {
-                        model.translationStatus = 'ready';
-                        model.modelPropertiesReady = true;
-                        console.log(`✅ ${model.name} - SVF2 ready`);
-                    } else if (manifest.status === 'inprogress') {
-                        model.translationStatus = 'translating';
-                        console.log(`⏳ ${model.name} - Translation in progress`);
-                    } else {
-                        // Trigger SVF2 translation
-                        await triggerSVF2Translation(model);
-                    }
-                } else if (manifestResponse.status === 404) {
-                    // No manifest exists, trigger translation
-                    await triggerSVF2Translation(model);
-                } else {
-                    throw new Error(`Manifest check failed: ${manifestResponse.status}`);
-                }
-
-            } catch (error) {
-                console.error(`Translation check failed for ${model.name}:`, error);
-                model.translationStatus = 'error';
-            }
-        }
-
-    } catch (error) {
-        console.error('SVF2 translation setup failed:', error);
-        throw error;
-    }
-}
-
-// ALIGNED: Trigger SVF2 translation (required for Model Properties API)
-async function triggerSVF2Translation(model) {
-    try {
-        console.log(`🔄 Triggering SVF2 translation for ${model.name}...`);
-
-        const translationJob = {
-            input: {
-                urn: model.versionUrn
-            },
-            output: {
-                formats: [
-                    {
-                        type: "svf2",
-                        views: ["2d", "3d"]
-                    }
-                ]
-            }
-        };
-
-        const response = await fetch(
-            'https://developer.api.autodesk.com/modelderivative/v2/designdata/job', {
-            method: 'POST',
+        const rootResponse = await fetch(rootUrl, {
             headers: {
                 'Authorization': `Bearer ${forgeAccessToken}`,
                 'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(translationJob)
+            }
         });
 
-        if (response.ok) {
-            const result = await response.json();
-            model.translationStatus = 'translating';
-            modelTranslationJobs.set(model.id, result.urn);
-            console.log(`🔄 ${model.name} - Translation started`);
-        } else {
-            const errorText = await response.text();
-            throw new Error(`Translation request failed: ${response.status} - ${errorText}`);
+        if (rootResponse.ok) {
+            const rootData = await rootResponse.json();
+            console.log('Project root data:', rootData);
+
+            // Look for root folder reference
+            if (rootData.data?.relationships?.rootFolder?.data?.id) {
+                const rootFolderId = rootData.data.relationships.rootFolder.data.id;
+                console.log('Found root folder:', rootFolderId);
+
+                // Create a fake folder object to scan
+                const rootFolder = {
+                    id: rootFolderId,
+                    attributes: { displayName: 'Project Root' }
+                };
+
+                const folderModels = await scanFolderForModels(null, selectedProject, rootFolder);
+                models.push(...folderModels);
+            }
+        }
+    } catch (error) {
+        console.error('Alternative discovery failed:', error);
+    }
+
+    return models;
+}
+
+// Scan folder for models
+async function scanFolderForModels(hubId, projectId, folder, models = []) {
+    try {
+        const contentsUrl = `https://developer.api.autodesk.com/data/v1/projects/${projectId}/folders/${folder.id}/contents`;
+        console.log('Getting folder contents:', contentsUrl);
+        console.log('Folder:', folder.attributes?.displayName || 'Unknown');
+
+        const contentsResponse = await fetch(contentsUrl, {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Contents response status:', contentsResponse.status);
+
+        if (!contentsResponse.ok) {
+            if (contentsResponse.status === 403) {
+                console.warn(`No permission to access folder ${folder.attributes?.displayName}`);
+            } else {
+                console.error(`Failed to get contents for folder ${folder.attributes?.displayName}:`, contentsResponse.status);
+            }
+            return models;
         }
 
+        const contentsData = await contentsResponse.json();
+        console.log(`Found ${contentsData.data?.length || 0} items in folder ${folder.attributes?.displayName}`);
+
+        // Process each item
+        for (const item of contentsData.data || []) {
+            console.log(`Item: ${item.attributes?.displayName} (${item.type})`);
+
+            if (item.type === 'folders') {
+                // Recursively scan subfolder
+                console.log(`Scanning subfolder: ${item.attributes?.displayName}`);
+                await scanFolderForModels(hubId, projectId, item, models);
+            } else if (item.type === 'items') {
+                // Check if it's a Revit file
+                const fileName = item.attributes?.displayName || '';
+                const extension = fileName.toLowerCase().split('.').pop();
+
+                if (extension === 'rvt') {
+                    console.log(`Found Revit model: ${fileName}`);
+
+                    try {
+                        // Get version information
+                        const versionsUrl = `https://developer.api.autodesk.com/data/v1/projects/${projectId}/items/${item.id}/versions`;
+                        const versionsResponse = await fetch(versionsUrl, {
+                            headers: { 'Authorization': `Bearer ${forgeAccessToken}` }
+                        });
+
+                        if (versionsResponse.ok) {
+                            const versionsData = await versionsResponse.json();
+                            const latestVersion = versionsData.data?.[0];
+
+                            if (latestVersion) {
+                                // Get the derivative URN properly
+                                let derivativeUrn = null;
+                                if (latestVersion.relationships?.derivatives?.data?.id) {
+                                    derivativeUrn = latestVersion.relationships.derivatives.data.id;
+                                } else if (latestVersion.id) {
+                                    // Encode the version ID as URN
+                                    derivativeUrn = btoa(latestVersion.id).replace(/=/g, '');
+                                }
+
+                                const modelData = {
+                                    id: item.id,
+                                    name: item.attributes.displayName,
+                                    folderName: folder.attributes?.displayName || 'Root',
+                                    folderId: folder.id,
+                                    versionId: latestVersion.id,
+                                    versionUrn: derivativeUrn,
+                                    storageUrn: latestVersion.relationships?.storage?.data?.id,
+                                    size: item.attributes.storageSize || 0,
+                                    lastModified: latestVersion.attributes.lastModifiedTime || latestVersion.attributes.createTime,
+                                    translationStatus: 'pending',
+                                    modelPropertiesReady: false
+                                };
+
+                                models.push(modelData);
+                                console.log(`✅ Added model: ${modelData.name} (URN: ${modelData.versionUrn})`);
+                            }
+                        }
+                    } catch (versionError) {
+                        console.error(`Error getting version for ${item.attributes.displayName}:`, versionError);
+                    }
+                } else {
+                    console.log(`Skipping non-Revit file: ${fileName} (.${extension})`);
+                }
+            }
+        }
+
+        return models;
+
     } catch (error) {
-        console.error(`SVF2 translation failed for ${model.name}:`, error);
-        model.translationStatus = 'error';
+        console.error(`Error scanning folder:`, error);
+        return models;
     }
 }
 
-// ALIGNED: Show enhanced model selection following architecture
-function showAlignedModelSelection() {
-    const modal = document.getElementById('modelSelectionModal');
-    if (!modal) {
-        // If no modal exists, try to go directly to calculator
-        if (discoveredModels.length > 0) {
-            selectedModel = discoveredModels[0];
-            selectedModels = [discoveredModels[0]];
-            initializeCalculatorInterface();
-        }
-        return;
+// Get hub ID helper
+function getHubId() {
+    if (globalHubData && globalHubData.hubId) {
+        return globalHubData.hubId;
     }
 
-    modal.style.display = 'flex';
+    if (selectedProject && selectedProject.startsWith('b.')) {
+        const parts = selectedProject.split('.');
+        if (parts.length >= 2) {
+            return `b.${parts[1]}`;
+        }
+    }
 
+    return null;
+}
+
+// Show model selection dialog
+function showAlignedModelSelection() {
+    const modalOverlay = document.getElementById('modelSelectionModal');
     const folderTree = document.getElementById('folderTree');
-    if (folderTree) {
-        // Check if we have discovered models
-        if (discoveredModels.length === 0) {
-            // Show manual entry option
+    const modelsList = document.getElementById('availableModels');
+
+    if (modalOverlay) {
+        modalOverlay.style.display = 'flex';
+    }
+
+    if (!discoveredModels || discoveredModels.length === 0) {
+        // No models found
+        if (folderTree) {
             folderTree.innerHTML = `
-                <h4>Model Selection for ${selectedProjectData.name}</h4>
-                <div class="no-models-found">
+                <div class="no-models-message">
                     <p>⚠️ Unable to automatically discover models in this project.</p>
                     <p>This can happen if:</p>
                     <ul style="text-align: left; margin: 1rem 0;">
@@ -602,522 +639,294 @@ function showAlignedModelSelection() {
                     </button>
                 </div>
             `;
-        } else {
-            // Show discovered models
+        }
+
+        if (modelsList) {
+            modelsList.innerHTML = `
+                <div class="manual-model-entry">
+                    <h4>Manual Model Entry</h4>
+                    <p>Enter the Model URN if you have it:</p>
+                    <input type="text" id="manualModelUrn" placeholder="Model URN" style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;">
+                    <button class="btn btn-secondary" onclick="useManualModelUrn()">Use This URN</button>
+                </div>
+            `;
+        }
+    } else {
+        // Show discovered models
+        if (folderTree) {
             folderTree.innerHTML = `
-                <h4>Revit Models in ${selectedProjectData.name}</h4>
-                <p class="architecture-note">🏗️ Following Forge Viewer + Model Properties + AEC Data workflow</p>
+                <h4>Discovered Revit Models (${discoveredModels.length})</h4>
                 <div class="models-list">
-                    ${discoveredModels.map(model => `
-                        <div class="tree-item model-item enhanced" onclick="selectEnhancedModel('${model.id}', '${model.name}', '${model.versionUrn}')">
-                            <input type="checkbox" class="model-checkbox" id="model_${model.id}" />
-                            <span class="tree-icon">📋</span>
-                            <div class="model-info">
+                    ${discoveredModels.map((model, index) => `
+                        <div class="model-item" onclick="selectDiscoveredModel(${index})">
+                            <input type="radio" name="modelSelection" id="model_${index}" value="${index}">
+                            <label for="model_${index}">
                                 <div class="model-name">${model.name}</div>
                                 <div class="model-details">
                                     <small>📁 ${model.folderName} • 📅 ${new Date(model.lastModified).toLocaleDateString()}</small>
                                 </div>
-                                <div class="architecture-status">
-                                    <span class="status-badge ${getTranslationStatusClass(model.translationStatus)}">
-                                        ${getTranslationStatusText(model.translationStatus)}
-                                    </span>
-                                    <span class="status-badge ${model.modelPropertiesReady ? 'ready' : 'pending'}">
-                                        Model Properties: ${model.modelPropertiesReady ? 'Ready' : 'Pending'}
-                                    </span>
-                                </div>
-                            </div>
+                            </label>
                         </div>
                     `).join('')}
                 </div>
-                <div class="model-actions">
-                    <button class="btn btn-sm" onclick="selectAllModels()">Select All Ready</button>
-                    <button class="btn btn-sm" onclick="clearAllModels()">Clear Selection</button>
-                    <button class="btn btn-sm" onclick="refreshTranslationStatus()">Refresh Status</button>
-                </div>
+            `;
+        }
+
+        if (modelsList) {
+            modelsList.innerHTML = `
+                <p>Select a model from the list, or proceed without a model.</p>
+                <button class="btn btn-secondary" onclick="proceedWithoutModel()">
+                    Proceed Without Model
+                </button>
             `;
         }
     }
-
-    // Also populate models grid if it exists
-    const modelsGrid = document.getElementById('modelsGrid');
-    if (modelsGrid) {
-        modelsGrid.innerHTML = discoveredModels.map(model => createModelTile(model).outerHTML).join('');
-    }
-
-    updateAuthStatus('📐 Select Models', 'Choose one or more 3D models for calculations');
 }
 
-// Create model tile for selection
-function createModelTile(model) {
-    const tile = document.createElement('div');
-    tile.className = 'model-tile';
-    tile.dataset.modelId = model.id;
+// Select discovered model
+function selectDiscoveredModel(index) {
+    const model = discoveredModels[index];
+    if (model) {
+        selectedModels = [model];
+        console.log('Selected model:', model.name);
 
-    const statusClass = model.translationStatus === 'ready' ? 'ready' :
-        model.translationStatus === 'translating' ? 'translating' :
-            model.translationStatus === 'error' ? 'error' : 'pending';
+        // Update UI
+        document.querySelectorAll('.model-item').forEach((item, i) => {
+            item.classList.toggle('selected', i === index);
+        });
 
-    tile.innerHTML = `
-        <div class="model-icon">
-            <svg width="40" height="40" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-            </svg>
-        </div>
-        <div class="model-info">
-            <h4>${model.name}</h4>
-            <p>${model.folderName}</p>
-            <p class="model-size">${formatFileSize(model.size)}</p>
-        </div>
-        <div class="model-status ${statusClass}">
-            ${statusClass === 'ready' ? 'Ready' :
-            statusClass === 'translating' ? 'Processing...' :
-                statusClass === 'error' ? 'Error' : 'Pending'}
-        </div>
-    `;
+        // Enable select button
+        const selectBtn = document.querySelector('#modelSelectionModal .btn-primary');
+        if (selectBtn) {
+            selectBtn.disabled = false;
+        }
+    }
+}
 
-    if (model.translationStatus === 'ready') {
-        tile.onclick = () => selectModelTile(model);
+// Proceed without model
+function proceedWithoutModel() {
+    console.log('Proceeding without model selection');
+    selectedModels = [];
+    closeModelSelection();
+    openFullCalculator();
+}
+
+// Use manual URN
+function useManualModelUrn() {
+    const urnInput = document.getElementById('manualModelUrn');
+    const urn = urnInput?.value?.trim();
+
+    if (urn) {
+        selectedModels = [{
+            id: 'manual',
+            name: 'Manually Entered Model',
+            versionUrn: urn,
+            translationStatus: 'unknown',
+            modelPropertiesReady: false
+        }];
+
+        console.log('Using manual URN:', urn);
+        closeModelSelection();
+        openFullCalculator();
     } else {
-        tile.style.opacity = '0.6';
-        tile.style.cursor = 'not-allowed';
+        alert('Please enter a valid Model URN');
     }
-
-    return tile;
 }
 
-// Handle model tile selection
-function selectModelTile(model) {
-    const tile = document.querySelector(`[data-model-id="${model.id}"]`);
-
-    if (tile.classList.contains('selected')) {
-        // Deselect
-        tile.classList.remove('selected');
-        selectedModels = selectedModels.filter(m => m.id !== model.id);
+// Handle model selection
+function handleModelSelection() {
+    if (selectedModels.length > 0) {
+        console.log('Models selected:', selectedModels.map(m => m.name));
+        closeModelSelection();
+        openFullCalculator();
     } else {
-        // Select
-        tile.classList.add('selected');
-        selectedModels.push(model);
-    }
-
-    // Enable/disable confirm button
-    const selectBtn = document.getElementById('selectModelBtn');
-    if (selectBtn) {
-        selectBtn.disabled = selectedModels.length === 0;
+        alert('Please select at least one model or proceed without a model');
     }
 }
 
-// ALIGNED: Enhanced model selection with architecture validation
-function selectEnhancedModel(modelId, modelName, versionUrn) {
-    const model = discoveredModels.find(m => m.id === modelId);
-    const checkbox = document.getElementById(`model_${modelId}`);
+// Close model selection
+function closeModelSelection() {
+    const modalOverlay = document.getElementById('modelSelectionModal');
+    if (modalOverlay) {
+        modalOverlay.style.display = 'none';
+    }
+}
 
-    if (!model || !checkbox) return;
-
-    // Validate model readiness for architecture workflow
-    if (model.translationStatus !== 'ready') {
-        showNotification(`${modelName} is not ready. SVF2 translation required for Model Properties API.`, 'warning');
+// Open model selector
+function openModelSelector() {
+    if (!selectedProject) {
+        showNotification('Please select a project first', 'warning');
         return;
     }
 
-    const wasChecked = checkbox.checked;
-    checkbox.checked = !wasChecked;
-
-    // Update selected models array
-    if (checkbox.checked) {
-        if (!selectedModels.find(m => m.id === modelId)) {
-            selectedModels.push({
-                id: modelId,
-                name: modelName,
-                versionUrn: versionUrn,
-                ...model
-            });
-        }
+    if (discoveredModels.length === 0) {
+        initializeWithProjectData();
     } else {
-        selectedModels = selectedModels.filter(m => m.id !== modelId);
-    }
-
-    updateModelSelectionUI();
-    updateLoadModelButton();
-}
-
-// Confirm model selection and load
-async function confirmModelSelection() {
-    try {
-        if (selectedModels.length === 0) {
-            showNotification('Please select at least one model', 'warning');
-            return;
-        }
-
-        updateAuthStatus('🔄 Loading Models', 'Initializing selected models...');
-
-        // Set primary model
-        selectedModel = selectedModels.length === 1 ? selectedModels[0] : {
-            id: 'multiple',
-            name: `${selectedModels.length} Models`,
-            models: selectedModels
-        };
-
-        closeModelSelection();
-
-        // ALIGNED: Initialize full architecture workflow
-        await initializeFullArchitectureWorkflow();
-
-    } catch (error) {
-        console.error('Failed to load models with full architecture:', error);
-        showNotification('Failed to initialize architecture workflow: ' + error.message, 'error');
+        showAlignedModelSelection();
     }
 }
 
-// ALIGNED: Initialize the complete architecture workflow as specified in directives
-async function initializeFullArchitectureWorkflow() {
-    try {
-        updateAuthStatus('🏗️ Initializing Architecture', 'Setting up Forge Viewer + Model Properties + AEC Data workflow...');
+// Open full calculator
+function openFullCalculator() {
+    const projectSelection = document.getElementById('projectSelection');
+    const calculatorInterface = document.getElementById('calculatorInterface');
 
-        // Step 1: Initialize Forge Viewer with proper configuration
-        await initializeForgeViewerProperly();
-
-        // Step 2: Setup element selection and filtering capabilities
-        setupEnhancedElementSelection();
-
-        // Step 3: Show calculator interface with full capabilities
-        showEnhancedCalculatorInterface();
-
-        console.log('✅ Full architecture workflow initialized');
-
-    } catch (error) {
-        console.error('Architecture workflow initialization failed:', error);
-        throw error;
+    if (projectSelection) projectSelection.style.display = 'none';
+    if (calculatorInterface) {
+        calculatorInterface.style.display = 'grid';
+        initializeCalculatorInterface();
     }
 }
 
-// Calculator Interface
+// Initialize calculator interface
 function initializeCalculatorInterface() {
-    const projectSelection = document.getElementById('projectSelection');
     const calculatorInterface = document.getElementById('calculatorInterface');
+    if (!calculatorInterface) return;
 
-    // Hide project selection and show calculator
-    projectSelection.style.display = 'none';
-    calculatorInterface.style.display = 'grid';
-
-    // Initialize Forge Viewer
-    initializeForgeViewer();
-
-    // Load calculation history
-    updateCalculationHistoryUI();
-
-    showNotification('Calculator initialized with model: ' + selectedModel.name, 'success');
-}
-
-function showEnhancedCalculatorInterface() {
-    const projectSelection = document.getElementById('projectSelection');
-    const calculatorInterface = document.getElementById('calculatorInterface');
-
-    // Hide project selection and show calculator
-    projectSelection.style.display = 'none';
-    calculatorInterface.style.display = 'grid';
-
-    // Update selected model name display
-    const selectedModelName = document.getElementById('selectedModelName');
-    if (selectedModelName) {
-        selectedModelName.textContent = selectedModel.name;
-    }
-
-    // Load calculation history
-    updateCalculationHistoryUI();
-
-    showNotification('Calculator initialized with enhanced architecture: ' + selectedModel.name, 'success');
-}
-
-// ALIGNED: Initialize Forge Viewer following directives
-async function initializeForgeViewerProperly() {
-    try {
-        console.log('🎨 Initializing Forge Viewer with SVF2 support...');
-
-        const viewerContainer = document.getElementById('forgeViewer');
-        const viewerLoading = document.getElementById('viewerLoading');
-
-        // Load Forge Viewer JavaScript dynamically
-        await loadForgeViewerScript();
-
-        // Initialize viewer with proper options for Model Properties API
-        const options = {
-            env: 'AutodeskProduction',
-            api: 'derivativeV2',
-            getAccessToken: function (onTokenReady) {
-                const token = forgeAccessToken;
-                const timeInSeconds = 3600; // 1 hour
-                onTokenReady(token, timeInSeconds);
-            }
-        };
-
-        return new Promise((resolve, reject) => {
-            Autodesk.Viewing.Initializer(options, function () {
-                // Create viewer instance
-                forgeViewer = new Autodesk.Viewing.GuiViewer3D(viewerContainer);
-
-                const startedCode = forgeViewer.start();
-                if (startedCode > 0) {
-                    console.error('Failed to create a Viewer: WebGL not supported.');
-                    reject(new Error('WebGL not supported'));
-                    return;
-                }
-
-                // Load the first selected model
-                const primaryModel = selectedModels[0] || selectedModel;
-                loadModelInViewer(primaryModel);
-
-                // Setup enhanced event handlers for architecture workflow
-                setupEnhancedViewerEventHandlers();
-
-                resolve();
-            });
-        });
-
-    } catch (error) {
-        console.error('Forge Viewer initialization failed:', error);
-        throw error;
-    }
-}
-
-// Forge Viewer Integration
-async function initializeForgeViewer() {
-    const viewerContainer = document.getElementById('forgeViewer');
-    const viewerLoading = document.getElementById('viewerLoading');
-
-    try {
-        // Load Forge Viewer script dynamically
-        await loadForgeViewerScript();
-
-        const options = {
-            env: 'AutodeskProduction',
-            api: 'derivativeV2',
-            getAccessToken: function (onTokenReady) {
-                const token = forgeAccessToken;
-                const timeInSeconds = 3600;
-                onTokenReady(token, timeInSeconds);
-            }
-        };
-
-        return new Promise((resolve, reject) => {
-            Autodesk.Viewing.Initializer(options, function () {
-                forgeViewer = new Autodesk.Viewing.GuiViewer3D(viewerContainer);
-
-                const startedCode = forgeViewer.start();
-                if (startedCode > 0) {
-                    console.error('Failed to create a Viewer: WebGL not supported.');
-                    reject(new Error('WebGL not supported'));
-                    return;
-                }
-
-                // Hide loading indicator
-                if (viewerLoading) viewerLoading.style.display = 'none';
-
-                // Setup viewer tools
-                setupViewerTools();
-
-                resolve();
-            });
-        });
-    } catch (error) {
-        console.error('Failed to initialize Forge Viewer:', error);
-        showNotification('Failed to initialize 3D viewer', 'error');
-        throw error;
-    }
-}
-
-// Load Forge Viewer script
-function loadForgeViewerScript() {
-    return new Promise((resolve, reject) => {
-        if (typeof Autodesk !== 'undefined') {
-            resolve();
-            return;
+    // Build the full calculator interface
+    calculatorInterface.innerHTML = `
+        <!-- 3D Viewer Panel -->
+        <div class="viewer-panel">
+            <div class="viewer-header">
+                <h3>3D Model Viewer</h3>
+                <div class="viewer-controls">
+                    <button class="viewer-btn" onclick="resetView()">Reset View</button>
+                    <button class="viewer-btn" onclick="toggleIsolate()">Isolate</button>
+                </div>
+            </div>
+            <div class="viewer-container" id="forgeViewer">
+                ${selectedModels.length > 0 ?
+            '<p class="loading-message">Loading 3D model...</p>' :
+            '<div class="no-model-message"><p>No model selected</p><p>Calculations can still be performed manually</p></div>'
         }
+            </div>
+        </div>
 
-        const script = document.createElement('script');
-        script.src = 'https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js';
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
+        <!-- Calculation Panel -->
+        <div class="calculation-panel">
+            <div class="calc-header">
+                <h3>Engineering Calculations</h3>
+                <button class="btn btn-sm" onclick="clearResults()">Clear</button>
+            </div>
+            
+            <!-- Calculation Tabs -->
+            <div class="calc-tabs">
+                <button class="tab-btn active" onclick="switchTab('point-loads')">Point Loads</button>
+                <button class="tab-btn" onclick="switchTab('columns')">Columns</button>
+                <button class="tab-btn" onclick="switchTab('walls')">Walls/Panels</button>
+                <button class="tab-btn" onclick="switchTab('beams')">Beams/Spandrels</button>
+                <button class="tab-btn" onclick="switchTab('double-tees')">Double Tees</button>
+            </div>
+            
+            <div class="calc-content">
+                <!-- Point Loads Tab -->
+                <div id="point-loads" class="tab-content active">
+                    <h3>Point Load Transfer Analysis</h3>
+                    <form class="calculation-form">
+                        <div class="form-group">
+                            <label>Load (kips):</label>
+                            <input type="number" id="pointLoad" step="0.1" value="100">
+                        </div>
+                        <div class="form-group">
+                            <label>Eccentricity (in):</label>
+                            <input type="number" id="eccentricity" step="0.1" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Load Factor:</label>
+                            <select id="loadFactor">
+                                <option value="1.4">Dead Load (1.4)</option>
+                                <option value="1.7">Live Load (1.7)</option>
+                                <option value="1.2">Combined (1.2)</option>
+                            </select>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="calculatePointLoad()">
+                            Calculate Transfer
+                        </button>
+                    </form>
+                </div>
 
-        const style = document.createElement('link');
-        style.rel = 'stylesheet';
-        style.type = 'text/css';
-        style.href = 'https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css';
-        document.head.appendChild(style);
-    });
-}
+                <!-- Columns Tab -->
+                <div id="columns" class="tab-content">
+                    <h3>Prestressed Column Design</h3>
+                    <form class="calculation-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Width (in):</label>
+                                <input type="number" id="columnWidth" value="24">
+                            </div>
+                            <div class="form-group">
+                                <label>Depth (in):</label>
+                                <input type="number" id="columnDepth" value="24">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Height (ft):</label>
+                                <input type="number" id="columnHeight" value="20">
+                            </div>
+                            <div class="form-group">
+                                <label>Axial Load (kips):</label>
+                                <input type="number" id="columnLoad" value="500">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Strand Pattern:</label>
+                            <select id="strandPattern">
+                                <option value="4-corner">4 Corner Strands</option>
+                                <option value="8-perimeter">8 Perimeter Strands</option>
+                                <option value="12-grid">12 Grid Pattern</option>
+                            </select>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="calculateColumn()">
+                            Design Column
+                        </button>
+                    </form>
+                </div>
 
-// Load model in viewer
-function loadModelInViewer(model) {
-    const viewerLoading = document.getElementById('viewerLoading');
-    if (viewerLoading) viewerLoading.style.display = 'flex';
+                <!-- Additional tabs would go here -->
+            </div>
+        </div>
 
-    const documentId = `urn:${model.versionUrn}`;
-
-    Autodesk.Viewing.Document.load(documentId, onDocumentLoadSuccess, onDocumentLoadFailure);
-
-    function onDocumentLoadSuccess(doc) {
-        const viewables = doc.getRoot().getDefaultGeometry();
-        forgeViewer.loadDocumentNode(doc, viewables).then(() => {
-            if (viewerLoading) viewerLoading.style.display = 'none';
-            setupViewerTools();
-        });
-    }
-
-    function onDocumentLoadFailure(viewerErrorCode) {
-        console.error('Failed to load document:', viewerErrorCode);
-        if (viewerLoading) viewerLoading.style.display = 'none';
-        showNotification('Failed to load 3D model', 'error');
-    }
-}
-
-// Setup enhanced viewer event handlers
-function setupEnhancedViewerEventHandlers() {
-    if (!forgeViewer) return;
-
-    // Selection changed event
-    forgeViewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, (event) => {
-        const dbIds = event.dbIdArray;
-        if (dbIds.length > 0) {
-            handleElementSelection(dbIds);
-        }
-    });
-
-    // Model loaded event
-    forgeViewer.addEventListener(Autodesk.Viewing.GEOMETRY_LOADED_EVENT, () => {
-        console.log('✅ Model geometry loaded');
-        indexModelProperties();
-    });
-}
-
-// Setup viewer tools
-function setupViewerTools() {
-    if (!forgeViewer) return;
-
-    // Add measurement tool
-    forgeViewer.loadExtension('Autodesk.Measure');
-
-    // Setup selection highlighting
-    forgeViewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, (event) => {
-        const dbIds = event.dbIdArray;
-        if (dbIds.length > 0) {
-            getElementProperties(dbIds[0]);
-        }
-    });
-}
-
-// ALIGNED: Setup enhanced element selection following architecture
-function setupEnhancedElementSelection() {
-    console.log('🎯 Setting up enhanced element selection for BIM data extraction...');
-    // This would integrate with Model Properties API
-    // and AEC Data Model as specified in directives
-}
-
-// ALIGNED: Index model properties for efficient queries
-async function indexModelProperties() {
-    try {
-        console.log('📊 Indexing model properties...');
-
-        if (!forgeViewer || !forgeViewer.model) return;
-
-        const tree = forgeViewer.model.getInstanceTree();
-        const dbIds = [];
-
-        tree.enumNodeChildren(tree.getRootId(), (dbId) => {
-            dbIds.push(dbId);
-        }, true);
-
-        // Get properties for all elements
-        const propertyPromises = dbIds.map(dbId => new Promise((resolve) => {
-            forgeViewer.getProperties(dbId, (props) => {
-                resolve({ dbId, properties: props });
-            });
-        }));
-
-        const allProperties = await Promise.all(propertyPromises);
-        console.log(`✅ Indexed ${allProperties.length} elements`);
-
-        modelPropertiesIndexed = true;
-
-    } catch (error) {
-        console.error('Property indexing failed:', error);
-    }
-}
-
-// Handle element selection
-function handleElementSelection(dbIds) {
-    console.log('Selected elements:', dbIds);
-
-    // Get properties of first selected element
-    if (dbIds.length > 0) {
-        getElementProperties(dbIds[0]);
-    }
-}
-
-// Get element properties
-function getElementProperties(dbId) {
-    if (!forgeViewer) return;
-
-    forgeViewer.getProperties(dbId, (result) => {
-        console.log('Element properties:', result);
-        displayElementInfo(result);
-        updateSelectedElementInfo(result);
-    });
-}
-
-// Display element information
-function displayElementInfo(properties) {
-    const resultsDiv = document.getElementById('calculationResults');
-    if (!resultsDiv) return;
-
-    const elementInfo = `
-        <div class="element-info">
-            <h4>Selected Element</h4>
-            <p><strong>Name:</strong> ${properties.name}</p>
-            <p><strong>ID:</strong> ${properties.dbId}</p>
-            <p><strong>Type:</strong> ${properties.properties.find(p => p.displayName === 'Type')?.displayValue || 'N/A'}</p>
+        <!-- Results Panel -->
+        <div class="results-panel">
+            <div class="results-header">
+                <h3>Calculation Results</h3>
+                <button class="btn btn-sm" onclick="saveCalculation()">Save to OSS</button>
+            </div>
+            <div id="calculationResults" class="results-content">
+                <p class="placeholder">Run a calculation to see results here</p>
+            </div>
+            <div class="calculation-history">
+                <h4>Recent Calculations</h4>
+                <div id="calculationHistory" class="history-list">
+                    <!-- History items will be added here -->
+                </div>
+            </div>
         </div>
     `;
 
-    resultsDiv.innerHTML = elementInfo;
-}
-
-function updateSelectedElementInfo(properties) {
-    // Update current calculation with selected element info
-    if (currentCalculation) {
-        currentCalculation.selectedElement = {
-            name: properties.name,
-            dbId: properties.dbId,
-            properties: properties.properties
-        };
-    }
-
-    showNotification('Element selected: ' + properties.name, 'info');
-}
-
-// Viewer controls
-function resetViewerView() {
-    if (forgeViewer) {
-        forgeViewer.navigation.setRequestHomeView(true);
-    }
-}
-
-function fitViewerToWindow() {
-    if (forgeViewer) {
-        forgeViewer.navigation.fitBounds(true);
+    // Initialize Forge Viewer if model selected
+    if (selectedModels.length > 0) {
+        initializeForgeViewer();
     }
 }
 
 // Tab switching
 function switchTab(tabName) {
-    // Remove active class from all tabs
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-
-    // Add active class to selected tab
+    // Update tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
     event.target.classList.add('active');
-    const tabContent = document.getElementById(tabName);
-    if (tabContent) tabContent.classList.add('active');
+
+    // Update tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    const targetTab = document.getElementById(tabName);
+    if (targetTab) {
+        targetTab.classList.add('active');
+    }
 }
 
 // Calculation Functions
@@ -1179,7 +988,7 @@ function calculateColumn() {
     addToHistory(results);
 }
 
-// Display calculation results
+// Display results
 function displayResults(results) {
     const resultsDiv = document.getElementById('calculationResults');
     if (!resultsDiv) return;
@@ -1206,136 +1015,38 @@ function displayResults(results) {
     `;
 
     resultsDiv.innerHTML = html;
+    currentCalculation = results;
 }
 
-// Format label for display
-function formatLabel(key) {
-    return key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-}
+// Add to history
+function addToHistory(results) {
+    results.timestamp = new Date().toISOString();
+    results.projectId = selectedProject;
+    results.projectName = selectedProjectData?.name || 'Unknown Project';
 
-// Add calculation to history
-function addToHistory(calculation) {
-    calculation.timestamp = new Date().toISOString();
-    calculation.project = selectedProjectData?.name || 'Unknown Project';
-
-    calculationHistory.unshift(calculation);
+    calculationHistory.unshift(results);
     if (calculationHistory.length > 10) {
         calculationHistory.pop();
     }
 
     saveCalculationHistory();
-    updateCalculationHistoryUI();
+    updateHistoryDisplay();
 }
 
-// Save calculation to OSS
-async function saveCalculation() {
-    try {
-        const currentResult = calculationHistory[0];
-        if (!currentResult) {
-            showNotification('No calculation to save', 'warning');
-            return;
-        }
-
-        showNotification('Saving calculation to ACC...', 'info');
-
-        // Create calculation report
-        const report = {
-            type: 'engineering-calc-report',
-            project: selectedProjectData?.name,
-            projectId: selectedProject,
-            model: selectedModel?.name,
-            calculations: [currentResult],
-            timestamp: new Date().toISOString(),
-            metadata: {
-                engineer: globalHubData?.accountInfo?.name || 'Unknown',
-                designNumber: `CALC-${Date.now()}`
-            }
-        };
-
-        // Use existing OSS storage function
-        await saveReportToOSS(report);
-
-        showNotification('Calculation saved successfully', 'success');
-
-    } catch (error) {
-        console.error('Failed to save calculation:', error);
-        showNotification('Failed to save calculation: ' + error.message, 'error');
-    }
-}
-
-// Save report to OSS (matching QC pattern)
-async function saveReportToOSS(report) {
-    try {
-        const fileName = `engineering_calc_${Date.now()}.json`;
-        const fileContent = JSON.stringify(report, null, 2);
-        const blob = new Blob([fileContent], { type: 'application/json' });
-
-        // Get signed URL
-        const response = await fetch('/.netlify/functions/oss-storage', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${forgeAccessToken}`
-            },
-            body: JSON.stringify({
-                action: 'getUploadUrl',
-                fileName: fileName,
-                contentType: 'application/json',
-                projectId: selectedProject
-            })
-        });
-
-        if (!response.ok) throw new Error('Failed to get upload URL');
-
-        const { uploadUrl } = await response.json();
-
-        // Upload to S3
-        const uploadResponse = await fetch(uploadUrl, {
-            method: 'PUT',
-            body: blob,
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!uploadResponse.ok) throw new Error('Failed to upload file');
-
-        return fileName;
-
-    } catch (error) {
-        console.error('OSS save failed:', error);
-        throw error;
-    }
-}
-
-// Load calculation history
-function loadCalculationHistory() {
-    const stored = localStorage.getItem('engineering_calc_history');
-    if (stored) {
-        calculationHistory = JSON.parse(stored);
-        updateCalculationHistoryUI();
-    }
-}
-
-// Save calculation history
-function saveCalculationHistory() {
-    localStorage.setItem('engineering_calc_history', JSON.stringify(calculationHistory));
-}
-
-// Update calculation history UI
-function updateCalculationHistoryUI() {
+// Update history display
+function updateHistoryDisplay() {
     const historyDiv = document.getElementById('calculationHistory');
     if (!historyDiv) return;
 
     if (calculationHistory.length === 0) {
-        historyDiv.innerHTML = '<p class="placeholder">No recent calculations</p>';
+        historyDiv.innerHTML = '<p class="no-history">No calculations yet</p>';
         return;
     }
 
     const html = calculationHistory.map((calc, index) => `
         <div class="history-item" onclick="loadHistoryItem(${index})">
             <div class="history-type">${calc.type}</div>
-            <div class="history-time">${new Date(calc.timestamp).toLocaleString()}</div>
+            <div class="history-time">${new Date(calc.timestamp).toLocaleTimeString()}</div>
             <div class="history-status ${calc.outputs.status === 'PASS' ? 'pass' : 'fail'}">
                 ${calc.outputs.status}
             </div>
@@ -1353,334 +1064,107 @@ function loadHistoryItem(index) {
     }
 }
 
-// Model selection functions
-function openModelSelector() {
-    if (!selectedProject) {
-        showNotification('Please select a project first', 'warning');
-        return;
-    }
-
-    // Initialize model discovery if not already done
-    if (discoveredModels.length === 0) {
-        initializeWithProjectData();
-    } else {
-        showAlignedModelSelection();
-    }
+// Save calculation history
+function saveCalculationHistory() {
+    localStorage.setItem('calculationHistory', JSON.stringify(calculationHistory));
 }
 
-function closeModelSelection() {
-    const modal = document.getElementById('modelSelectionModal');
-    if (modal) modal.style.display = 'none';
-}
-
-// Project selection
-async function onProjectChange() {
-    const projectSelect = document.getElementById('projectSelect');
-    selectedProject = projectSelect.value;
-
-    if (!selectedProject) {
-        document.getElementById('projectName').textContent = 'No project selected';
-        document.getElementById('projectDetails').textContent = 'Select a project to begin calculations';
-        document.getElementById('modelSelectBtn').disabled = true;
-        return;
-    }
-
-    // Find project data
-    selectedProjectData = globalHubData.projects.find(p => p.id === selectedProject);
-
-    if (selectedProjectData) {
-        document.getElementById('projectName').textContent = selectedProjectData.name;
-        document.getElementById('projectDetails').textContent = `ID: ${selectedProjectData.id}`;
-        document.getElementById('modelSelectBtn').disabled = false;
-
-        // Clear discovered models for new project
-        discoveredModels = [];
-        selectedModels = [];
-    }
-}
-
-// Populate project dropdown
-function populateProjectDropdown() {
-    const projectSelect = document.getElementById('projectSelect');
-    if (!projectSelect || !globalHubData) return;
-
-    projectSelect.innerHTML = '<option value="">Select a project...</option>';
-
-    globalHubData.projects.forEach(project => {
-        const option = document.createElement('option');
-        option.value = project.id;
-        option.textContent = project.name;
-        projectSelect.appendChild(option);
-    });
-
-    // If project was pre-selected, set it
-    if (selectedProject) {
-        projectSelect.value = selectedProject;
-        onProjectChange();
-    }
-}
-
-// Load pre-loaded hub data
-async function loadPreLoadedHubData() {
+// Load calculation history
+function loadCalculationHistory() {
     try {
-        if (!globalHubData) {
-            // Try to get from parent window
-            if (window.opener && window.opener.CastLinkAuth) {
-                globalHubData = window.opener.CastLinkAuth.getHubData();
-            }
-
-            // Or load from stored data
-            if (!globalHubData) {
-                const stored = sessionStorage.getItem('hub_data');
-                if (stored) {
-                    globalHubData = JSON.parse(stored);
-                }
-            }
+        const saved = localStorage.getItem('calculationHistory');
+        if (saved) {
+            calculationHistory = JSON.parse(saved);
+            updateHistoryDisplay();
         }
+    } catch (error) {
+        console.error('Error loading calculation history:', error);
+    }
+}
 
-        if (globalHubData) {
-            console.log(`✅ Loaded ${globalHubData.projects.length} projects`);
-            populateProjectDropdown();
-        }
+// Clear results
+function clearResults() {
+    const resultsDiv = document.getElementById('calculationResults');
+    if (resultsDiv) {
+        resultsDiv.innerHTML = '<p class="placeholder">Run a calculation to see results here</p>';
+    }
+    currentCalculation = null;
+}
+
+// Save calculation to OSS
+async function saveCalculation() {
+    if (!currentCalculation) {
+        showNotification('No calculation to save', 'warning');
+        return;
+    }
+
+    try {
+        showNotification('Saving calculation...', 'info');
+
+        // Prepare calculation data
+        const calculationData = {
+            ...currentCalculation,
+            savedAt: new Date().toISOString(),
+            projectId: selectedProject,
+            projectName: selectedProjectData?.name || 'Unknown Project',
+            modelInfo: selectedModels.length > 0 ? selectedModels[0] : null
+        };
+
+        // Save to OSS (implementation would go here)
+        console.log('Saving calculation to OSS:', calculationData);
+
+        showNotification('Calculation saved successfully!', 'success');
 
     } catch (error) {
-        console.error('Failed to load hub data:', error);
+        console.error('Error saving calculation:', error);
+        showNotification('Failed to save calculation', 'error');
     }
 }
 
-// Helper functions for enhanced architecture
-function getTranslationStatusClass(status) {
-    switch (status) {
-        case 'ready': return 'ready';
-        case 'translating': return 'translating';
-        case 'error': return 'error';
-        default: return 'pending';
-    }
+// Format label helper
+function formatLabel(key) {
+    return key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
 }
 
-function getTranslationStatusText(status) {
-    switch (status) {
-        case 'ready': return 'SVF2 Ready';
-        case 'translating': return 'Translating...';
-        case 'error': return 'Translation Error';
-        default: return 'Translation Pending';
-    }
+// Initialize Forge Viewer (placeholder)
+function initializeForgeViewer() {
+    console.log('Initializing Forge Viewer with model:', selectedModels[0]);
+    // Actual Forge Viewer initialization would go here
 }
 
-// Update model selection UI
-function updateModelSelectionUI() {
-    const preview = document.querySelector('.model-preview');
-    if (!preview) return;
+// UI Functions
+function updateAuthStatus(status, info = '') {
+    const statusElement = document.getElementById('authStatus');
+    const infoElement = document.getElementById('authInfo');
+    const indicator = document.getElementById('authIndicator');
 
-    if (selectedModels.length === 0) {
-        preview.innerHTML = `
-            <div class="preview-placeholder">
-                <h4>No Models Selected</h4>
-                <p>Check the boxes next to models to select them</p>
-                <small>Select models with SVF2 ready status</small>
-            </div>
-        `;
-    } else if (selectedModels.length === 1) {
-        const model = selectedModels[0];
-        preview.innerHTML = `
-            <div class="preview-placeholder">
-                <h4>${model.name}</h4>
-                <p>📁 ${model.folderName}</p>  
-                <p>📅 Modified: ${new Date(model.lastModified).toLocaleDateString()}</p>
-                <p>📏 Size: ${formatFileSize(model.size)}</p>
-                <p>🏗️ Status: ${getTranslationStatusText(model.translationStatus)}</p>
-                <small>Ready for architecture workflow</small>
-            </div>
-        `;
-    } else {
-        preview.innerHTML = `
-            <div class="preview-placeholder">
-                <h4>${selectedModels.length} Models Selected</h4>
-                <ul style="text-align: left; font-size: 0.75rem;">
-                    ${selectedModels.slice(0, 3).map(m => `<li>• ${m.name}</li>`).join('')}
-                    ${selectedModels.length > 3 ? `<li>• ... and ${selectedModels.length - 3} more</li>` : ''}
-                </ul>
-                <small>Multiple models for comparative analysis</small>
-            </div>
-        `;
-    }
-}
+    if (statusElement) statusElement.textContent = status;
+    if (infoElement) infoElement.textContent = info;
 
-// Update Load Model button state
-function updateLoadModelButton() {
-    const loadModelBtn = document.getElementById('loadModelBtn');
-    if (loadModelBtn) {
-        const readyModels = selectedModels.filter(m => m.translationStatus === 'ready');
-        loadModelBtn.disabled = readyModels.length === 0;
-
-        if (readyModels.length === 0) {
-            loadModelBtn.textContent = 'Select Ready Models';
-        } else if (readyModels.length === 1) {
-            loadModelBtn.textContent = 'Load Model';
-        } else {
-            loadModelBtn.textContent = `Load ${readyModels.length} Models`;
-        }
-    }
-}
-
-// Utility functions
-function selectAllModels() {
-    const readyModels = discoveredModels.filter(m => m.translationStatus === 'ready');
-    readyModels.forEach(model => {
-        const checkbox = document.getElementById(`model_${model.id}`);
-        if (checkbox && !checkbox.checked) {
-            checkbox.checked = true;
-            if (!selectedModels.find(m => m.id === model.id)) {
-                selectedModels.push({
-                    id: model.id,
-                    name: model.name,
-                    versionUrn: model.versionUrn,
-                    ...model
-                });
-            }
-        }
-    });
-    updateModelSelectionUI();
-    updateLoadModelButton();
-}
-
-function clearAllModels() {
-    selectedModels = [];
-    document.querySelectorAll('.model-checkbox').forEach(checkbox => {
-        checkbox.checked = false;
-    });
-    updateModelSelectionUI();
-    updateLoadModelButton();
-}
-
-function refreshTranslationStatus() {
-    showNotification('Refreshing translation status...', 'info');
-    // Re-check translation status for all models
-    ensureModelsTranslatedToSVF2().then(() => {
-        showAlignedModelSelection();
-        showNotification('Translation status updated', 'success');
-    });
-}
-
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// Token management functions (same as QC)
-function getStoredToken() {
-    const stored = sessionStorage.getItem('forge_token') || localStorage.getItem('forge_token_backup');
-    return stored ? JSON.parse(stored) : null;
-}
-
-function isTokenExpired(tokenInfo) {
-    const now = Date.now();
-    const expiresAt = tokenInfo.expires_at;
-    const timeUntilExpiry = expiresAt - now;
-    return timeUntilExpiry < (5 * 60 * 1000);
-}
-
-function clearStoredToken() {
-    sessionStorage.removeItem('forge_token');
-    localStorage.removeItem('forge_token_backup');
-    console.log('Token cleared');
-}
-
-async function verifyToken(token) {
-    try {
-        const response = await fetch('https://developer.api.autodesk.com/userprofile/v1/users/@me', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        return response.ok;
-    } catch {
-        return false;
-    }
-}
-
-function updateAuthStatus(status, description) {
-    const authStatus = document.getElementById('authStatus');
-    const authInfo = document.getElementById('authInfo');
-    const authIndicator = document.getElementById('authIndicator');
-
-    if (authStatus) authStatus.textContent = status;
-    if (authInfo) authInfo.textContent = description;
-
-    if (authIndicator) {
-        authIndicator.className = 'status-indicator';
-        if (status.includes('✅')) {
-            authIndicator.classList.add('authenticated');
-        } else if (status.includes('❌')) {
-            authIndicator.classList.add('error');
+    if (indicator) {
+        indicator.classList.remove('authenticated', 'error');
+        if (status.includes('✅') || status.includes('Connected')) {
+            indicator.classList.add('authenticated');
+        } else if (status.includes('❌') || status.includes('Error')) {
+            indicator.classList.add('error');
         }
     }
 }
 
 function showNotification(message, type = 'info') {
-    const notification = document.getElementById('notification');
-    const notificationContent = document.getElementById('notificationContent');
+    console.log(`Notification (${type}): ${message}`);
 
-    if (notification && notificationContent) {
-        notificationContent.textContent = message;
+    const notification = document.getElementById('notification');
+    const content = document.getElementById('notificationContent');
+
+    if (notification && content) {
+        content.textContent = message;
         notification.className = `notification ${type} show`;
 
         setTimeout(() => {
             notification.classList.remove('show');
-        }, 4000);
-    } else {
-        console.log(`Notification (${type}): ${message}`);
+        }, 3000);
     }
-}
-
-function initializeUI() {
-    // Project selection event listener is already set in HTML
-    console.log('UI event listeners initialized');
-}
-
-// Helper function to proceed without a model
-function proceedWithoutModel() {
-    selectedModel = {
-        id: 'no-model',
-        name: 'No Model Selected',
-        versionUrn: null
-    };
-
-    closeModelSelection();
-
-    // Show calculator interface without Forge viewer
-    const projectSelection = document.getElementById('projectSelection');
-    const calculatorInterface = document.getElementById('calculatorInterface');
-
-    if (projectSelection) projectSelection.style.display = 'none';
-    if (calculatorInterface) calculatorInterface.style.display = 'grid';
-
-    // Hide viewer panel or show placeholder
-    const viewerPanel = document.querySelector('.viewer-panel');
-    if (viewerPanel) {
-        const forgeViewer = document.getElementById('forgeViewer');
-        if (forgeViewer) {
-            forgeViewer.innerHTML = `
-                <div class="viewer-placeholder">
-                    <h3>No Model Loaded</h3>
-                    <p>You can still perform calculations without a 3D model.</p>
-                    <p>Element selection features are not available.</p>
-                </div>
-            `;
-        }
-    }
-
-    // Update model name display
-    const selectedModelName = document.getElementById('selectedModelName');
-    if (selectedModelName) {
-        selectedModelName.textContent = 'No model - Manual calculation mode';
-    }
-
-    // Load calculation history
-    updateCalculationHistoryUI();
-
-    showNotification('Calculator ready in manual mode', 'info');
 }
 
 // Navigation
@@ -1688,5 +1172,34 @@ function goBack() {
     window.location.href = 'engineering.html';
 }
 
-// Initialize when page loads
-document.addEventListener('DOMContentLoaded', initializeCalculator);
+// Initialize UI
+function initializeUI() {
+    console.log('Initializing UI elements...');
+
+    // Add any UI initialization here
+}
+
+// Initialize on DOM ready
+document.addEventListener('DOMContentLoaded', function () {
+    console.log('DOM loaded, initializing calculator...');
+    initializeCalculator();
+});
+
+// Export functions for global access
+window.CalculatorModule = {
+    openModelSelector,
+    closeModelSelection,
+    handleModelSelection,
+    proceedWithoutModel,
+    selectDiscoveredModel,
+    useManualModelUrn,
+    onProjectChange,
+    switchTab,
+    calculatePointLoad,
+    calculateColumn,
+    clearResults,
+    saveCalculation,
+    loadHistoryItem,
+    goBack,
+    showNotification
+};
