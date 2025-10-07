@@ -87,17 +87,47 @@ class UserProfile {
     }
 
     async fetchUserProfile(token) {
-        const response = await fetch('https://api.userprofile.autodesk.com/userinfo', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        // Try the UserProfile API first
+        try {
+            const response = await fetch('https://api.userprofile.autodesk.com/userinfo', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
 
-        if (!response.ok) {
-            throw new Error('Failed to fetch user profile');
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ UserProfile API response:', data);
+                return data;
+            }
+            
+            console.warn('UserProfile API failed with status:', response.status);
+        } catch (error) {
+            console.warn('UserProfile API error:', error);
         }
 
-        return await response.json();
+        // Fallback to OAuth userinfo endpoint
+        try {
+            console.log('Trying OAuth userinfo endpoint...');
+            const response = await fetch('https://developer.api.autodesk.com/userprofile/v1/users/@me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ OAuth userinfo response:', data);
+                return data;
+            }
+            
+            console.warn('OAuth userinfo failed with status:', response.status);
+        } catch (error) {
+            console.warn('OAuth userinfo error:', error);
+        }
+
+        // If both fail, throw error
+        throw new Error('Failed to fetch user profile from all endpoints');
     }
 
     render() {

@@ -157,14 +157,22 @@ async function onProjectChange() {
     const projectSelect = document.getElementById('esProjectSelect');
     const modelSelect = document.getElementById('esModelSelect');
     
-    if (!projectSelect || !projectSelect.value) {
+    if (!projectSelect || !projectSelect.value || projectSelect.value === '') {
+        console.log('No project selected, resetting model dropdown');
         modelSelect.innerHTML = '<option value="">Select a project first...</option>';
         modelSelect.disabled = true;
+        
+        // Clear viewer
+        if (viewer && viewerModel) {
+            viewer.unloadModel(viewerModel);
+            viewerModel = null;
+        }
+        
         return;
     }
 
     selectedProjectId = projectSelect.value;
-    console.log('Project selected:', selectedProjectId);
+    console.log('✅ Project selected:', selectedProjectId);
 
     // Reset model selection
     modelSelect.innerHTML = '<option value="">Loading designs from AEC Data Model...</option>';
@@ -180,8 +188,8 @@ async function onProjectChange() {
         // Load designs (element groups) for the selected project
         await loadDesignsForProject(selectedProjectId);
     } catch (error) {
-        console.error('Error loading designs:', error);
-        modelSelect.innerHTML = `<option value="">Error loading designs: ${error.message}</option>`;
+        console.error('❌ Error loading designs:', error);
+        modelSelect.innerHTML = `<option value="">Error: ${error.message}</option>`;
         showNotification('Failed to load designs: ' + error.message, 'error');
     }
 }
@@ -192,13 +200,24 @@ async function loadDesignsForProject(projectId) {
     try {
         console.log('📂 Loading designs for project:', projectId);
 
-        // AEC Data Model requires project ID in URN format
-        // Convert from b.xxx format to urn:adsk.wipprod:fs.project:xxx
+        // AEC Data Model requires project ID in full URN format
+        // ACC format: b.xxx-xxx-xxx
+        // AEC DM format: urn:adsk.wipprod:dm.project:xxx-xxx-xxx
         let aecProjectId = projectId;
+        
         if (projectId.startsWith('b.')) {
-            aecProjectId = `urn:adsk.wipprod:fs.project:${projectId.substring(2)}`;
-            console.log('Converted project ID to URN:', aecProjectId);
+            // Extract the UUID part after 'b.'
+            const uuid = projectId.substring(2);
+            // Use dm.project for Data Management (correct for AEC DM)
+            aecProjectId = `urn:adsk.wipprod:dm.project:${uuid}`;
+            console.log('Converted project ID to AEC DM URN:', aecProjectId);
+        } else if (!projectId.startsWith('urn:')) {
+            // If it doesn't start with b. or urn:, assume it's just the UUID
+            aecProjectId = `urn:adsk.wipprod:dm.project:${projectId}`;
+            console.log('Created AEC DM URN from UUID:', aecProjectId);
         }
+
+        console.log('Using AEC DM Project ID:', aecProjectId);
 
         // Use AEC DM GraphQL helper
         const elementGroups = await window.AECDataModel.getElementGroups(aecProjectId);
