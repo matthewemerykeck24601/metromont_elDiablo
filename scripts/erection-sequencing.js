@@ -199,49 +199,75 @@ async function loadDesignsForProject(projectId) {
     
     try {
         console.log('📂 Loading designs for project:', projectId);
+        console.log('Project ID type:', typeof projectId);
+        console.log('Project ID length:', projectId.length);
 
-        // AEC Data Model requires project ID in full URN format
-        // ACC format: b.xxx-xxx-xxx
-        // AEC DM format: urn:adsk.wipprod:dm.project:xxx-xxx-xxx
-        let aecProjectId = projectId;
+        // AEC Data Model GraphQL uses the project ID directly from ACC
+        // Try different formats to find what works
         
-        if (projectId.startsWith('b.')) {
-            // Extract the UUID part after 'b.'
-            const uuid = projectId.substring(2);
-            // Use dm.project for Data Management (correct for AEC DM)
-            aecProjectId = `urn:adsk.wipprod:dm.project:${uuid}`;
-            console.log('Converted project ID to AEC DM URN:', aecProjectId);
-        } else if (!projectId.startsWith('urn:')) {
-            // If it doesn't start with b. or urn:, assume it's just the UUID
-            aecProjectId = `urn:adsk.wipprod:dm.project:${projectId}`;
-            console.log('Created AEC DM URN from UUID:', aecProjectId);
-        }
-
-        console.log('Using AEC DM Project ID:', aecProjectId);
-
-        // Use AEC DM GraphQL helper
-        const elementGroups = await window.AECDataModel.getElementGroups(aecProjectId);
-
-        if (!elementGroups || elementGroups.length === 0) {
-            modelSelect.innerHTML = '<option value="">No AEC Data Model designs found</option>';
-            showNotification('No designs found. Ensure AEC Data Model is activated and models are Revit 2024+', 'warning');
-            return;
-        }
-
-        console.log(`✅ Found ${elementGroups.length} designs`);
-
-        modelSelect.innerHTML = '<option value="">Select a design...</option>';
-
-        elementGroups.forEach(eg => {
-            const option = document.createElement('option');
-            option.value = eg.id;
-            option.textContent = eg.name;
-            option.dataset.urn = eg.fileVersionUrn || '';
-            option.dataset.egid = eg.id;
-            modelSelect.appendChild(option);
+        let aecProjectId = projectId;
+        let attempts = [];
+        
+        // Format 1: Direct project ID (b.xxx-xxx-xxx)
+        attempts.push({
+            id: projectId,
+            description: 'Direct ACC project ID'
         });
+        
+        // Format 2: Just the UUID part
+        if (projectId.startsWith('b.')) {
+            const uuid = projectId.substring(2);
+            attempts.push({
+                id: uuid,
+                description: 'UUID without b. prefix'
+            });
+        }
 
-        modelSelect.disabled = false;
+        console.log(`Will try ${attempts.length} different project ID formats...`);
+
+        // Try each format until one works
+        for (let i = 0; i < attempts.length; i++) {
+            const attempt = attempts[i];
+            console.log(`\nAttempt ${i + 1}: ${attempt.description}`);
+            console.log('Using ID:', attempt.id);
+            
+            try {
+                const elementGroups = await window.AECDataModel.getElementGroups(attempt.id);
+                
+                // If we got here without error, it worked!
+                console.log(`✅ SUCCESS with ${attempt.description}`);
+                console.log(`Found ${elementGroups.length} element groups`);
+                
+                if (!elementGroups || elementGroups.length === 0) {
+                    modelSelect.innerHTML = '<option value="">No AEC Data Model designs found</option>';
+                    showNotification('No designs found. Ensure AEC Data Model is activated and models are Revit 2024+', 'warning');
+                    return;
+                }
+
+                // Populate dropdown with results
+                modelSelect.innerHTML = '<option value="">Select a design...</option>';
+
+                elementGroups.forEach(eg => {
+                    const option = document.createElement('option');
+                    option.value = eg.id;
+                    option.textContent = eg.name;
+                    option.dataset.urn = eg.fileVersionUrn || '';
+                    option.dataset.egid = eg.id;
+                    modelSelect.appendChild(option);
+                });
+
+                modelSelect.disabled = false;
+                showNotification(`Found ${elementGroups.length} designs`, 'success');
+                return; // Success! Exit function
+                
+            } catch (error) {
+                console.warn(`❌ Failed with ${attempt.description}:`, error.message);
+                // Continue to next attempt
+            }
+        }
+        
+        // If we got here, all attempts failed
+        throw new Error('All project ID formats failed. AEC Data Model might not be available for this project.');
 
     } catch (error) {
         console.error('Error in loadDesignsForProject:', error);
