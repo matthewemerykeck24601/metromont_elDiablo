@@ -64,6 +64,8 @@ async function aecdmQuery(query, variables = {}, region = 'US') {
 
 /**
  * Query to list element groups (designs/models) for a project
+ * Note: projectId must be in URN format: urn:adsk.wipprod:fs.folder:{containerId}
+ * or urn:adsk.wipprod:dm.lineage:{versionId}
  */
 const Q_ELEMENT_GROUPS_BY_PROJECT = `
     query GetElementGroups($projectId: ID!) {

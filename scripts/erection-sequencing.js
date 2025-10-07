@@ -202,16 +202,31 @@ async function loadDesignsForProject(projectId) {
         console.log('Project ID type:', typeof projectId);
         console.log('Project ID length:', projectId.length);
 
-        // AEC Data Model GraphQL uses the project ID directly from ACC
-        // Try different formats to find what works
+        // Get the project's root folder ID (container) for AEC DM queries
+        console.log('🔍 Fetching project container/root folder for AEC DM...');
         
-        let aecProjectId = projectId;
+        const projectFolders = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${globalHubData.hubId}/projects/${projectId}/topFolders`, {
+            headers: {
+                'Authorization': `Bearer ${window.forgeAccessToken}`
+            }
+        });
+
+        if (!projectFolders.ok) {
+            throw new Error(`Failed to get project folders: ${projectFolders.status}`);
+        }
+
+        const foldersData = await projectFolders.json();
+        console.log('✅ Project folders data:', foldersData);
+
+        // AEC Data Model GraphQL uses the project ID in URN format
+        // Try different URN formats based on project structure
+        
         let attempts = [];
         
         // Format 1: Direct project ID (b.xxx-xxx-xxx)
         attempts.push({
             id: projectId,
-            description: 'Direct ACC project ID'
+            description: 'Direct ACC project ID (b.xxx)'
         });
         
         // Format 2: Just the UUID part
@@ -221,6 +236,35 @@ async function loadDesignsForProject(projectId) {
                 id: uuid,
                 description: 'UUID without b. prefix'
             });
+            
+            // Format 3: URN with dm.project
+            attempts.push({
+                id: `urn:adsk.wipprod:dm.project:${uuid}`,
+                description: 'URN: dm.project format'
+            });
+            
+            // Format 4: URN with fs.project  
+            attempts.push({
+                id: `urn:adsk.wipprod:fs.project:${uuid}`,
+                description: 'URN: fs.project format'
+            });
+        }
+        
+        // Format 5: If we have folder data, try using root folder ID
+        if (foldersData.data && foldersData.data.length > 0) {
+            // Try to find the "Project Files" folder
+            const projectFilesFolder = foldersData.data.find(f => 
+                f.attributes?.displayName === 'Project Files' || 
+                f.attributes?.name === 'Project Files'
+            );
+            
+            if (projectFilesFolder && projectFilesFolder.id) {
+                console.log('Found Project Files folder:', projectFilesFolder.id);
+                attempts.push({
+                    id: projectFilesFolder.id,
+                    description: 'Project Files folder ID'
+                });
+            }
         }
 
         console.log(`Will try ${attempts.length} different project ID formats...`);
