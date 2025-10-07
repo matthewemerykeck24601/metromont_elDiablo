@@ -267,6 +267,18 @@ async function loadDesignsForProject(projectId) {
         }
         
         // If we got here, all attempts failed
+        console.error('\n❌ ALL PROJECT ID FORMATS FAILED');
+        console.error('This usually means:');
+        console.error('1. AEC Data Model is NOT activated on this ACC account');
+        console.error('2. Models are from Revit 2023 or earlier (need 2024+)');
+        console.error('3. Models were uploaded BEFORE AEC DM was activated');
+        console.error('4. Wrong region (try EMEA or AUS if not in US)');
+        console.error('\nHow to fix:');
+        console.error('• Contact your ACC Account Admin to activate AEC Data Model');
+        console.error('• Ensure models are from Revit 2024 or newer');
+        console.error('• Re-upload/re-publish models after AEC DM activation');
+        console.error('• Check ACC hub region matches API region setting');
+        
         throw new Error('All project ID formats failed. AEC Data Model might not be available for this project.');
 
     } catch (error) {
@@ -877,6 +889,131 @@ function viewerShowAll() {
         viewer.showAll();
         viewer.fitToView();
     }
+}
+
+// AEC Data Model Diagnostic Test
+async function testAECDataModel() {
+    console.log('\n🧪 === AEC DATA MODEL DIAGNOSTIC TEST ===');
+    
+    if (!selectedProjectId) {
+        showNotification('Please select a project first', 'warning');
+        console.error('❌ No project selected');
+        return;
+    }
+    
+    showNotification('Testing AEC Data Model...', 'info');
+    console.log('📋 Test Configuration:');
+    console.log('  Selected Project ID:', selectedProjectId);
+    console.log('  Forge Token Available:', !!window.forgeAccessToken);
+    console.log('  GraphQL Endpoint:', 'https://developer.api.autodesk.com/aec/graphql');
+    
+    const results = {
+        projectIdFormats: [],
+        regions: []
+    };
+    
+    // Test different project ID formats
+    const formats = [
+        { id: selectedProjectId, name: 'Direct ACC ID (b.xxx)' },
+        { id: selectedProjectId.substring(2), name: 'UUID only (xxx)' }
+    ];
+    
+    console.log('\n📝 Testing Project ID Formats:');
+    for (const format of formats) {
+        try {
+            console.log(`\n  Testing: ${format.name}`);
+            console.log(`  Using ID: ${format.id}`);
+            
+            const data = await window.AECDataModel.getElementGroups(format.id, 'US');
+            
+            results.projectIdFormats.push({
+                format: format.name,
+                id: format.id,
+                success: true,
+                count: data.length
+            });
+            
+            console.log(`  ✅ SUCCESS - Found ${data.length} element groups`);
+            
+        } catch (error) {
+            results.projectIdFormats.push({
+                format: format.name,
+                id: format.id,
+                success: false,
+                error: error.message
+            });
+            
+            console.log(`  ❌ FAILED - ${error.message}`);
+        }
+    }
+    
+    // Test different regions
+    const regions = ['US', 'EMEA', 'AUS'];
+    console.log('\n🌍 Testing Regions:');
+    
+    for (const region of regions) {
+        try {
+            console.log(`\n  Testing region: ${region}`);
+            const data = await window.AECDataModel.getElementGroups(selectedProjectId, region);
+            
+            results.regions.push({
+                region,
+                success: true,
+                count: data.length
+            });
+            
+            console.log(`  ✅ SUCCESS - Found ${data.length} element groups`);
+            
+        } catch (error) {
+            results.regions.push({
+                region,
+                success: false,
+                error: error.message
+            });
+            
+            console.log(`  ❌ FAILED - ${error.message}`);
+        }
+    }
+    
+    // Summary
+    console.log('\n📊 === TEST SUMMARY ===');
+    
+    const successfulFormats = results.projectIdFormats.filter(r => r.success);
+    const successfulRegions = results.regions.filter(r => r.success);
+    
+    if (successfulFormats.length > 0) {
+        console.log('\n✅ Working Project ID Formats:');
+        successfulFormats.forEach(f => {
+            console.log(`  • ${f.format}: ${f.count} element groups`);
+        });
+    } else {
+        console.log('\n❌ No project ID formats worked');
+    }
+    
+    if (successfulRegions.length > 0) {
+        console.log('\n✅ Working Regions:');
+        successfulRegions.forEach(r => {
+            console.log(`  • ${r.region}: ${r.count} element groups`);
+        });
+    } else {
+        console.log('\n❌ No regions worked');
+    }
+    
+    if (successfulFormats.length === 0 && successfulRegions.length === 0) {
+        console.log('\n⚠️  CONCLUSION: AEC Data Model is NOT available');
+        console.log('Possible reasons:');
+        console.log('  1. AEC DM not activated on ACC account');
+        console.log('  2. Models are Revit 2023 or earlier');
+        console.log('  3. Models uploaded before AEC DM activation');
+        console.log('  4. Project has no published Revit models');
+        
+        showNotification('AEC Data Model NOT available - Check console for details', 'error');
+    } else {
+        console.log('\n✅ CONCLUSION: AEC Data Model IS available!');
+        showNotification(`AEC DM available! Found ${successfulFormats[0]?.count || successfulRegions[0]?.count} designs`, 'success');
+    }
+    
+    console.log('\n=== END DIAGNOSTIC TEST ===\n');
 }
 
 // Utilities
