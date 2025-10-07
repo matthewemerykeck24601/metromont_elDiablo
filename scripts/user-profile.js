@@ -35,13 +35,20 @@ class UserProfile {
                 this.selectedHub = {
                     id: hubData.hubId || hubData.accountId,
                     name: hubName,
-                    region: hubData.region || 'US'
+                    region: hubData.hubInfo?.attributes?.region || hubData.region || 'US'
                 };
 
                 console.log('✅ Hub configured:', this.selectedHub);
 
-                // Store available hubs (for future multi-hub support)
-                this.availableHubs = [this.selectedHub];
+                // Get all available hubs from globalHubData
+                if (hubData.availableHubs && hubData.availableHubs.length > 0) {
+                    this.availableHubs = hubData.availableHubs;
+                    console.log(`✅ Loaded ${this.availableHubs.length} available hubs for switching`);
+                } else {
+                    // Fallback to just current hub
+                    this.availableHubs = [this.selectedHub];
+                    console.log('ℹ️ Only current hub available');
+                }
             } else {
                 console.warn('⚠️ No hub data provided');
             }
@@ -74,9 +81,15 @@ class UserProfile {
                 this.selectedHub = {
                     id: hubData.hubId || hubData.accountId,
                     name: hubName,
-                    region: 'US'
+                    region: hubData.hubInfo?.attributes?.region || 'US'
                 };
-                this.availableHubs = [this.selectedHub];
+                
+                // Use available hubs if present
+                if (hubData.availableHubs && hubData.availableHubs.length > 0) {
+                    this.availableHubs = hubData.availableHubs;
+                } else {
+                    this.availableHubs = [this.selectedHub];
+                }
             }
             
             // Load from storage as last resort
@@ -242,20 +255,38 @@ class UserProfile {
     }
 
     switchHub(hubId) {
+        console.log('🔄 Switching hub to:', hubId);
+        
         const hub = this.availableHubs.find(h => h.id === hubId);
         if (hub) {
+            console.log('✅ Hub found:', hub.name);
+            
             this.selectedHub = hub;
             this.persistToStorage();
             
+            // Store the selected hub ID for persistence
+            sessionStorage.setItem('selected_hub_id', hubId);
+            localStorage.setItem('selected_hub_id', hubId);
+            
+            // Clear old hub data
+            sessionStorage.removeItem('castlink_hub_data');
+            
+            console.log(`💾 Stored hub selection: ${hub.name}`);
+            
             // Show notification
             if (window.showNotification) {
-                window.showNotification(`Switched to ${hub.name}`, 'success');
+                window.showNotification(`Switching to ${hub.name}...`, 'info');
+            } else {
+                alert(`Switching to ${hub.name}...`);
             }
             
-            // Reload page to apply hub change
+            // Reload page to load new hub's projects
             setTimeout(() => {
+                console.log('🔄 Reloading to apply hub change...');
                 location.reload();
             }, 1000);
+        } else {
+            console.error('❌ Hub not found:', hubId);
         }
     }
 

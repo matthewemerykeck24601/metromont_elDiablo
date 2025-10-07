@@ -277,15 +277,61 @@ async function completeAuthentication() {
     }
 }
 
+// NEW: Fetch all available hubs for the user
+async function fetchAllAvailableHubs() {
+    try {
+        console.log('=== FETCHING ALL AVAILABLE HUBS ===');
+        
+        const hubsResponse = await fetch('https://developer.api.autodesk.com/project/v1/hubs', {
+            headers: {
+                'Authorization': `Bearer ${forgeAccessToken}`
+            }
+        });
+
+        if (!hubsResponse.ok) {
+            console.warn('Failed to fetch hubs:', hubsResponse.status);
+            return [];
+        }
+
+        const hubsData = await hubsResponse.json();
+        const hubs = hubsData.data || [];
+        
+        console.log(`✅ Found ${hubs.length} available hubs`);
+        
+        return hubs.map(hub => ({
+            id: hub.id,
+            name: hub.attributes?.name || 'Unknown Hub',
+            region: hub.attributes?.region || 'US',
+            type: hub.type
+        }));
+        
+    } catch (error) {
+        console.error('Error fetching hubs:', error);
+        return [];
+    }
+}
+
 // NEW: Hub Connection and Project Loading during main auth
 async function connectToHubAndLoadProjects() {
     try {
-        // Connect to the Metromont hub
-        hubId = METROMONT_HUB_ID;
+        // First, fetch all available hubs
+        const availableHubs = await fetchAllAvailableHubs();
+        
+        // Check if user has a preferred hub stored
+        let selectedHubId = sessionStorage.getItem('selected_hub_id') || localStorage.getItem('selected_hub_id');
+        
+        // If no stored hub or stored hub not in available hubs, use default
+        if (!selectedHubId || !availableHubs.find(h => h.id === selectedHubId)) {
+            selectedHubId = METROMONT_HUB_ID;
+        }
+        
+        hubId = selectedHubId;
         globalHubData.hubId = hubId;
+        globalHubData.availableHubs = availableHubs;
 
         console.log('=== HUB CONNECTION ===');
-        console.log('Connecting to hub:', hubId);
+        console.log('Available hubs:', availableHubs.length);
+        console.log('Selected hub:', hubId);
         console.log('Account ID:', METROMONT_ACCOUNT_ID);
 
         const hubResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}`, {
@@ -296,7 +342,7 @@ async function connectToHubAndLoadProjects() {
 
         if (!hubResponse.ok) {
             const errorText = await hubResponse.text();
-            throw new Error(`Failed to access Metromont hub: ${hubResponse.status} ${errorText}`);
+            throw new Error(`Failed to access hub: ${hubResponse.status} ${errorText}`);
         }
 
         const hubData = await hubResponse.json();
