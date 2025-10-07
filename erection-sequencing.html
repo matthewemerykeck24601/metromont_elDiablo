@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Erection Sequence Scheduling - Metromont El Diablo</title>
+    <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css">
+    <link rel="stylesheet" href="styles/erection-sequencing.css">
+</head>
+<body class="auth-loading">
+    <!-- Auth Processing Overlay -->
+    <div class="auth-processing active" id="authProcessing">
+        <div class="auth-processing-content">
+            <div class="loading"></div>
+            <h3 id="authTitle">Initializing 4D Sequencing</h3>
+            <p id="authMessage">Loading ACC and AEC Data Model...</p>
+        </div>
+    </div>
+
+    <header class="header">
+        <div class="header-content">
+            <div class="logo-section">
+                <img src="assets/images/metromont-logo.png" alt="Metromont Logo" class="logo" />
+                <div class="brand-text">
+                    <h1>Erection Sequence Scheduling</h1>
+                    <p>4D Construction Phasing with BIM Integration</p>
+                </div>
+            </div>
+            <div class="nav-breadcrumb">
+                <a href="index.html">Dashboard</a>
+                <span>→</span>
+                <a href="scheduling-hub.html">Scheduling Hub</a>
+                <span>→</span>
+                <span>Erection Sequencing</span>
+            </div>
+            <div class="header-buttons">
+                <button class="btn btn-back" onclick="window.location.href='scheduling-hub.html'">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                    </svg>
+                    Back to Hub
+                </button>
+                <div class="status-badge status-connected" id="authStatusBadge" style="display: none;">
+                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                    Connected to ACC
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <div class="control-section">
+                <h3>Project & Model Selection</h3>
+                
+                <div class="control-group">
+                    <label for="esProjectSelect">Project:</label>
+                    <select id="esProjectSelect" disabled>
+                        <option value="">Loading projects...</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="esModelSelect">Model (Design):</label>
+                    <select id="esModelSelect" disabled>
+                        <option value="">Select a project first...</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="esLinkProperty">Link Property:</label>
+                    <input type="text" id="esLinkProperty" value="Mark" placeholder="e.g., Mark, Type Mark, etc.">
+                    <small>Property name to link activities to elements</small>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Schedule Data</h3>
+                
+                <div class="control-group">
+                    <label for="esCsvInput">CSV Schedule:</label>
+                    <input type="file" id="esCsvInput" accept=".csv">
+                    <button class="btn btn-secondary btn-sm" onclick="useSampleCSV()">
+                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+                        </svg>
+                        Use Sample CSV
+                    </button>
+                </div>
+
+                <div id="scheduleInfo" class="schedule-info">
+                    <div class="info-item">
+                        <span class="info-label">Total Activities:</span>
+                        <span class="info-value" id="totalActivities">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Date Range:</span>
+                        <span class="info-value" id="dateRange">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Current Day:</span>
+                        <span class="info-value" id="currentDay">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Playback Controls</h3>
+                
+                <div class="playback-controls">
+                    <button class="btn btn-primary" id="esBtnPlay" onclick="playSequence()" disabled>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                        Play
+                    </button>
+                    <button class="btn btn-secondary" id="esBtnPause" onclick="pauseSequence()" disabled>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                        </svg>
+                        Pause
+                    </button>
+                    <button class="btn btn-secondary" id="esBtnStep" onclick="stepForward()" disabled>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M6 4h4v16H6V4zm8 0v16l10-8z"/>
+                        </svg>
+                        Step
+                    </button>
+                    <button class="btn btn-secondary" id="esBtnReset" onclick="resetSequence()" disabled>
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6 0 2.97-2.17 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93 0-4.42-3.58-8-8-8z" />
+                        </svg>
+                        Reset
+                    </button>
+                </div>
+
+                <div class="timeline-scrubber">
+                    <input type="range" id="timelineScrubber" min="0" max="0" value="0" disabled>
+                    <div class="timeline-labels">
+                        <span id="timelineStart">-</span>
+                        <span id="timelineEnd">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Current Activities</h3>
+                <div id="currentActivitiesList" class="activities-list">
+                    <p class="empty-message">Load a schedule to see activities</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Viewer Section -->
+        <div class="viewer-section">
+            <div class="viewer-toolbar">
+                <button class="viewer-btn" onclick="viewerReset()" title="Reset View">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6 0 2.97-2.17 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93 0-4.42-3.58-8-8-8z" />
+                    </svg>
+                </button>
+                <button class="viewer-btn" onclick="viewerFitToView()" title="Fit to View">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 11H7v6h6v-2H9v-4zm-2 8V5h14v14H7z" />
+                    </svg>
+                </button>
+                <div class="viewer-separator"></div>
+                <button class="viewer-btn" onclick="viewerIsolate()" title="Isolate Selection">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                </button>
+                <button class="viewer-btn" onclick="viewerShowAll()" title="Show All">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+                    </svg>
+                </button>
+                <div class="viewer-info">
+                    <span id="viewerInfo">Select a model to begin</span>
+                </div>
+            </div>
+            
+            <div id="esViewer" class="viewer-container">
+                <div class="loading-message">
+                    <p>Select a project and model to load the 3D viewer</p>
+                </div>
+            </div>
+
+            <div id="viewerStatus" class="viewer-status">
+                <span id="viewerStatusText">Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notification" class="notification">
+        <div class="notification-content" id="notificationContent"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="scripts/env.js"></script>
+    <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+    <script src="scripts/aecdm-graphql.js"></script>
+    <script src="scripts/erection-sequencing.js"></script>
+</body>
+</html>
+

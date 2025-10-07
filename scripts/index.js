@@ -686,7 +686,7 @@ function navigateToModule(module) {
             window.location.href = 'engineering.html';
             break;
         case 'production':
-            window.location.href = 'production-scheduling.html';
+            window.location.href = 'scheduling-hub.html';
             break;
         case 'inventory':
             showNotification('Inventory Tracking coming Q1 2025');

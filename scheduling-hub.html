@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scheduling Hub - Metromont El Diablo</title>
+    <link rel="stylesheet" href="styles/index.css">
+</head>
+<body class="auth-loading">
+    <!-- Auth Processing Overlay -->
+    <div class="auth-processing active" id="authProcessing">
+        <div class="auth-processing-content">
+            <div class="loading"></div>
+            <h3 id="authTitle">Connecting to Autodesk Construction Cloud</h3>
+            <p id="authMessage">Checking your authentication status...</p>
+        </div>
+    </div>
+
+    <header class="header">
+        <div class="header-content">
+            <div class="logo-section">
+                <img src="assets/images/metromont-logo.png" alt="Metromont Logo" class="logo" />
+                <div class="brand-text">
+                    <h1>Scheduling Hub</h1>
+                    <p>Production & Erection Sequence Scheduling</p>
+                </div>
+            </div>
+            <div class="header-buttons">
+                <button class="btn btn-back" onclick="window.location.href='index.html'">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                    </svg>
+                    Back to Dashboard
+                </button>
+                <div class="status-badge status-connected" id="authStatusBadge" style="display: none;">
+                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                    Connected to ACC
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <section class="welcome-section">
+            <h2>Choose Your Scheduling Module</h2>
+            <p>Select the scheduling tool that fits your workflow: manage production bed schedules or create 4D erection sequences with BIM integration.</p>
+        </section>
+
+        <section class="modules-grid">
+            <!-- Erection Sequence Scheduling Card -->
+            <div class="module-card design" onclick="navigateToModule('erection')">
+                <div class="module-icon">
+                    <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                </div>
+                <h3 class="module-title">Erection Sequence Scheduling</h3>
+                <p class="module-description">4D construction phasing with BIM integration. Visualize erection sequences, coordinate activities, and plan site logistics using AEC Data Model.</p>
+                <div class="module-features">
+                    <span class="feature-badge">4D Visualization</span>
+                    <span class="feature-badge">AEC Data Model</span>
+                    <span class="feature-badge">Activity Scheduling</span>
+                    <span class="feature-badge">CSV Import</span>
+                </div>
+                <div class="module-status">
+                    <span class="status-badge status-active">New</span>
+                    <span style="margin-left: auto; color: #64748b;">Available Now</span>
+                </div>
+            </div>
+
+            <!-- Production Scheduling Card -->
+            <div class="module-card production" onclick="navigateToModule('production')">
+                <div class="module-icon">
+                    <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                    </svg>
+                </div>
+                <h3 class="module-title">Production Bed Scheduling</h3>
+                <p class="module-description">Plan and schedule production runs on casting beds. Manage capacity, optimize resource allocation, and coordinate precast manufacturing operations.</p>
+                <div class="module-features">
+                    <span class="feature-badge">3D Bed Layout</span>
+                    <span class="feature-badge">Asset Management</span>
+                    <span class="feature-badge">Validation</span>
+                    <span class="feature-badge">Schedule Tracking</span>
+                </div>
+                <div class="module-status">
+                    <span class="status-badge status-active">Active</span>
+                    <span style="margin-left: auto; color: #64748b;">Available Now</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="integration-section">
+            <h3 class="integration-title">
+                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M17.5 12c0 .28-.11.53-.29.71l-4.5 4.5c-.39.39-1.02.39-1.41 0l-4.5-4.5c-.18-.18-.29-.43-.29-.71 0-.55.45-1 1-1h3V8c0-.55.45-1 1-1h2c.55 0 1 .45 1 1v3h3c.55 0 1 .45 1 1z" />
+                </svg>
+                Scheduling Integration
+            </h3>
+            <div class="integration-grid">
+                <div class="integration-item">
+                    <div class="integration-icon">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                        </svg>
+                    </div>
+                    <div class="integration-text">
+                        <h4>AEC Data Model</h4>
+                        <p>GraphQL API integration</p>
+                    </div>
+                </div>
+                <div class="integration-item">
+                    <div class="integration-icon">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                    </div>
+                    <div class="integration-text">
+                        <h4>Forge Viewer</h4>
+                        <p>Real-time 3D/4D visualization</p>
+                    </div>
+                </div>
+                <div class="integration-item">
+                    <div class="integration-icon">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M5,7H11V13H5V7M13,7H19V10H13V7M5,15H8V19H5V15M10,15H13V19H10V15M15,12H19V19H15V12Z" />
+                        </svg>
+                    </div>
+                    <div class="integration-text">
+                        <h4>CSV Import</h4>
+                        <p>Activity schedule data</p>
+                    </div>
+                </div>
+                <div class="integration-item">
+                    <div class="integration-icon">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
+                        </svg>
+                    </div>
+                    <div class="integration-text">
+                        <h4>Project Sync</h4>
+                        <p>ACC project data integration</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3>Metromont El Diablo</h3>
+                <p>Comprehensive scheduling tools for precast concrete manufacturing and erection coordination.</p>
+            </div>
+            <div class="footer-section">
+                <h3>Scheduling Modules</h3>
+                <p><a href="#" onclick="navigateToModule('erection')">Erection Sequence Scheduling</a></p>
+                <p><a href="#" onclick="navigateToModule('production')">Production Bed Scheduling</a></p>
+            </div>
+            <div class="footer-section">
+                <h3>Support</h3>
+                <p><a href="mailto:support@metromont.com">support@metromont.com</a></p>
+                <p><a href="tel:+1234567890">(123) 456-7890</a></p>
+                <p><a href="https://metromont.com">metromont.com</a></p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="scripts/env.js"></script>
+    <script src="scripts/scheduling-hub.js"></script>
+</body>
+</html>
+
