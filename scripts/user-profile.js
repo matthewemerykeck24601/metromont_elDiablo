@@ -12,28 +12,38 @@ class UserProfile {
 
     async initialize(forgeToken, hubData) {
         console.log('🔐 Initializing User Profile...');
+        console.log('Hub Data received:', hubData);
 
         try {
             // Fetch user profile from Autodesk
             const userProfile = await this.fetchUserProfile(forgeToken);
+            console.log('User profile fetched:', userProfile);
             
             this.userInfo = {
-                name: userProfile.name || userProfile.userName || 'User',
-                email: userProfile.emailId || userProfile.email || '',
-                userId: userProfile.userId,
-                profileImage: userProfile.profileImages?.sizeX360 || null
+                name: userProfile.name || userProfile.userName || userProfile.firstName || 'User',
+                email: userProfile.emailId || userProfile.email || userProfile.emailAddress || '',
+                userId: userProfile.userId || userProfile.sub,
+                profileImage: userProfile.profileImages?.sizeX360 || userProfile.picture || null
             };
 
-            // Set hub data
+            // Set hub data - handle the actual structure from globalHubData
             if (hubData) {
+                const hubName = hubData.hubInfo?.attributes?.name 
+                    || hubData.accountInfo?.name 
+                    || 'Metromont Hub';
+                
                 this.selectedHub = {
-                    id: hubData.accountId || hubData.hubId,
-                    name: hubData.accountInfo?.name || 'Default Hub',
+                    id: hubData.hubId || hubData.accountId,
+                    name: hubName,
                     region: hubData.region || 'US'
                 };
 
+                console.log('✅ Hub configured:', this.selectedHub);
+
                 // Store available hubs (for future multi-hub support)
                 this.availableHubs = [this.selectedHub];
+            } else {
+                console.warn('⚠️ No hub data provided');
             }
 
             this.isInitialized = true;
@@ -45,7 +55,31 @@ class UserProfile {
 
         } catch (error) {
             console.error('❌ Failed to initialize user profile:', error);
-            // Fallback to stored data
+            console.error('Error details:', error.message);
+            
+            // Fallback: try to use hub data at least
+            if (hubData && !this.userInfo) {
+                console.log('Using fallback user info');
+                this.userInfo = {
+                    name: 'User',
+                    email: '',
+                    userId: null,
+                    profileImage: null
+                };
+                
+                const hubName = hubData.hubInfo?.attributes?.name 
+                    || hubData.accountInfo?.name 
+                    || 'Metromont Hub';
+                
+                this.selectedHub = {
+                    id: hubData.hubId || hubData.accountId,
+                    name: hubName,
+                    region: 'US'
+                };
+                this.availableHubs = [this.selectedHub];
+            }
+            
+            // Load from storage as last resort
             this.loadFromStorage();
             this.render();
             return false;
@@ -109,7 +143,11 @@ class UserProfile {
                         </svg>
                         <span>${hubName}</span>
                     </div>
-                    ${this.availableHubs.length > 1 ? this.renderHubSelector() : ''}
+                    ${this.availableHubs.length > 1 ? this.renderHubSelector() : `
+                        <div style="margin-top: 0.75rem; padding: 0.5rem; background: #f9fafb; border-radius: 6px; font-size: 0.75rem; color: #6b7280; text-align: center;">
+                            Multi-hub switching coming soon
+                        </div>
+                    `}
                 </div>
                 <div class="dropdown-divider"></div>
                 <button class="dropdown-item" onclick="window.UserProfile.logout()">
