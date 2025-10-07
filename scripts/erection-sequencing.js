@@ -149,11 +149,8 @@ function populateProjectDropdown() {
 
     projectSelect.disabled = false;
 
-    // Auto-select first project if available
-    if (globalHubData.projects.length > 0) {
-        projectSelect.value = globalHubData.projects[0].id;
-        onProjectChange();
-    }
+    // Don't auto-select - let user choose
+    console.log('✅ Project dropdown populated with', globalHubData.projects.length, 'projects');
 }
 
 async function onProjectChange() {
@@ -195,8 +192,16 @@ async function loadDesignsForProject(projectId) {
     try {
         console.log('📂 Loading designs for project:', projectId);
 
+        // AEC Data Model requires project ID in URN format
+        // Convert from b.xxx format to urn:adsk.wipprod:fs.project:xxx
+        let aecProjectId = projectId;
+        if (projectId.startsWith('b.')) {
+            aecProjectId = `urn:adsk.wipprod:fs.project:${projectId.substring(2)}`;
+            console.log('Converted project ID to URN:', aecProjectId);
+        }
+
         // Use AEC DM GraphQL helper
-        const elementGroups = await window.AECDataModel.getElementGroups(projectId);
+        const elementGroups = await window.AECDataModel.getElementGroups(aecProjectId);
 
         if (!elementGroups || elementGroups.length === 0) {
             modelSelect.innerHTML = '<option value="">No AEC Data Model designs found</option>';

@@ -248,6 +248,11 @@ async function completeAuthentication() {
 
         updateAuthStatus('Success!', `Successfully connected to Metromont ACC with ${globalHubData.projects.length} projects loaded`);
 
+        // Initialize user profile widget
+        if (window.UserProfile) {
+            await window.UserProfile.initialize(forgeAccessToken, globalHubData);
+        }
+
         // Small delay to show success message
         await new Promise(resolve => setTimeout(resolve, 1000));
 

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Metromont El Diablo - Manufacturing Execution System</title>
     <link rel="stylesheet" href="styles/index.css">
+    <link rel="stylesheet" href="styles/user-profile.css">
 </head>
 <body class="auth-loading">
     <div class="notification" id="notification">
@@ -34,11 +35,15 @@
                     <p>Manufacturing Execution System</p>
                 </div>
             </div>
-            <div class="user-info">
-                <div class="user-avatar">MK</div>
-                <div>
-                    <div style="font-size: 0.875rem; font-weight: 500;">Matt Keck</div>
-                    <div style="font-size: 0.75rem; color: #cbd5e1;">mkeck@metromont.com</div>
+            <div id="userProfileContainer">
+                <!-- User profile widget will be dynamically rendered here -->
+                <div class="user-profile-widget" style="opacity: 0.6;">
+                    <div class="user-avatar">
+                        <span>...</span>
+                    </div>
+                    <div class="user-info">
+                        <div class="user-name">Loading...</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -227,6 +232,7 @@
     </footer>
 
     <script src="scripts/env.js"></script>
+    <script src="scripts/user-profile.js"></script>
     <script src="scripts/index.js"></script>
 </body>
 </html>
