@@ -67,17 +67,13 @@ async function aecdmQuery(query, variables = {}, region = 'US') {
  */
 const Q_ELEMENT_GROUPS_BY_PROJECT = `
     query GetElementGroups($projectId: ID!) {
-        elementGroupsByProject(projectId: $projectId, pagination: { limit: 100 }) {
+        elementGroupsByProject(projectId: $projectId, filter: {}, pagination: { limit: 100, cursor: null }) {
             results {
                 id
                 name
                 alternativeIdentifiers {
                     fileVersionUrn
                 }
-            }
-            pagination {
-                cursor
-                limit
             }
         }
     }
@@ -91,7 +87,7 @@ const Q_ELEMENTS_BY_ELEMENTGROUP = `
         elementsByElementGroup(
             elementGroupId: $elementGroupId,
             filter: { query: $filter },
-            pagination: { limit: $limit }
+            pagination: { limit: $limit, cursor: null }
         ) {
             results {
                 id
@@ -102,10 +98,6 @@ const Q_ELEMENTS_BY_ELEMENTGROUP = `
                         value
                     }
                 }
-            }
-            pagination {
-                cursor
-                limit
             }
         }
     }
