@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Cache - El Diablo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 3rem;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+        p {
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        button {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #10b981;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(16, 185, 129, 0.4);
+        }
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        .status {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            display: none;
+        }
+        .status.show {
+            display: block;
+        }
+        .success {
+            background: rgba(16, 185, 129, 0.2);
+        }
+        .info {
+            background: rgba(59, 130, 246, 0.2);
+        }
+        .shortcuts {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+        .shortcut-key {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 0 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Cache Cleaner</h1>
+        <p>Force reload El Diablo with fresh content. No more stale JavaScript!</p>
+        
+        <div class="btn-group">
+            <button class="btn-primary" onclick="clearAllAndReload()">
+                Clear Everything & Reload
+            </button>
+            <button class="btn-secondary" onclick="clearJSOnly()">
+                Clear JavaScript Only
+            </button>
+            <button class="btn-secondary" onclick="hardReload()">
+                Hard Reload (Ctrl+Shift+R)
+            </button>
+            <button class="btn-secondary" onclick="goToApp()">
+                Go to El Diablo
+            </button>
+        </div>
+
+        <div id="status" class="status">
+            <div id="statusText"></div>
+        </div>
+
+        <div class="shortcuts">
+            <strong>Keyboard Shortcuts:</strong><br>
+            <span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">Shift</span> + <span class="shortcut-key">R</span> = Hard Reload<br>
+            <span class="shortcut-key">Ctrl</span> + <span class="shortcut-key">F5</span> = Hard Reload (Windows)<br>
+            <span class="shortcut-key">Cmd</span> + <span class="shortcut-key">Shift</span> + <span class="shortcut-key">R</span> = Hard Reload (Mac)
+        </div>
+    </div>
+
+    <script>
+        function showStatus(message, type = 'success') {
+            const status = document.getElementById('status');
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = message;
+            status.className = `status show ${type}`;
+        }
+
+        async function clearAllAndReload() {
+            showStatus('Clearing all caches...', 'info');
+            
+            // Clear all storage
+            localStorage.clear();
+            sessionStorage.clear();
+            
+            // Clear Service Workers
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (let registration of registrations) {
+                    await registration.unregister();
+                }
+            }
+            
+            // Clear Cache API
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+            }
+            
+            showStatus('✅ All caches cleared! Redirecting...', 'success');
+            
+            setTimeout(() => {
+                window.location.href = 'index.html?v=' + Date.now();
+            }, 1000);
+        }
+
+        function clearJSOnly() {
+            showStatus('Clearing JavaScript cache...', 'info');
+            
+            // Clear only session storage (where tokens/data are stored)
+            sessionStorage.clear();
+            
+            // Try to clear cache API for JS files
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    names.forEach(name => {
+                        if (name.includes('script') || name.includes('js')) {
+                            caches.delete(name);
+                        }
+                    });
+                });
+            }
+            
+            showStatus('✅ JavaScript cache cleared! Reloading...', 'success');
+            
+            setTimeout(() => {
+                window.location.href = 'index.html?v=' + Date.now();
+            }, 1000);
+        }
+
+        function hardReload() {
+            showStatus('Performing hard reload...', 'info');
+            
+            setTimeout(() => {
+                location.reload(true); // Hard reload
+            }, 500);
+        }
+
+        function goToApp() {
+            window.location.href = 'index.html?v=' + Date.now();
+        }
+
+        // Add keyboard shortcut listener
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
+                e.preventDefault();
+                hardReload();
+            }
+        });
+    </script>
+</body>
+</html>
+
