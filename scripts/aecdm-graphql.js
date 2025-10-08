@@ -183,7 +183,7 @@ async function getElementGroupsForProject(accProjectId, region = 'US') {
 
         // 1) Resolve AEC DM Project directly from ACC project id (b.xxx)
         const Q_PROJECT_BY_DM_ID = `
-            query GetProjectByDMID($accId: String!) {
+            query GetProjectByDMID($accId: ID!) {
                 projectByDataManagementAPIId(dataManagementAPIProjectId: $accId) {
                     id
                     name
