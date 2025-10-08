@@ -951,6 +951,37 @@ async function testAECDataModel() {
     console.log('  Forge Token Available:', !!window.forgeAccessToken);
     console.log('  GraphQL Endpoint:', 'https://developer.api.autodesk.com/aec/graphql');
     
+    // First, test if GraphQL endpoint is accessible at all
+    console.log('\n🔬 Testing GraphQL Introspection...');
+    try {
+        const introspectionQuery = `
+            query {
+                __schema {
+                    queryType {
+                        name
+                        fields {
+                            name
+                            description
+                        }
+                    }
+                }
+            }
+        `;
+        
+        const introspectionData = await window.AECDataModel.query(introspectionQuery, {}, 'US');
+        console.log('✅ GraphQL Introspection SUCCESS');
+        console.log('Available queries:', introspectionData.__schema?.queryType?.fields?.map(f => f.name));
+        
+        // Check if elementGroupsByProject exists
+        const hasElementGroups = introspectionData.__schema?.queryType?.fields?.some(f => f.name === 'elementGroupsByProject');
+        console.log('Has elementGroupsByProject query:', hasElementGroups);
+        
+    } catch (introspectionError) {
+        console.error('❌ GraphQL Introspection FAILED:', introspectionError);
+        console.error('This suggests AEC Data Model API is not accessible with your token');
+        console.error('Required scope: data:read (you should have this)');
+    }
+    
     const results = {
         projectIdFormats: [],
         regions: []
