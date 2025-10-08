@@ -198,143 +198,53 @@ async function loadDesignsForProject(projectId) {
     const modelSelect = document.getElementById('esModelSelect');
     
     try {
-        console.log('📂 Loading designs for project:', projectId);
-        console.log('Project ID type:', typeof projectId);
-        console.log('Project ID length:', projectId.length);
+        console.log('📂 Loading designs for ACC project:', projectId);
 
-        // Get the project's root folder ID (container) for AEC DM queries
-        console.log('🔍 Fetching project container/root folder for AEC DM...');
+        // Use the proper ID resolution helper (it handles ACC -> AEC DM conversion)
+        const elementGroups = await window.AECDataModel.getElementGroups(projectId);
         
-        const projectFolders = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${globalHubData.hubId}/projects/${projectId}/topFolders`, {
-            headers: {
-                'Authorization': `Bearer ${window.forgeAccessToken}`
-            }
+        if (!elementGroups || elementGroups.length === 0) {
+            modelSelect.innerHTML = '<option value="">No AEC Data Model designs found</option>';
+            showNotification('No designs found. Ensure AEC Data Model is activated and models are Revit 2024+', 'warning');
+            return;
+        }
+
+        console.log(`✅ Found ${elementGroups.length} element groups`);
+
+        // Populate dropdown with results
+        modelSelect.innerHTML = '<option value="">Select a design...</option>';
+
+        elementGroups.forEach(eg => {
+            const option = document.createElement('option');
+            option.value = eg.id;
+            option.textContent = eg.name;
+            option.dataset.urn = eg.fileVersionUrn || '';
+            option.dataset.egid = eg.id;
+            modelSelect.appendChild(option);
         });
 
-        if (!projectFolders.ok) {
-            throw new Error(`Failed to get project folders: ${projectFolders.status}`);
-        }
-
-        const foldersData = await projectFolders.json();
-        console.log('✅ Project folders data:', foldersData);
-
-        // AEC Data Model GraphQL uses the project ID in URN format
-        // Try different URN formats based on project structure
-        
-        let attempts = [];
-        
-        // Format 1: Direct project ID (b.xxx-xxx-xxx)
-        attempts.push({
-            id: projectId,
-            description: 'Direct ACC project ID (b.xxx)'
-        });
-        
-        // Format 2: Just the UUID part
-        if (projectId.startsWith('b.')) {
-            const uuid = projectId.substring(2);
-            attempts.push({
-                id: uuid,
-                description: 'UUID without b. prefix'
-            });
-            
-            // Format 3: URN with dm.project
-            attempts.push({
-                id: `urn:adsk.wipprod:dm.project:${uuid}`,
-                description: 'URN: dm.project format'
-            });
-            
-            // Format 4: URN with fs.project  
-            attempts.push({
-                id: `urn:adsk.wipprod:fs.project:${uuid}`,
-                description: 'URN: fs.project format'
-            });
-        }
-        
-        // Format 5: If we have folder data, try using root folder ID
-        if (foldersData.data && foldersData.data.length > 0) {
-            // Try to find the "Project Files" folder
-            const projectFilesFolder = foldersData.data.find(f => 
-                f.attributes?.displayName === 'Project Files' || 
-                f.attributes?.name === 'Project Files'
-            );
-            
-            if (projectFilesFolder && projectFilesFolder.id) {
-                console.log('Found Project Files folder:', projectFilesFolder.id);
-                attempts.push({
-                    id: projectFilesFolder.id,
-                    description: 'Project Files folder ID'
-                });
-            }
-        }
-
-        console.log(`Will try ${attempts.length} different project ID formats...`);
-
-        // Try each format until one works
-        for (let i = 0; i < attempts.length; i++) {
-            const attempt = attempts[i];
-            console.log(`\nAttempt ${i + 1}: ${attempt.description}`);
-            console.log('Using ID:', attempt.id);
-            
-            try {
-                const elementGroups = await window.AECDataModel.getElementGroups(attempt.id);
-                
-                // If we got here without error, it worked!
-                console.log(`✅ SUCCESS with ${attempt.description}`);
-                console.log(`Found ${elementGroups.length} element groups`);
-                
-                if (!elementGroups || elementGroups.length === 0) {
-                    modelSelect.innerHTML = '<option value="">No AEC Data Model designs found</option>';
-                    showNotification('No designs found. Ensure AEC Data Model is activated and models are Revit 2024+', 'warning');
-                    return;
-                }
-
-                // Populate dropdown with results
-                modelSelect.innerHTML = '<option value="">Select a design...</option>';
-
-                elementGroups.forEach(eg => {
-                    const option = document.createElement('option');
-                    option.value = eg.id;
-                    option.textContent = eg.name;
-                    option.dataset.urn = eg.fileVersionUrn || '';
-                    option.dataset.egid = eg.id;
-                    modelSelect.appendChild(option);
-                });
-
-                modelSelect.disabled = false;
-                showNotification(`Found ${elementGroups.length} designs`, 'success');
-                return; // Success! Exit function
-                
-            } catch (error) {
-                console.warn(`❌ Failed with ${attempt.description}:`, error.message);
-                // Continue to next attempt
-            }
-        }
-        
-        // If we got here, all attempts failed
-        console.error('\n❌ ALL PROJECT ID FORMATS FAILED');
-        console.error('This usually means:');
-        console.error('1. AEC Data Model is NOT activated on this ACC account');
-        console.error('2. Models are from Revit 2023 or earlier (need 2024+)');
-        console.error('3. Models were uploaded BEFORE AEC DM was activated');
-        console.error('4. Wrong region (try EMEA or AUS if not in US)');
-        console.error('\nHow to fix:');
-        console.error('• Contact your ACC Account Admin to activate AEC Data Model');
-        console.error('• Ensure models are from Revit 2024 or newer');
-        console.error('• Re-upload/re-publish models after AEC DM activation');
-        console.error('• Check ACC hub region matches API region setting');
-        
-        throw new Error('All project ID formats failed. AEC Data Model might not be available for this project.');
+        modelSelect.disabled = false;
+        showNotification(`Found ${elementGroups.length} designs`, 'success');
 
     } catch (error) {
-        console.error('Error in loadDesignsForProject:', error);
+        console.error('❌ Error loading designs:', error);
         
-        // Check if it's a region issue
-        if (error.message.includes('404') || error.message.includes('not found')) {
-            modelSelect.innerHTML = '<option value="">No data - check region or AEC DM activation</option>';
-            showNotification('No AEC Data Model data. Try EMEA/AUS region or verify AEC DM is activated.', 'warning');
+        modelSelect.innerHTML = '<option value="">Error: AEC DM not available</option>';
+        
+        // Provide helpful error message
+        if (error.message.includes('Could not resolve')) {
+            showNotification('Project not found in AEC Data Model. Models may need re-publishing.', 'error');
+        } else if (error.message.includes('No AEC DM hubs')) {
+            showNotification('No AEC DM hubs found. Check if AEC DM is activated.', 'error');
         } else {
-            throw error;
+            showNotification('AEC Data Model error - see console for details', 'error');
         }
+        
+        console.error('\n💡 Troubleshooting Tips:');
+        console.error('1. Verify AEC Data Model is activated on your ACC account');
+        console.error('2. Check if models are Revit 2024 or newer');
+        console.error('3. Re-sync/re-publish models in Revit after AEC DM activation');
+        console.error('4. Try the "Test AEC Data Model Status" button for detailed diagnostics');
     }
 }
 
