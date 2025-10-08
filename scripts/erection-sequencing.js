@@ -765,8 +765,7 @@ async function isolateElementsForCurrentDay() {
         const elements = await window.AECDataModel.getElements(
             selectedElementGroup.id,
             filter,
-            'US',
-            200
+            'US'
         );
 
         console.log(`✅ Got ${elements.length} elements from AEC DM`);

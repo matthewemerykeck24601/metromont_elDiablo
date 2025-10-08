@@ -73,10 +73,14 @@ async function resolveAecdmHubId({ hubName } = {}) {
     
     const Q_HUBS = `
         query {
-            hubs(pagination: { limit: 200 }) {
+            hubs(pagination: { limit: 100 }) {
                 results {
                     id
                     name
+                }
+                pagination {
+                    cursor
+                    hasMore
                 }
             }
         }
@@ -120,8 +124,8 @@ async function resolveAecdmProjectId({ aecdmHubId, accProjectId, projectName }) 
     console.log('  Project Name:', projectName);
     
     const Q_PROJECTS = `
-        query GetProjects($hubId: ID!) {
-            projects(hubId: $hubId, pagination: { limit: 200 }) {
+        query GetProjects($hubId: ID!, $cursor: String) {
+            projects(hubId: $hubId, pagination: { limit: 100, cursor: $cursor }) {
                 results {
                     id
                     name
@@ -129,12 +133,23 @@ async function resolveAecdmProjectId({ aecdmHubId, accProjectId, projectName }) 
                         dataManagementAPIProjectId
                     }
                 }
+                pagination {
+                    cursor
+                    hasMore
+                }
             }
         }
     `;
     
-    const data = await aecdmQuery(Q_PROJECTS, { hubId: aecdmHubId });
-    const projects = data?.projects?.results || [];
+    // Page through all projects
+    let cursor = null;
+    const projects = [];
+    do {
+        const data = await aecdmQuery(Q_PROJECTS, { hubId: aecdmHubId, cursor });
+        const page = data?.projects;
+        if (page?.results?.length) projects.push(...page.results);
+        cursor = page?.pagination?.hasMore ? page.pagination.cursor : null;
+    } while (cursor);
     
     console.log(`Found ${projects.length} AEC DM projects in hub`);
 
@@ -231,20 +246,19 @@ async function getElementGroupsForProject(accProjectId, region = 'US') {
  * @param {string} elementGroupId - The AEC DM element group ID
  * @param {string} filter - GraphQL filter string
  * @param {string} region - Region (default 'US')
- * @param {number} limit - Max results (default 200)
  * @returns {Promise<Array>} Array of elements with properties
  */
-async function getElementsByElementGroup(elementGroupId, filter, region = 'US', limit = 200) {
+async function getElementsByElementGroup(elementGroupId, filter, region = 'US') {
     try {
         console.log('🔍 Fetching elements from element group:', elementGroupId);
         console.log('Filter:', filter);
 
         const Q_ELEMENTS = `
-            query ElementsByElementGroup($elementGroupId: ID!, $filter: String!, $limit: Int) {
+            query ElementsByElementGroup($elementGroupId: ID!, $filter: String!, $cursor: String) {
                 elementsByElementGroup(
                     elementGroupId: $elementGroupId,
                     filter: { query: $filter },
-                    pagination: { limit: $limit, cursor: null }
+                    pagination: { limit: 100, cursor: $cursor }
                 ) {
                     results {
                         id
@@ -256,18 +270,24 @@ async function getElementsByElementGroup(elementGroupId, filter, region = 'US', 
                             }
                         }
                     }
+                    pagination {
+                        cursor
+                        hasMore
+                    }
                 }
             }
         `;
 
-        const data = await aecdmQuery(Q_ELEMENTS, { elementGroupId, filter, limit }, region);
+        // Page through all results
+        let cursor = null;
+        const results = [];
+        do {
+            const data = await aecdmQuery(Q_ELEMENTS, { elementGroupId, filter, cursor }, region);
+            const page = data?.elementsByElementGroup;
+            if (page?.results?.length) results.push(...page.results);
+            cursor = page?.pagination?.hasMore ? page.pagination.cursor : null;
+        } while (cursor);
 
-        if (!data || !data.elementsByElementGroup) {
-            console.warn('No elements found in response');
-            return [];
-        }
-
-        const results = data.elementsByElementGroup.results || [];
         console.log(`✅ Found ${results.length} elements`);
 
         // Map to simpler format with property dictionary
