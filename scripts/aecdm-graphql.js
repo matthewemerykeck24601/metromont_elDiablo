@@ -78,10 +78,6 @@ async function resolveAecdmHubId({ hubName } = {}) {
                     id
                     name
                 }
-                pagination {
-                    cursor
-                    hasMore
-                }
             }
         }
     `;
@@ -124,8 +120,8 @@ async function resolveAecdmProjectId({ aecdmHubId, accProjectId, projectName }) 
     console.log('  Project Name:', projectName);
     
     const Q_PROJECTS = `
-        query GetProjects($hubId: ID!, $cursor: String) {
-            projects(hubId: $hubId, pagination: { limit: 100, cursor: $cursor }) {
+        query GetProjects($hubId: ID!) {
+            projects(hubId: $hubId, pagination: { limit: 100 }) {
                 results {
                     id
                     name
@@ -133,23 +129,13 @@ async function resolveAecdmProjectId({ aecdmHubId, accProjectId, projectName }) 
                         dataManagementAPIProjectId
                     }
                 }
-                pagination {
-                    cursor
-                    hasMore
-                }
             }
         }
     `;
     
-    // Page through all projects
-    let cursor = null;
-    const projects = [];
-    do {
-        const data = await aecdmQuery(Q_PROJECTS, { hubId: aecdmHubId, cursor });
-        const page = data?.projects;
-        if (page?.results?.length) projects.push(...page.results);
-        cursor = page?.pagination?.hasMore ? page.pagination.cursor : null;
-    } while (cursor);
+    // Single page (limit 100) for initial test
+    const data = await aecdmQuery(Q_PROJECTS, { hubId: aecdmHubId });
+    const projects = data?.projects?.results || [];
     
     console.log(`Found ${projects.length} AEC DM projects in hub`);
 
@@ -254,11 +240,11 @@ async function getElementsByElementGroup(elementGroupId, filter, region = 'US') 
         console.log('Filter:', filter);
 
         const Q_ELEMENTS = `
-            query ElementsByElementGroup($elementGroupId: ID!, $filter: String!, $cursor: String) {
+            query ElementsByElementGroup($elementGroupId: ID!, $filter: String!) {
                 elementsByElementGroup(
                     elementGroupId: $elementGroupId,
                     filter: { query: $filter },
-                    pagination: { limit: 100, cursor: $cursor }
+                    pagination: { limit: 100 }
                 ) {
                     results {
                         id
@@ -270,23 +256,13 @@ async function getElementsByElementGroup(elementGroupId, filter, region = 'US') 
                             }
                         }
                     }
-                    pagination {
-                        cursor
-                        hasMore
-                    }
                 }
             }
         `;
 
-        // Page through all results
-        let cursor = null;
-        const results = [];
-        do {
-            const data = await aecdmQuery(Q_ELEMENTS, { elementGroupId, filter, cursor }, region);
-            const page = data?.elementsByElementGroup;
-            if (page?.results?.length) results.push(...page.results);
-            cursor = page?.pagination?.hasMore ? page.pagination.cursor : null;
-        } while (cursor);
+        const data = await aecdmQuery(Q_ELEMENTS, { elementGroupId, filter }, region);
+        const page = data?.elementsByElementGroup;
+        const results = page?.results || [];
 
         console.log(`✅ Found ${results.length} elements`);
 
