@@ -181,20 +181,25 @@ async function getElementGroupsForProject(accProjectId, region = 'US') {
     try {
         console.log('📂 Getting element groups for ACC project:', accProjectId);
 
-        // Step 1: Resolve AEC DM Hub ID
-        const hubName = window.UserProfile?.getSelectedHub?.()?.name || null;
-        const aecdmHubId = await resolveAecdmHubId({ hubName });
+        // 1) Resolve AEC DM Project directly from ACC project id (b.xxx)
+        const Q_PROJECT_BY_DM_ID = `
+            query GetProjectByDMID($accId: String!) {
+                projectByDataManagementAPIId(dataManagementAPIProjectId: $accId) {
+                    id
+                    name
+                }
+            }
+        `;
 
-        // Step 2: Resolve AEC DM Project ID from ACC project ID
-        const aecdmProjectId = await resolveAecdmProjectId({
-            aecdmHubId,
-            accProjectId,
-            projectName: null
-        });
+        const projData = await aecdmQuery(Q_PROJECT_BY_DM_ID, { accId: accProjectId }, region);
+        const project = projData?.projectByDataManagementAPIId;
+        if (!project || !project.id) {
+            throw new Error('Could not resolve AEC DM project from ACC project id');
+        }
 
-        console.log('✅ Resolved to AEC DM Project ID:', aecdmProjectId);
+        console.log('✅ Resolved AEC DM Project:', project.name, project.id);
 
-        // Step 3: Query element groups using the AEC DM project ID
+        // 2) Pull element groups with a safe pagination limit (<=100)
         const Q_ELEMENT_GROUPS = `
             query GetElementGroups($projectId: ID!) {
                 elementGroupsByProject(projectId: $projectId, pagination: { limit: 100 }) {
@@ -209,18 +214,16 @@ async function getElementGroupsForProject(accProjectId, region = 'US') {
             }
         `;
 
-        const result = await aecdmQuery(Q_ELEMENT_GROUPS, { projectId: aecdmProjectId }, region);
-        const elementGroups = result?.elementGroupsByProject?.results || [];
+        const egData = await aecdmQuery(Q_ELEMENT_GROUPS, { projectId: project.id }, region);
+        const elementGroups = egData?.elementGroupsByProject?.results || [];
 
         console.log(`✅ Found ${elementGroups.length} element groups`);
 
-        // Map to simpler format
         return elementGroups.map(eg => ({
             id: eg.id,
             name: eg.name,
             fileVersionUrn: eg.alternativeIdentifiers?.fileVersionUrn || null
         }));
-
     } catch (error) {
         console.error('Error fetching element groups:', error);
         throw error;
@@ -318,9 +321,7 @@ window.AECDataModel = {
     query: aecdmQuery,
     getElementGroups: getElementGroupsForProject,
     getElements: getElementsByElementGroup,
-    buildFilter: buildElementFilter,
-    resolveHubId: resolveAecdmHubId,
-    resolveProjectId: resolveAecdmProjectId
+    buildFilter: buildElementFilter
 };
 
-console.log('✅ AEC Data Model GraphQL helper loaded with ID resolution');
+console.log('✅ AEC Data Model GraphQL helper loaded with direct project resolution');
