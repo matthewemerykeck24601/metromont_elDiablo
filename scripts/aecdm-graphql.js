@@ -171,64 +171,126 @@ async function resolveAecdmProjectId({ aecdmHubId, accProjectId, projectName }) 
     throw new Error('Could not resolve AEC DM project ID from ACC project');
 }
 
-/**
- * Get element groups (designs/models) for a project
- * @param {string} accProjectId - ACC project ID (b.xxx format)
- * @param {string} region - Region (default 'US')
- * @returns {Promise<Array>} Array of element groups with id, name, fileVersionUrn
- */
-async function getElementGroupsForProject(accProjectId, region = 'US') {
+// --- BEGIN REPLACEMENT: getElementGroupsForProject ---
+async function getElementGroupsForProject(accProjectId, region = 'US', opts = {}) {
     try {
         console.log('📂 Getting element groups for ACC project:', accProjectId);
 
-        // 1) Resolve AEC DM Project directly from ACC project id (b.xxx)
-        const Q_PROJECT_BY_DM_ID = `
-            query GetProjectByDMID($accId: ID!) {
-                projectByDataManagementAPIId(dataManagementAPIProjectId: $accId) {
-                    id
-                    name
+        // 0) Try to resolve an AEC DM project id from the ACC id
+        const aecdmProjectId = await (async () => {
+            // (a) direct resolver: projectByDataManagementAPIId
+            const Q_PROJECT_BY_DM_ID = `
+                query GetProjectByDMID($accId: ID!) {
+                    projectByDataManagementAPIId(dataManagementAPIProjectId: $accId) {
+                        id
+                        name
+                    }
+                }
+            `;
+            // First attempt: raw ACC id
+            try {
+                const projA = await aecdmQuery(Q_PROJECT_BY_DM_ID, { accId: accProjectId }, region);
+                const pA = projA?.projectByDataManagementAPIId;
+                if (pA?.id) {
+                    console.log('✅ Resolved via direct DM id:', pA.name, pA.id);
+                    return pA.id;
+                }
+            } catch (e) {
+                console.warn('Direct DM id lookup failed:', e.message);
+            }
+
+            // Second attempt: try URN form if b.-prefixed
+            if (typeof accProjectId === 'string' && accProjectId.startsWith('b.')) {
+                const uuid = accProjectId.slice(2);
+                const dmUrn = `urn:adsk.wipprod:dm.project:${uuid}`;
+                try {
+                    const projB = await aecdmQuery(Q_PROJECT_BY_DM_ID, { accId: dmUrn }, region);
+                    const pB = projB?.projectByDataManagementAPIId;
+                    if (pB?.id) {
+                        console.log('✅ Resolved via DM URN:', pB.name, pB.id);
+                        return pB.id;
+                    }
+                } catch (e) {
+                    console.warn('DM URN lookup failed:', e.message);
                 }
             }
-        `;
 
-        const projData = await aecdmQuery(Q_PROJECT_BY_DM_ID, { accId: accProjectId }, region);
-        const project = projData?.projectByDataManagementAPIId;
-        if (!project || !project.id) {
-            throw new Error('Could not resolve AEC DM project from ACC project id');
-        }
+            // (b) fallback: scan hubs -> projects and match alt ids or name
+            const Q_HUBS = `
+                query {
+                    hubs(pagination: { limit: 100 }) {
+                        results { id name }
+                    }
+                }
+            `;
+            const hubsData = await aecdmQuery(Q_HUBS, {}, region);
+            const hubs = hubsData?.hubs?.results ?? [];
+            if (!hubs.length) throw new Error('No AEC DM hubs visible to this user');
 
-        console.log('✅ Resolved AEC DM Project:', project.name, project.id);
+            const Q_PROJECTS = `
+                query GetProjects($hubId: ID!) {
+                    projects(hubId: $hubId, pagination: { limit: 100 }) {
+                        results {
+                            id
+                            name
+                            alternativeIdentifiers { dataManagementAPIProjectId }
+                        }
+                    }
+                }
+            `;
 
-        // 2) Pull element groups with a safe pagination limit (<=100)
+            for (const hub of hubs) {
+                const projsData = await aecdmQuery(Q_PROJECTS, { hubId: hub.id }, region);
+                const projs = projsData?.projects?.results ?? [];
+
+                // match by ACC id
+                const byAcc = projs.find(p => p?.alternativeIdentifiers?.dataManagementAPIProjectId === accProjectId);
+                if (byAcc?.id) {
+                    console.log(`✅ Matched project by ACC id in hub ${hub.name}:`, byAcc.name, byAcc.id);
+                    return byAcc.id;
+                }
+
+                // optional match by name from UI
+                if (opts.projectName) {
+                    const byName = projs.find(p => (p.name || '').toLowerCase() === opts.projectName.toLowerCase());
+                    if (byName?.id) {
+                        console.log(`✅ Matched project by name in hub ${hub.name}:`, byName.name, byName.id);
+                        return byName.id;
+                    }
+                }
+            }
+
+            throw new Error('Could not resolve AEC DM project ID from ACC project');
+        })();
+
+        // 1) With a verified AEC DM project id, list element groups
         const Q_ELEMENT_GROUPS = `
             query GetElementGroups($projectId: ID!) {
                 elementGroupsByProject(projectId: $projectId, pagination: { limit: 100 }) {
                     results {
                         id
                         name
-                        alternativeIdentifiers {
-                            fileVersionUrn
-                        }
+                        alternativeIdentifiers { fileVersionUrn }
                     }
                 }
             }
         `;
-
-        const egData = await aecdmQuery(Q_ELEMENT_GROUPS, { projectId: project.id }, region);
+        const egData = await aecdmQuery(Q_ELEMENT_GROUPS, { projectId: aecdmProjectId }, region);
         const elementGroups = egData?.elementGroupsByProject?.results || [];
 
         console.log(`✅ Found ${elementGroups.length} element groups`);
-
         return elementGroups.map(eg => ({
             id: eg.id,
             name: eg.name,
             fileVersionUrn: eg.alternativeIdentifiers?.fileVersionUrn || null
         }));
+
     } catch (error) {
         console.error('Error fetching element groups:', error);
         throw error;
     }
 }
+// --- END REPLACEMENT ---
 
 /**
  * Get elements from an element group with filter
