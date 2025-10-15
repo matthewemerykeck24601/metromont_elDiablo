@@ -6,20 +6,20 @@ const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 const METROMONT_ACCOUNT_ID = 'f61b9f7b-5481-4d25-a552-365ba99077b8'; // Change this for testing
 const METROMONT_HUB_ID = `b.${METROMONT_ACCOUNT_ID}`;
 
-// Enhanced scope configuration for full ACC integration including OSS bucket management and AEC Data Model Beta
+// Enhanced scope configuration for full ACC integration including OSS bucket management
+// AEC Data Model Beta uses standard data:read and viewables:read scopes
 const ACC_SCOPES = [
-    'data:read',        // View data within ACC
+    'data:read',        // View data within ACC + AEC Data Model Beta
     'data:write',       // Manage data within ACC  
     'data:create',      // Create new data within ACC
     'data:search',      // Search across ACC data
     'account:read',     // View product and service accounts
     'user:read',        // View user profile info
-    'viewables:read',   // View viewable data (for future file previews)
+    'viewables:read',   // View viewable data + Forge Viewer
     'bucket:create',    // Create new buckets
     'bucket:read',      // View your buckets
     'bucket:update',    // Update your buckets
-    'bucket:delete',    // Delete your buckets
-    'aecdmbeta:read'    // AEC Data Model Beta API access
+    'bucket:delete'     // Delete your buckets
 ].join(' ');
 
 // Global authentication state
@@ -95,7 +95,8 @@ async function initializeApp() {
 async function startAuthFlow() {
     updateAuthStatus('Redirecting to Login...', 'You will be redirected to Autodesk to sign in...');
 
-    // Enhanced scope configuration with explicit formatting including bucket permissions and AEC Data Model Beta
+    // Enhanced scope configuration with explicit formatting including bucket permissions
+    // AEC Data Model Beta uses standard data:read and viewables:read scopes
     const REQUESTED_SCOPES = [
         'data:read',
         'data:write',
@@ -107,8 +108,7 @@ async function startAuthFlow() {
         'bucket:create',
         'bucket:read',
         'bucket:update',
-        'bucket:delete',
-        'aecdmbeta:read'
+        'bucket:delete'
     ];
 
     const scopeString = REQUESTED_SCOPES.join(' ');
