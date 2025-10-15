@@ -1,74 +1,24 @@
-// AEC Data Model GraphQL Helper
-// Provides proper ID resolution from ACC to AEC DM format
-// Beta API returns simple arrays (not paginated wrappers) for hubs/projects/elementGroups
+// AEC Data Model GraphQL Helper for El Diablo / CastLink
+// Uses Beta API schema: results (not items), pagination { cursor } (no hasMore)
+// Resolves projects by NAME, not ACC ID, to avoid ID malformation errors
 
 const AEC_GRAPHQL_URL = 'https://developer.api.autodesk.com/aec/graphql';
 
-// --- AEC-DM GraphQL queries ---
-// List hubs - Beta API uses simple array return, not paginated wrapper
-const GQL_LIST_HUBS = `
-  query ListHubs {
-    hubs {
-      id
-      name
-      alternativeIdentifiers {
-        dataManagementAPIHubId
-      }
-    }
-  }
-`;
-
-// List projects for a hub - Beta API returns simple array
-const GQL_LIST_PROJECTS_BY_HUB = `
-  query ListProjectsByHub($hubId: ID!) {
-    projects(hubId: $hubId) {
-      id
-      name
-      alternativeIdentifiers {
-        dataManagementAPIProjectId
-      }
-    }
-  }
-`;
-
-// Element groups by AEC-DM project id - Beta API returns simple array
-const GQL_ELEMENT_GROUPS_BY_PROJECT = `
-  query ElGroupsByProject($projectId: ID!) {
-    elementGroupsByProject(projectId: $projectId) {
-      id
-      name
-      createdAt
-      updatedAt
-      alternativeIdentifiers {
-        fileVersionUrn
-      }
-    }
-  }
-`;
-
-/**
- * Normalize ACC project ID to handle both b.guid and bare guid formats
- * @param {string} id - ACC project ID
- * @returns {object} Normalized ID object
- */
-function normalizeAccProjectId(id) {
-    if (!id) return null;
-    // Accept `b.<guid>` or `<guid>`; compare both
-    const bare = id.startsWith('b.') ? id.slice(2) : id;
-    return { raw: id, bare };
-}
-
 /**
  * Execute a GraphQL query against the AEC Data Model API
- * @param {string} query - The GraphQL query string
- * @param {object} variables - Query variables
- * @param {string} region - Region: 'US' | 'EMEA' | 'AUS' (default 'US')
+ * @param {object} options - Query options
+ * @param {string} options.query - The GraphQL query string
+ * @param {object} options.variables - Query variables
+ * @param {string} options.token - APS access token
+ * @param {string} options.region - Region: 'US' | 'EMEA' | 'AUS' (default 'US')
  * @returns {Promise<any>} Query result data
  */
-async function aecdmQuery(query, variables = {}, region = 'US') {
-    if (!window.forgeAccessToken) {
+async function aecdmQuery({ query, variables = {}, token, region = 'US' }) {
+    if (!token && !window.forgeAccessToken) {
         throw new Error('No APS token available. Please authenticate first.');
     }
+
+    const accessToken = token || window.forgeAccessToken;
 
     console.log('=== AEC DM GraphQL Query ===');
     console.log('Region:', region);
@@ -76,10 +26,10 @@ async function aecdmQuery(query, variables = {}, region = 'US') {
 
     const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${window.forgeAccessToken}`
+        'Authorization': `Bearer ${accessToken}`
     };
 
-    // Optional region header (US is default). Use EMEA or AUS if your hub lives there.
+    // Optional region header (US is default)
     if (region && region !== 'US') {
         headers['x-ads-region'] = region;
         console.log('Using region header:', region);
@@ -118,65 +68,70 @@ async function aecdmQuery(query, variables = {}, region = 'US') {
 }
 
 /**
- * Resolve AEC DM Hub ID by matching ACC hub name
- * @param {object} options - Options object
- * @param {string} options.hubName - ACC hub name to match
- * @returns {Promise<string>} AEC DM hub ID
+ * Get AEC-DM hub ID (by name or fallback to first hub)
+ * @param {object} options - Options
+ * @param {string} options.token - APS access token
+ * @param {string} options.region - Region (default 'US')
+ * @param {string} options.preferredHubName - Optional hub name to match
+ * @returns {Promise<string>} AEC-DM hub ID
  */
-async function resolveAecdmHubId({ hubName } = {}) {
-    console.log('🔍 Resolving AEC DM Hub ID for:', hubName);
+async function getAecdmHubId({ token, region = 'US', preferredHubName }) {
+    console.log('🔍 Getting AEC-DM hub ID...');
     
-    const Q_HUBS = `
+    const query = `
         query {
-            hubs(pagination: { limit: 100 }) {
+            hubs {
+                pagination { cursor }
                 results {
                     id
                     name
+                    alternativeIdentifiers {
+                        dataManagementAPIHubId
+                    }
                 }
             }
         }
     `;
+
+    const data = await aecdmQuery({ token, region, query, variables: {} });
     
-    const data = await aecdmQuery(Q_HUBS, {});
-    const hubs = data?.hubs?.results || [];
-    
-    console.log(`Found ${hubs.length} AEC DM hubs`);
-    
-    if (!hubs.length) {
-        throw new Error('No AEC DM hubs visible to this user');
+    if (!data?.hubs?.results?.length) {
+        throw new Error('No AEC-DM hubs available');
     }
 
-    // Try name match first
-    if (hubName) {
-        const byName = hubs.find(h => h.name?.toLowerCase() === hubName.toLowerCase());
-        if (byName) {
-            console.log(`✅ Matched hub by name: ${byName.name} (${byName.id})`);
-            return byName.id;
+    console.log(`Found ${data.hubs.results.length} AEC-DM hub(s)`);
+
+    // Try to match by name if provided
+    if (preferredHubName) {
+        const match = data.hubs.results.find(h => h.name === preferredHubName);
+        if (match) {
+            console.log(`✅ Matched hub by name: ${match.name} (${match.id})`);
+            return match.id;
         }
     }
-    
-    // Fallback to first hub
-    console.log(`⚠️ Using first available hub: ${hubs[0].name} (${hubs[0].id})`);
-    return hubs[0].id;
+
+    // Fallback: use first hub
+    const firstHub = data.hubs.results[0];
+    console.log(`✅ Using first hub: ${firstHub.name} (${firstHub.id})`);
+    return firstHub.id;
 }
 
 /**
- * Resolve AEC DM Project ID from ACC project ID
- * @param {object} options - Options object
- * @param {string} options.aecdmHubId - AEC DM hub ID
- * @param {string} options.accProjectId - ACC project ID (b.xxx format)
- * @param {string} options.projectName - Project name for fallback matching
- * @returns {Promise<string>} AEC DM project ID
+ * Get AEC-DM project ID by project name within a hub
+ * @param {object} options - Options
+ * @param {string} options.token - APS access token
+ * @param {string} options.region - Region (default 'US')
+ * @param {string} options.hubId - AEC-DM hub ID
+ * @param {string} options.projectName - Project name to find
+ * @returns {Promise<string>} AEC-DM project ID
  */
-async function resolveAecdmProjectId({ aecdmHubId, accProjectId, projectName }) {
-    console.log('🔍 Resolving AEC DM Project ID');
-    console.log('  AEC DM Hub ID:', aecdmHubId);
-    console.log('  ACC Project ID:', accProjectId);
-    console.log('  Project Name:', projectName);
+async function getAecdmProjectIdByName({ token, region = 'US', hubId, projectName }) {
+    console.log(`🔍 Looking up AEC-DM project by name: "${projectName}" in hub: ${hubId}`);
     
-    const Q_PROJECTS = `
-        query GetProjects($hubId: ID!) {
-            projects(hubId: $hubId, pagination: { limit: 100 }) {
+    const query = `
+        query GetProjects($hubId: ID!, $name: String!) {
+            projects(hubId: $hubId, filter: { name: $name }) {
+                pagination { cursor }
                 results {
                     id
                     name
@@ -187,115 +142,87 @@ async function resolveAecdmProjectId({ aecdmHubId, accProjectId, projectName }) 
             }
         }
     `;
-    
-    // Single page (limit 100) for initial test
-    const data = await aecdmQuery(Q_PROJECTS, { hubId: aecdmHubId });
-    const projects = data?.projects?.results || [];
-    
-    console.log(`Found ${projects.length} AEC DM projects in hub`);
 
-    // Try exact match on ACC project ID
-    if (accProjectId) {
-        const byAccId = projects.find(p => 
-            p.alternativeIdentifiers?.dataManagementAPIProjectId === accProjectId
-        );
-        if (byAccId) {
-            console.log(`✅ Matched project by ACC ID: ${byAccId.name} (${byAccId.id})`);
-            return byAccId.id;
-        }
+    const variables = { hubId, name: projectName };
+    const data = await aecdmQuery({ token, region, query, variables });
+
+    const hit = data?.projects?.results?.find(p => p.name === projectName);
+    
+    if (!hit) {
+        throw new Error(`AEC-DM project not found by name: "${projectName}"`);
     }
-    
-    // Try by name as fallback
-    if (projectName) {
-        const byName = projects.find(p => 
-            p.name?.toLowerCase() === projectName.toLowerCase()
-        );
-        if (byName) {
-            console.log(`✅ Matched project by name: ${byName.name} (${byName.id})`);
-            return byName.id;
-        }
-    }
-    
-    console.error('❌ Could not resolve AEC DM project ID');
-    console.error('Available projects:', projects.map(p => ({
-        id: p.id,
-        name: p.name,
-        accId: p.alternativeIdentifiers?.dataManagementAPIProjectId
-    })));
-    
-    throw new Error('Could not resolve AEC DM project ID from ACC project');
+
+    console.log(`✅ Found AEC-DM project: ${hit.name} (${hit.id})`);
+    return hit.id; // This is the AEC-DM project ID to use downstream
 }
 
 /**
- * Resolve ACC project ID to AEC-DM project ID
- * @param {string} accProjectId - ACC project ID (b.xxx format)
- * @returns {Promise<string>} AEC-DM project ID
+ * Fetch element groups by AEC-DM project ID
+ * @param {object} options - Options
+ * @param {string} options.token - APS access token
+ * @param {string} options.region - Region (default 'US')
+ * @param {string} options.projectId - AEC-DM project ID (NOT ACC ID!)
+ * @returns {Promise<Array>} Array of element groups
  */
-async function resolveAecdmProjectIdFromAcc(accProjectId) {
-    const norm = normalizeAccProjectId(accProjectId);
-    if (!norm) throw new Error('No ACC project id provided');
-
-    console.log('🔍 Resolving AEC-DM project from ACC:', accProjectId);
-
-    // 1) Get all hubs (Beta API returns direct array, no pagination wrapper)
-    const hubsRes = await aecdmQuery(GQL_LIST_HUBS, {});
-    const hubs = hubsRes?.hubs || [];
-
-    console.log(`Found ${hubs.length} AEC-DM hubs`);
-
-    if (!hubs.length) {
-        throw new Error('No AEC-DM hubs visible to this user');
-    }
-
-    // 2) for each hub, get projects and match alternativeIdentifiers.dataManagementAPIProjectId
-    for (const hub of hubs) {
-        const projRes = await aecdmQuery(GQL_LIST_PROJECTS_BY_HUB, { hubId: hub.id });
-        const projects = projRes?.projects || [];
-        
-        const match = projects.find(p => {
-            const alt = p.alternativeIdentifiers?.dataManagementAPIProjectId;
-            return alt === norm.raw || alt === norm.bare;
-        });
-        
-        if (match) {
-            console.log(`✅ Matched project in hub ${hub.name}:`, match.name, match.id);
-            return match.id; // <-- AEC-DM project id
+async function fetchElementGroupsByAecProjectId({ token, region = 'US', projectId }) {
+    console.log('📂 Fetching element groups for AEC-DM project:', projectId);
+    
+    const query = `
+        query GetElementGroups($projectId: ID!) {
+            elementGroupsByProject(projectId: $projectId, pagination: { limit: 100 }) {
+                pagination { cursor }
+                results {
+                    id
+                    name
+                    createdAt
+                    updatedAt
+                    alternativeIdentifiers {
+                        fileVersionUrn
+                        fileUrn
+                    }
+                }
+            }
         }
-    }
+    `;
 
-    throw new Error(`AEC-DM project not found for ACC id: ${accProjectId}`);
+    const variables = { projectId };
+    const data = await aecdmQuery({ token, region, query, variables });
+
+    const results = data?.elementGroupsByProject?.results || [];
+    console.log(`✅ Found ${results.length} element group(s)`);
+
+    return results.map(eg => ({
+        id: eg.id,
+        name: eg.name,
+        fileVersionUrn: eg.alternativeIdentifiers?.fileVersionUrn || null,
+        fileUrn: eg.alternativeIdentifiers?.fileUrn || null,
+        createdAt: eg.createdAt,
+        updatedAt: eg.updatedAt
+    }));
 }
 
 /**
- * Get element groups (designs/models) for a project
- * @param {string} accProjectId - ACC project ID (b.xxx format)
- * @returns {Promise<Array>} Array of element groups with id, name
+ * Get element groups for a project (by project name, NOT ACC ID)
+ * @param {object} options - Options
+ * @param {string} options.token - APS access token
+ * @param {string} options.region - Region (default 'US')
+ * @param {string} options.projectName - Project name (from ACC project dropdown)
+ * @param {string} options.preferredHubName - Optional hub name to match
+ * @returns {Promise<Array>} Array of element groups
  */
-async function getElementGroupsForProject(accProjectId) {
+async function getElementGroupsForProject({ token, region = 'US', projectName, preferredHubName }) {
     try {
-        console.log('📂 Getting element groups for ACC project:', accProjectId);
+        console.log('📂 Getting element groups for project name:', projectName);
 
-        // Step 1: Resolve to AEC-DM project ID (never pass b.xxx beyond this point)
-        const aecdmProjectId = await resolveAecdmProjectIdFromAcc(accProjectId);
+        // Step 1: Get AEC-DM hub ID
+        const hubId = await getAecdmHubId({ token, region, preferredHubName });
 
-        console.log('Using AEC-DM project ID:', aecdmProjectId);
+        // Step 2: Get AEC-DM project ID by name
+        const aecProjectId = await getAecdmProjectIdByName({ token, region, hubId, projectName });
 
-        // Step 2: Fetch element groups (Beta API returns direct array, no pagination)
-        const res = await aecdmQuery(GQL_ELEMENT_GROUPS_BY_PROJECT, {
-            projectId: aecdmProjectId
-        });
-        
-        const groups = res?.elementGroupsByProject || [];
+        // Step 3: Fetch element groups using the AEC-DM project ID
+        return await fetchElementGroupsByAecProjectId({ token, region, projectId: aecProjectId });
 
-        console.log(`✅ Found ${groups.length} element groups`);
-
-        // Map to include fileVersionUrn for Viewer compatibility
-        return groups.map(eg => ({
-            id: eg.id,
-            name: eg.name,
-            fileVersionUrn: eg.alternativeIdentifiers?.fileVersionUrn || null
-        }));
-        
     } catch (error) {
         console.error('Error fetching element groups:', error);
         throw error;
@@ -303,104 +230,123 @@ async function getElementGroupsForProject(accProjectId) {
 }
 
 /**
- * Get elements from an element group with filter
- * @param {string} elementGroupId - The AEC DM element group ID
- * @param {string} filter - GraphQL filter string
- * @param {string} region - Region (default 'US')
- * @param {number} limit - Limit (max 500 for elements)
- * @returns {Promise<Array>} Array of elements with properties
+ * Build a GraphQL filter string for element queries
+ * @param {object} options - Filter options
+ * @param {string} options.category - Filter by category name
+ * @param {string} options.property - Property name to filter on
+ * @param {string} options.value - Property value to match
+ * @returns {string} GraphQL filter string
  */
-async function getElementsByElementGroup(elementGroupId, filter, region = 'US', limit = 100) {
-    try {
-        console.log('🔍 Fetching elements from element group:', elementGroupId);
-        console.log('Filter:', filter);
+function buildElementFilter({ category, property, value }) {
+    const filters = [];
+    
+    if (category) {
+        filters.push(`property.name=="Category" && property.value=="${category}"`);
+    }
+    
+    if (property && value) {
+        filters.push(`property.name=="${property}" && property.value=="${value}"`);
+    }
+    
+    return filters.length > 0 ? filters.join(' && ') : 'true';
+}
 
-        const Q_ELEMENTS = `
-            query ElementsByElementGroup($elementGroupId: ID!, $filter: String!, $limit: Int) {
-                elementsByElementGroup(
-                    elementGroupId: $elementGroupId,
-                    filter: { query: $filter },
-                    pagination: { limit: $limit }
-                ) {
-                    pagination { cursor }
-                    results {
-                        id
-                        name
-                        properties(filter: { names: ["External ID", "Mark", "Category", "Element Context"] }) {
-                            results {
-                                name
-                                value
-                            }
+/**
+ * Get elements from an element group with filter
+ * @param {object} options - Options
+ * @param {string} options.token - APS access token
+ * @param {string} options.region - Region (default 'US')
+ * @param {string} options.elementGroupId - AEC-DM element group ID
+ * @param {string} options.filter - GraphQL filter string
+ * @param {number} options.limit - Max results (default 100, max 500)
+ * @returns {Promise<Array>} Array of elements
+ */
+async function getElementsByElementGroup({ token, region = 'US', elementGroupId, filter = 'true', limit = 100 }) {
+    console.log('🔍 Fetching elements from element group:', elementGroupId);
+    console.log('Filter:', filter);
+
+    const query = `
+        query ElementsByElementGroup($elementGroupId: ID!, $filter: String!, $limit: Int) {
+            elementsByElementGroup(
+                elementGroupId: $elementGroupId,
+                filter: { query: $filter },
+                pagination: { limit: $limit }
+            ) {
+                pagination { cursor }
+                results {
+                    id
+                    name
+                    properties(filter: { names: ["External ID", "Mark", "Category", "Element Context"] }) {
+                        results {
+                            name
+                            value
                         }
                     }
                 }
             }
-        `;
+        }
+    `;
 
-        const data = await aecdmQuery(Q_ELEMENTS, { 
-            elementGroupId, 
-            filter, 
-            limit: Math.min(limit, 500) // Ensure limit ≤ 500
-        }, region);
-        const page = data?.elementsByElementGroup;
-        const results = page?.results || [];
+    const variables = { 
+        elementGroupId, 
+        filter, 
+        limit: Math.min(limit, 500) // Ensure limit ≤ 500
+    };
 
-        console.log(`✅ Found ${results.length} elements`);
+    const data = await aecdmQuery({ token, region, query, variables });
+    const results = data?.elementsByElementGroup?.results || [];
 
-        // Map to simpler format with property dictionary
-        return results.map(element => {
-            const props = {};
-            if (element.properties && element.properties.results) {
-                element.properties.results.forEach(p => {
-                    props[p.name] = p.value;
-                });
+    console.log(`✅ Found ${results.length} element(s)`);
+
+    // Map to simpler format with property dictionary
+    return results.map(element => {
+        const props = {};
+        if (element.properties && element.properties.results) {
+            element.properties.results.forEach(p => {
+                props[p.name] = p.value;
+            });
+        }
+
+        return {
+            id: element.id,
+            name: element.name,
+            externalId: props['External ID'] || null,
+            mark: props['Mark'] || null,
+            category: props['Category'] || null,
+            properties: props
+        };
+    });
+}
+
+// === GraphQL Introspection Helper (for debugging) ===
+async function introspectSchema({ token, region = 'US' }) {
+    const query = `
+        query IntrospectionQuery {
+            __schema {
+                queryType { name }
+                types {
+                    name
+                    kind
+                    description
+                }
             }
+        }
+    `;
 
-            return {
-                id: element.id,
-                name: element.name,
-                externalId: props['External ID'] || null,
-                mark: props['Mark'] || null,
-                category: props['Category'] || null,
-                context: props['Element Context'] || null,
-                properties: props
-            };
-        });
-
-    } catch (error) {
-        console.error('Error fetching elements:', error);
-        throw error;
-    }
+    return await aecdmQuery({ token, region, query, variables: {} });
 }
 
-/**
- * Build a GraphQL filter string for elements
- * @param {Array<string>} markValues - Array of Mark values to match
- * @param {string} category - Optional category filter
- * @returns {string} GraphQL filter string
- */
-function buildElementFilter(markValues, category = null) {
-    let filter = "('property.name.Element Context'==Instance)";
-
-    if (category) {
-        filter += ` and ('property.name.Category'=='${category}')`;
-    }
-
-    if (markValues && markValues.length > 0) {
-        const markList = markValues.map(m => `'${m}'`).join(',');
-        filter += ` and ('property.name.Mark' in [${markList}])`;
-    }
-
-    return filter;
-}
-
-// Export functions for global access
+// === Public API ===
 window.AECDataModel = {
     query: aecdmQuery,
-    resolveProjectId: resolveAecdmProjectIdFromAcc,
     getElementGroups: getElementGroupsForProject,
     getElements: getElementsByElementGroup,
-    buildFilter: buildElementFilter
+    buildFilter: buildElementFilter,
+    introspect: introspectSchema,
+    // Lower-level helpers (exported for advanced use)
+    getHubId: getAecdmHubId,
+    getProjectIdByName: getAecdmProjectIdByName,
+    fetchElementGroups: fetchElementGroupsByAecProjectId
 };
 
-console.log('✅ AEC Data Model GraphQL helper loaded (Beta API with proper ID resolution)');
+console.log('✅ AEC Data Model GraphQL helper loaded (Beta API with results/pagination schema)');

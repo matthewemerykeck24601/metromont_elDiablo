@@ -172,7 +172,11 @@ async function onProjectChange() {
     }
 
     selectedProjectId = projectSelect.value;
+    const selectedOption = projectSelect.options[projectSelect.selectedIndex];
+    const projectName = selectedOption.textContent.trim();
+    
     console.log('✅ Project selected:', selectedProjectId);
+    console.log('📂 Project name:', projectName);
 
     // Reset model selection
     modelSelect.innerHTML = '<option value="">Loading designs from AEC Data Model...</option>';
@@ -185,8 +189,8 @@ async function onProjectChange() {
     }
 
     try {
-        // Load designs (element groups) for the selected project
-        await loadDesignsForProject(selectedProjectId);
+        // Load designs (element groups) for the selected project BY NAME
+        await loadDesignsForProject({ projectName, accProjectId: selectedProjectId });
     } catch (error) {
         console.error('❌ Error loading designs:', error);
         modelSelect.innerHTML = `<option value="">Error: ${error.message}</option>`;
@@ -194,15 +198,28 @@ async function onProjectChange() {
     }
 }
 
-async function loadDesignsForProject(projectId) {
+async function loadDesignsForProject({ projectName, accProjectId }) {
     const modelSelect = document.getElementById('esModelSelect');
     
     try {
-        console.log('📂 Loading designs for ACC project:', projectId);
+        console.log('📂 Loading designs for project:', projectName);
 
-        // Call resolver with ACC project ID (b.xxx)
-        // Resolver handles all ACC → AEC-DM conversion internally
-        const elementGroups = await window.AECDataModel.getElementGroups(projectId);
+        // Get token and region
+        const token = window.forgeAccessToken;
+        if (!token) {
+            throw new Error('Not authenticated. Please log in first.');
+        }
+
+        const region = 'US'; // Could be made configurable later
+        
+        // Call new AEC DM API with project NAME (not ACC ID)
+        // This resolves: hub → project (by name) → element groups
+        const elementGroups = await window.AECDataModel.getElementGroups({
+            token,
+            region,
+            projectName,
+            preferredHubName: null // Will use first hub
+        });
         
         if (!elementGroups || elementGroups.length === 0) {
             modelSelect.innerHTML = '<option value="">No AEC Data Model designs found</option>';
@@ -219,7 +236,6 @@ async function loadDesignsForProject(projectId) {
             const option = document.createElement('option');
             option.value = eg.id;
             option.textContent = eg.name;
-            // Note: Beta API returns items not results, fileVersionUrn may not be in alternativeIdentifiers
             option.dataset.urn = eg.fileVersionUrn || '';
             option.dataset.egid = eg.id;
             modelSelect.appendChild(option);
@@ -234,9 +250,9 @@ async function loadDesignsForProject(projectId) {
         modelSelect.innerHTML = '<option value="">Error: AEC DM not available</option>';
         
         // Provide helpful error message
-        if (error.message.includes('Could not resolve')) {
+        if (error.message.includes('not found')) {
             showNotification('Project not found in AEC Data Model. Models may need re-publishing.', 'error');
-        } else if (error.message.includes('No AEC DM hubs')) {
+        } else if (error.message.includes('No AEC-DM hubs')) {
             showNotification('No AEC DM hubs found. Check if AEC DM is activated.', 'error');
         } else {
             showNotification('AEC Data Model error - see console for details', 'error');
@@ -856,36 +872,25 @@ async function testAECDataModel() {
         return;
     }
     
+    const projectSelect = document.getElementById('esProjectSelect');
+    const selectedOption = projectSelect.options[projectSelect.selectedIndex];
+    const projectName = selectedOption.textContent.trim();
+    
     showNotification('Testing AEC Data Model...', 'info');
     console.log('📋 Test Configuration:');
+    console.log('  Selected Project Name:', projectName);
     console.log('  Selected Project ID:', selectedProjectId);
     console.log('  Forge Token Available:', !!window.forgeAccessToken);
     console.log('  GraphQL Endpoint:', 'https://developer.api.autodesk.com/aec/graphql');
     
+    const token = window.forgeAccessToken;
+    
     // First, test if GraphQL endpoint is accessible at all
     console.log('\n🔬 Testing GraphQL Introspection...');
     try {
-        const introspectionQuery = `
-            query {
-                __schema {
-                    queryType {
-                        name
-                        fields {
-                            name
-                            description
-                        }
-                    }
-                }
-            }
-        `;
-        
-        const introspectionData = await window.AECDataModel.query(introspectionQuery, {}, 'US');
+        const introspectionData = await window.AECDataModel.introspect({ token, region: 'US' });
         console.log('✅ GraphQL Introspection SUCCESS');
-        console.log('Available queries:', introspectionData.__schema?.queryType?.fields?.map(f => f.name));
-        
-        // Check if elementGroupsByProject exists
-        const hasElementGroups = introspectionData.__schema?.queryType?.fields?.some(f => f.name === 'elementGroupsByProject');
-        console.log('Has elementGroupsByProject query:', hasElementGroups);
+        console.log('Schema type:', introspectionData.__schema?.queryType?.name);
         
     } catch (introspectionError) {
         console.error('❌ GraphQL Introspection FAILED:', introspectionError);
@@ -894,53 +899,22 @@ async function testAECDataModel() {
     }
     
     const results = {
-        projectIdFormats: [],
         regions: []
     };
     
-    // Test different project ID formats
-    const formats = [
-        { id: selectedProjectId, name: 'Direct ACC ID (b.xxx)' },
-        { id: selectedProjectId.substring(2), name: 'UUID only (xxx)' }
-    ];
-    
-    console.log('\n📝 Testing Project ID Formats:');
-    for (const format of formats) {
-        try {
-            console.log(`\n  Testing: ${format.name}`);
-            console.log(`  Using ID: ${format.id}`);
-            
-            const data = await window.AECDataModel.getElementGroups(format.id, 'US');
-            
-            results.projectIdFormats.push({
-                format: format.name,
-                id: format.id,
-                success: true,
-                count: data.length
-            });
-            
-            console.log(`  ✅ SUCCESS - Found ${data.length} element groups`);
-            
-        } catch (error) {
-            results.projectIdFormats.push({
-                format: format.name,
-                id: format.id,
-                success: false,
-                error: error.message
-            });
-            
-            console.log(`  ❌ FAILED - ${error.message}`);
-        }
-    }
-    
-    // Test different regions
+    // Test different regions using PROJECT NAME (not ACC ID)
     const regions = ['US', 'EMEA', 'AUS'];
-    console.log('\n🌍 Testing Regions:');
+    console.log('\n🌍 Testing Regions with Project Name Lookup:');
     
     for (const region of regions) {
         try {
             console.log(`\n  Testing region: ${region}`);
-            const data = await window.AECDataModel.getElementGroups(selectedProjectId, region);
+            const data = await window.AECDataModel.getElementGroups({
+                token,
+                region,
+                projectName,
+                preferredHubName: null
+            });
             
             results.regions.push({
                 region,
@@ -964,17 +938,7 @@ async function testAECDataModel() {
     // Summary
     console.log('\n📊 === TEST SUMMARY ===');
     
-    const successfulFormats = results.projectIdFormats.filter(r => r.success);
     const successfulRegions = results.regions.filter(r => r.success);
-    
-    if (successfulFormats.length > 0) {
-        console.log('\n✅ Working Project ID Formats:');
-        successfulFormats.forEach(f => {
-            console.log(`  • ${f.format}: ${f.count} element groups`);
-        });
-    } else {
-        console.log('\n❌ No project ID formats worked');
-    }
     
     if (successfulRegions.length > 0) {
         console.log('\n✅ Working Regions:');
@@ -985,18 +949,19 @@ async function testAECDataModel() {
         console.log('\n❌ No regions worked');
     }
     
-    if (successfulFormats.length === 0 && successfulRegions.length === 0) {
+    if (successfulRegions.length === 0) {
         console.log('\n⚠️  CONCLUSION: AEC Data Model is NOT available');
         console.log('Possible reasons:');
         console.log('  1. AEC DM not activated on ACC account');
         console.log('  2. Models are Revit 2023 or earlier');
         console.log('  3. Models uploaded before AEC DM activation');
         console.log('  4. Project has no published Revit models');
+        console.log('  5. Project name mismatch between ACC and AEC DM');
         
         showNotification('AEC Data Model NOT available - Check console for details', 'error');
     } else {
         console.log('\n✅ CONCLUSION: AEC Data Model IS available!');
-        showNotification(`AEC DM available! Found ${successfulFormats[0]?.count || successfulRegions[0]?.count} designs`, 'success');
+        showNotification(`AEC DM available! Found ${successfulRegions[0]?.count} designs`, 'success');
     }
     
     console.log('\n=== END DIAGNOSTIC TEST ===\n');
