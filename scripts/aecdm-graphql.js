@@ -1,53 +1,47 @@
 // AEC Data Model GraphQL Helper
 // Provides proper ID resolution from ACC to AEC DM format
-// Uses Beta API schema: items (not results), pageInfo (not pagination)
+// Beta API returns simple arrays (not paginated wrappers) for hubs/projects/elementGroups
 
 const AEC_GRAPHQL_URL = 'https://developer.api.autodesk.com/aec/graphql';
 
 // --- AEC-DM GraphQL queries ---
-// List hubs
+// List hubs - Beta API uses simple array return, not paginated wrapper
 const GQL_LIST_HUBS = `
-  query ListHubs($pagination: PaginationInput) {
-    hubs(pagination: $pagination) {
-      items {
-        id
-        name
-        alternativeIdentifiers {
-          dataManagementAPIHubId
-        }
+  query ListHubs {
+    hubs {
+      id
+      name
+      alternativeIdentifiers {
+        dataManagementAPIHubId
       }
-      pageInfo { hasNextPage endCursor }
     }
   }
 `;
 
-// List projects for a hub
+// List projects for a hub - Beta API returns simple array
 const GQL_LIST_PROJECTS_BY_HUB = `
-  query ListProjectsByHub($hubId: ID!, $pagination: PaginationInput) {
-    projects(hubId: $hubId, pagination: $pagination) {
-      items {
-        id
-        name
-        alternativeIdentifiers {
-          dataManagementAPIProjectId
-        }
+  query ListProjectsByHub($hubId: ID!) {
+    projects(hubId: $hubId) {
+      id
+      name
+      alternativeIdentifiers {
+        dataManagementAPIProjectId
       }
-      pageInfo { hasNextPage endCursor }
     }
   }
 `;
 
-// Element groups by AEC-DM project id
+// Element groups by AEC-DM project id - Beta API returns simple array
 const GQL_ELEMENT_GROUPS_BY_PROJECT = `
-  query ElGroupsByProject($projectId: ID!, $pagination: PaginationInput) {
-    elementGroupsByProject(projectId: $projectId, pagination: $pagination) {
-      items {
-        id
-        name
-        createdAt
-        updatedAt
+  query ElGroupsByProject($projectId: ID!) {
+    elementGroupsByProject(projectId: $projectId) {
+      id
+      name
+      createdAt
+      updatedAt
+      alternativeIdentifiers {
+        fileVersionUrn
       }
-      pageInfo { hasNextPage endCursor }
     }
   }
 `;
@@ -243,36 +237,30 @@ async function resolveAecdmProjectIdFromAcc(accProjectId) {
 
     console.log('🔍 Resolving AEC-DM project from ACC:', accProjectId);
 
-    // 1) enumerate hubs (paginate up to 100 at a time)
-    let next = null;
-    const hubs = [];
-    do {
-        const res = await aecdmQuery(GQL_LIST_HUBS, { pagination: { limit: 100, cursor: next } });
-        const page = res?.hubs;
-        if (!page) break;
-        hubs.push(...(page.items || []));
-        next = page.pageInfo?.hasNextPage ? page.pageInfo.endCursor : null;
-    } while (next);
+    // 1) Get all hubs (Beta API returns direct array, no pagination wrapper)
+    const hubsRes = await aecdmQuery(GQL_LIST_HUBS, {});
+    const hubs = hubsRes?.hubs || [];
 
     console.log(`Found ${hubs.length} AEC-DM hubs`);
 
-    // 2) for each hub, enumerate projects and match alternativeIdentifiers.dataManagementAPIProjectId
+    if (!hubs.length) {
+        throw new Error('No AEC-DM hubs visible to this user');
+    }
+
+    // 2) for each hub, get projects and match alternativeIdentifiers.dataManagementAPIProjectId
     for (const hub of hubs) {
-        let pNext = null;
-        do {
-            const pRes = await aecdmQuery(GQL_LIST_PROJECTS_BY_HUB, { hubId: hub.id, pagination: { limit: 100, cursor: pNext } });
-            const pPage = pRes?.projects;
-            const items = pPage?.items || [];
-            const match = items.find(p => {
-                const alt = p.alternativeIdentifiers?.dataManagementAPIProjectId;
-                return alt === norm.raw || alt === norm.bare;
-            });
-            if (match) {
-                console.log(`✅ Matched project in hub ${hub.name}:`, match.name, match.id);
-                return match.id; // <-- AEC-DM project id
-            }
-            pNext = pPage?.pageInfo?.hasNextPage ? pPage.pageInfo.endCursor : null;
-        } while (pNext);
+        const projRes = await aecdmQuery(GQL_LIST_PROJECTS_BY_HUB, { hubId: hub.id });
+        const projects = projRes?.projects || [];
+        
+        const match = projects.find(p => {
+            const alt = p.alternativeIdentifiers?.dataManagementAPIProjectId;
+            return alt === norm.raw || alt === norm.bare;
+        });
+        
+        if (match) {
+            console.log(`✅ Matched project in hub ${hub.name}:`, match.name, match.id);
+            return match.id; // <-- AEC-DM project id
+        }
     }
 
     throw new Error(`AEC-DM project not found for ACC id: ${accProjectId}`);
@@ -292,23 +280,21 @@ async function getElementGroupsForProject(accProjectId) {
 
         console.log('Using AEC-DM project ID:', aecdmProjectId);
 
-        // Step 2: Fetch element groups with pagination
-        const groups = [];
-        let cursor = null;
-        do {
-            const res = await aecdmQuery(GQL_ELEMENT_GROUPS_BY_PROJECT, {
-                projectId: aecdmProjectId,
-                pagination: { limit: 100, cursor }
-            });
-            const page = res?.elementGroupsByProject;
-            if (!page) break;
-            groups.push(...(page.items || []));
-            cursor = page.pageInfo?.hasNextPage ? page.pageInfo.endCursor : null;
-        } while (cursor);
+        // Step 2: Fetch element groups (Beta API returns direct array, no pagination)
+        const res = await aecdmQuery(GQL_ELEMENT_GROUPS_BY_PROJECT, {
+            projectId: aecdmProjectId
+        });
+        
+        const groups = res?.elementGroupsByProject || [];
 
         console.log(`✅ Found ${groups.length} element groups`);
 
-        return groups;
+        // Map to include fileVersionUrn for Viewer compatibility
+        return groups.map(eg => ({
+            id: eg.id,
+            name: eg.name,
+            fileVersionUrn: eg.alternativeIdentifiers?.fileVersionUrn || null
+        }));
         
     } catch (error) {
         console.error('Error fetching element groups:', error);
