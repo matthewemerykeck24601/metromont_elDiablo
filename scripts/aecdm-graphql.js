@@ -1,7 +1,68 @@
 // AEC Data Model GraphQL Helper
 // Provides proper ID resolution from ACC to AEC DM format
+// Uses Beta API schema: items (not results), pageInfo (not pagination)
 
 const AEC_GRAPHQL_URL = 'https://developer.api.autodesk.com/aec/graphql';
+
+// --- AEC-DM GraphQL queries ---
+// List hubs
+const GQL_LIST_HUBS = `
+  query ListHubs($pagination: PaginationInput) {
+    hubs(pagination: $pagination) {
+      items {
+        id
+        name
+        alternativeIdentifiers {
+          dataManagementAPIHubId
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
+// List projects for a hub
+const GQL_LIST_PROJECTS_BY_HUB = `
+  query ListProjectsByHub($hubId: ID!, $pagination: PaginationInput) {
+    projects(hubId: $hubId, pagination: $pagination) {
+      items {
+        id
+        name
+        alternativeIdentifiers {
+          dataManagementAPIProjectId
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
+// Element groups by AEC-DM project id
+const GQL_ELEMENT_GROUPS_BY_PROJECT = `
+  query ElGroupsByProject($projectId: ID!, $pagination: PaginationInput) {
+    elementGroupsByProject(projectId: $projectId, pagination: $pagination) {
+      items {
+        id
+        name
+        createdAt
+        updatedAt
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
+/**
+ * Normalize ACC project ID to handle both b.guid and bare guid formats
+ * @param {string} id - ACC project ID
+ * @returns {object} Normalized ID object
+ */
+function normalizeAccProjectId(id) {
+    if (!id) return null;
+    // Accept `b.<guid>` or `<guid>`; compare both
+    const bare = id.startsWith('b.') ? id.slice(2) : id;
+    return { raw: id, bare };
+}
 
 /**
  * Execute a GraphQL query against the AEC Data Model API
@@ -174,85 +235,81 @@ async function resolveAecdmProjectId({ aecdmHubId, accProjectId, projectName }) 
 /**
  * Resolve ACC project ID to AEC-DM project ID
  * @param {string} accProjectId - ACC project ID (b.xxx format)
- * @param {string} region - Region
  * @returns {Promise<string>} AEC-DM project ID
  */
-async function resolveAecdmProjectIdFromAcc(accProjectId, region = 'US') {
-    console.log('🔍 Resolving AEC-DM project ID from ACC:', accProjectId);
-    
-    // 1) Resolve ACC project (b.<uuid>) to AEC-DM project id
-    const RESOLVE_PROJECT_FROM_ACC = `
-        query ($accId: ID!) {
-            projectByDataManagementAPIId(dataManagementAPIProjectId: $accId) {
-                id
-                name
-                alternativeIdentifiers { dataManagementAPIProjectId }
-            }
-        }
-    `;
+async function resolveAecdmProjectIdFromAcc(accProjectId) {
+    const norm = normalizeAccProjectId(accProjectId);
+    if (!norm) throw new Error('No ACC project id provided');
 
-    try {
-        const { projectByDataManagementAPIId } = await aecdmQuery(RESOLVE_PROJECT_FROM_ACC, { accId: accProjectId }, region);
-        
-        // Guard - ensure we got valid data
-        if (!projectByDataManagementAPIId?.id) {
-            throw new Error("Could not resolve AEC-DM project id from ACC id");
-        }
-        
-        const aecdmProjectId = projectByDataManagementAPIId.id;
-        console.log('✅ Resolved AEC-DM project:', projectByDataManagementAPIId.name, aecdmProjectId);
-        
-        return aecdmProjectId;
-        
-    } catch (error) {
-        console.error('❌ Failed to resolve AEC-DM project:', error);
-        throw error;
+    console.log('🔍 Resolving AEC-DM project from ACC:', accProjectId);
+
+    // 1) enumerate hubs (paginate up to 100 at a time)
+    let next = null;
+    const hubs = [];
+    do {
+        const res = await aecdmQuery(GQL_LIST_HUBS, { pagination: { limit: 100, cursor: next } });
+        const page = res?.hubs;
+        if (!page) break;
+        hubs.push(...(page.items || []));
+        next = page.pageInfo?.hasNextPage ? page.pageInfo.endCursor : null;
+    } while (next);
+
+    console.log(`Found ${hubs.length} AEC-DM hubs`);
+
+    // 2) for each hub, enumerate projects and match alternativeIdentifiers.dataManagementAPIProjectId
+    for (const hub of hubs) {
+        let pNext = null;
+        do {
+            const pRes = await aecdmQuery(GQL_LIST_PROJECTS_BY_HUB, { hubId: hub.id, pagination: { limit: 100, cursor: pNext } });
+            const pPage = pRes?.projects;
+            const items = pPage?.items || [];
+            const match = items.find(p => {
+                const alt = p.alternativeIdentifiers?.dataManagementAPIProjectId;
+                return alt === norm.raw || alt === norm.bare;
+            });
+            if (match) {
+                console.log(`✅ Matched project in hub ${hub.name}:`, match.name, match.id);
+                return match.id; // <-- AEC-DM project id
+            }
+            pNext = pPage?.pageInfo?.hasNextPage ? pPage.pageInfo.endCursor : null;
+        } while (pNext);
     }
+
+    throw new Error(`AEC-DM project not found for ACC id: ${accProjectId}`);
 }
 
 /**
  * Get element groups (designs/models) for a project
  * @param {string} accProjectId - ACC project ID (b.xxx format)
- * @param {string} region - Region (default 'US')
- * @param {number} limit - Limit (max 100)
- * @returns {Promise<Array>} Array of element groups with id, name, fileVersionUrn
+ * @returns {Promise<Array>} Array of element groups with id, name
  */
-async function getElementGroupsForProject(accProjectId, region = 'US', limit = 50) {
+async function getElementGroupsForProject(accProjectId) {
     try {
         console.log('📂 Getting element groups for ACC project:', accProjectId);
 
         // Step 1: Resolve to AEC-DM project ID (never pass b.xxx beyond this point)
-        const aecdmProjectId = await resolveAecdmProjectIdFromAcc(accProjectId, region);
+        const aecdmProjectId = await resolveAecdmProjectIdFromAcc(accProjectId);
 
-        // Step 2: Fetch element groups by AEC-DM project id
-        const GET_ELEMENT_GROUPS = `
-            query ($projectId: ID!, $limit: Int) {
-                elementGroupsByProject(projectId: $projectId, pagination: { limit: $limit }) {
-                    pagination { cursor }
-                    results {
-                        id
-                        name
-                        alternativeIdentifiers { fileUrn fileVersionUrn }
-                    }
-                }
-            }
-        `;
+        console.log('Using AEC-DM project ID:', aecdmProjectId);
 
-        const { elementGroupsByProject } = await aecdmQuery(GET_ELEMENT_GROUPS, { 
-            projectId: aecdmProjectId, 
-            limit: Math.min(limit, 100) // Ensure limit ≤ 100
-        }, region);
+        // Step 2: Fetch element groups with pagination
+        const groups = [];
+        let cursor = null;
+        do {
+            const res = await aecdmQuery(GQL_ELEMENT_GROUPS_BY_PROJECT, {
+                projectId: aecdmProjectId,
+                pagination: { limit: 100, cursor }
+            });
+            const page = res?.elementGroupsByProject;
+            if (!page) break;
+            groups.push(...(page.items || []));
+            cursor = page.pageInfo?.hasNextPage ? page.pageInfo.endCursor : null;
+        } while (cursor);
 
-        const elementGroups = elementGroupsByProject?.results || [];
-        console.log(`✅ Found ${elementGroups.length} element groups`);
+        console.log(`✅ Found ${groups.length} element groups`);
 
-        return elementGroups.map(eg => ({
-            id: eg.id,
-            name: eg.name,
-            fileUrn: eg.alternativeIdentifiers?.fileUrn || null,
-            fileVersionUrn: eg.alternativeIdentifiers?.fileVersionUrn || null
-        }));
-
+        return groups;
+        
     } catch (error) {
         console.error('Error fetching element groups:', error);
         throw error;

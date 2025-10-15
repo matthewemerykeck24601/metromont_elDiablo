@@ -202,7 +202,7 @@ async function loadDesignsForProject(projectId) {
 
         // Call resolver with ACC project ID (b.xxx)
         // Resolver handles all ACC → AEC-DM conversion internally
-        const elementGroups = await window.AECDataModel.getElementGroups(projectId, 'US', 50);
+        const elementGroups = await window.AECDataModel.getElementGroups(projectId);
         
         if (!elementGroups || elementGroups.length === 0) {
             modelSelect.innerHTML = '<option value="">No AEC Data Model designs found</option>';
@@ -219,6 +219,7 @@ async function loadDesignsForProject(projectId) {
             const option = document.createElement('option');
             option.value = eg.id;
             option.textContent = eg.name;
+            // Note: Beta API returns items not results, fileVersionUrn may not be in alternativeIdentifiers
             option.dataset.urn = eg.fileVersionUrn || '';
             option.dataset.egid = eg.id;
             modelSelect.appendChild(option);
