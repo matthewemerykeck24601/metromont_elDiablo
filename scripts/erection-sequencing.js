@@ -200,14 +200,9 @@ async function loadDesignsForProject(projectId) {
     try {
         console.log('📂 Loading designs for ACC project:', projectId);
 
-        // Pull name from the selected option for name-based fallback
-        const projectSelect = document.getElementById('esProjectSelect');
-        const selectedOpt = projectSelect?.options[projectSelect.selectedIndex];
-        const selectedName = selectedOpt ? JSON.parse(selectedOpt.dataset.projectData || '{}').name : undefined;
-
-        const elementGroups = await window.AECDataModel.getElementGroups(projectId, 'US', {
-            projectName: selectedName
-        });
+        // Call resolver with ACC project ID (b.xxx)
+        // Resolver handles all ACC → AEC-DM conversion internally
+        const elementGroups = await window.AECDataModel.getElementGroups(projectId, 'US', 50);
         
         if (!elementGroups || elementGroups.length === 0) {
             modelSelect.innerHTML = '<option value="">No AEC Data Model designs found</option>';
