@@ -14,6 +14,10 @@ const AEC_GRAPHQL_URL = 'https://developer.api.autodesk.com/aec/graphql';
  * @returns {Promise<any>} Query result data
  */
 async function aecdmQuery({ query, variables = {}, token, region = 'US' }) {
+    const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+    const MAX_RETRIES = 3;
+    const baseDelayMs = 500;
+
     if (!token && !window.forgeAccessToken) {
         throw new Error('No APS token available. Please authenticate first.');
     }
@@ -35,35 +39,60 @@ async function aecdmQuery({ query, variables = {}, token, region = 'US' }) {
         console.log('Using region header:', region);
     }
 
-    try {
-        const response = await fetch(AEC_GRAPHQL_URL, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ query, variables })
-        });
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout cap
+            
+            const response = await fetch(AEC_GRAPHQL_URL, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ query, variables }),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeout);
 
-        console.log('GraphQL response status:', response.status);
+            console.log('GraphQL response status:', response.status);
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('GraphQL HTTP error:', response.status, errorText);
-            throw new Error(`GraphQL request failed: ${response.status} - ${errorText}`);
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('GraphQL HTTP error:', response.status, errorText);
+                
+                // Retry on known transient statuses
+                if (RETRY_STATUSES.has(response.status) && attempt < MAX_RETRIES) {
+                    const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 250; // Exponential backoff + jitter
+                    console.warn(`⚠️  Retrying AEC-DM (attempt ${attempt + 1}/${MAX_RETRIES}) in ${Math.round(delay)}ms…`);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                }
+                
+                throw new Error(`GraphQL request failed: ${response.status} - ${errorText}`);
+            }
+
+            const json = await response.json();
+
+            if (json.errors) {
+                console.error('GraphQL errors:', json.errors);
+                const errorMessages = json.errors.map(e => e.message).join('; ');
+                throw new Error(`GraphQL Error: ${errorMessages}`);
+            }
+
+            console.log('✅ GraphQL query successful');
+            return json.data;
+
+        } catch (error) {
+            // Retry aborted or network errors that look transient
+            if (attempt < MAX_RETRIES && (error.name === 'AbortError' || /network/i.test(error.message))) {
+                const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 250;
+                console.warn(`⚠️  Retrying AEC-DM after error (attempt ${attempt + 1}/${MAX_RETRIES}) in ${Math.round(delay)}ms…`, error.message);
+                await new Promise(r => setTimeout(r, delay));
+                continue;
+            }
+            
+            console.error('❌ AEC DM GraphQL error:', error);
+            throw error;
         }
-
-        const json = await response.json();
-
-        if (json.errors) {
-            console.error('GraphQL errors:', json.errors);
-            const errorMessages = json.errors.map(e => e.message).join('; ');
-            throw new Error(`GraphQL Error: ${errorMessages}`);
-        }
-
-        console.log('✅ GraphQL query successful');
-        return json.data;
-
-    } catch (error) {
-        console.error('❌ AEC DM GraphQL error:', error);
-        throw error;
     }
 }
 
@@ -169,7 +198,7 @@ async function fetchElementGroupsByAecProjectId({ token, region = 'US', projectI
     
     const query = `
         query GetElementGroups($projectId: ID!) {
-            elementGroupsByProject(projectId: $projectId, pagination: { limit: 100 }) {
+            elementGroupsByProject(projectId: $projectId, pagination: { limit: 50 }) {
                 pagination { cursor }
                 results {
                     id
