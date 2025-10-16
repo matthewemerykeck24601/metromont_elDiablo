@@ -142,7 +142,8 @@ function populateProjectDropdown() {
     globalHubData.projects.forEach(project => {
         const option = document.createElement('option');
         option.value = project.id;
-        option.textContent = `${project.name}${project.number && project.number !== 'N/A' ? ' (' + project.number + ')' : ''}`;
+        option.textContent = project.name; // exact ACC name only
+        option.title = project.number && project.number !== 'N/A' ? `Project #${project.number}` : ''; // Show number in tooltip
         option.dataset.projectData = JSON.stringify(project);
         projectSelect.appendChild(option);
     });
@@ -171,12 +172,16 @@ async function onProjectChange() {
         return;
     }
 
-    selectedProjectId = projectSelect.value;
     const selectedOption = projectSelect.options[projectSelect.selectedIndex];
-    const projectName = selectedOption.textContent.trim();
+    const projectObj = JSON.parse(selectedOption.dataset.projectData || '{}');
+    const projectName = projectObj.name;           // exact ACC name
+    const accProjectId = projectObj.id;            // ACC project ID (b.****)
     
-    console.log('✅ Project selected:', selectedProjectId);
+    selectedProjectId = accProjectId;
+    
+    console.log('✅ Project selected:', accProjectId);
     console.log('📂 Project name:', projectName);
+    console.log('🔢 Project number:', projectObj.number || 'N/A');
 
     // Reset model selection
     modelSelect.innerHTML = '<option value="">Loading designs from AEC Data Model...</option>';
@@ -190,7 +195,7 @@ async function onProjectChange() {
 
     try {
         // Load designs (element groups) for the selected project BY NAME
-        await loadDesignsForProject({ projectName, accProjectId: selectedProjectId });
+        await loadDesignsForProject({ projectName, accProjectId });
     } catch (error) {
         console.error('❌ Error loading designs:', error);
         modelSelect.innerHTML = `<option value="">Error: ${error.message}</option>`;
@@ -881,12 +886,14 @@ async function testAECDataModel() {
     
     const projectSelect = document.getElementById('esProjectSelect');
     const selectedOption = projectSelect.options[projectSelect.selectedIndex];
-    const projectName = selectedOption.textContent.trim();
+    const projectObj = JSON.parse(selectedOption.dataset.projectData || '{}');
+    const projectName = projectObj.name;           // exact ACC name
     
     showNotification('Testing AEC Data Model...', 'info');
     console.log('📋 Test Configuration:');
     console.log('  Selected Project Name:', projectName);
     console.log('  Selected Project ID:', selectedProjectId);
+    console.log('  Project Number:', projectObj.number || 'N/A');
     console.log('  Forge Token Available:', !!window.forgeAccessToken);
     console.log('  GraphQL Endpoint:', 'https://developer.api.autodesk.com/aec/graphql');
     
