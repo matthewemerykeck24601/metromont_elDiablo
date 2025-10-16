@@ -220,6 +220,43 @@
             <div id="viewerStatus" class="viewer-status">
                 <span id="viewerStatusText">Ready</span>
             </div>
+
+            <!-- Properties Grid Panel -->
+            <section id="properties-grid-panel" style="display:none; border-top:1px solid #e5e7eb; padding:12px 8px; background: white;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                    <strong>Model Properties</strong>
+                    <span id="propGridStatus" style="font-size:12px;color:#6b7280;">(not loaded)</span>
+                    <button id="btnLoadPropGrid" class="btn btn-secondary btn-sm">Load Grid</button>
+                    <button id="btnExportPropGrid" class="btn btn-secondary btn-sm">Export CSV</button>
+                </div>
+
+                <div style="display:flex; gap:12px; margin-bottom:8px; align-items:center;">
+                    <label style="font-weight:500;">Primary mapping:</label>
+                    <select id="propGridCategory" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px;"></select>
+                    <select id="propGridProperty" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px;"></select>
+                    <span style="font-size:12px;color:#6b7280;">(default: Identity Data → Mark)</span>
+                </div>
+
+                <div style="overflow:auto; max-height:360px; border:1px solid #e5e7eb;">
+                    <table id="propGrid" style="width:100%; border-collapse:collapse;">
+                        <thead style="position:sticky; top:0; background:#f9fafb;">
+                            <tr>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">dbId</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Element Name</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Family</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Type Name</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Level</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Category</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Property</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Value</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Sequence #</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Sequence Date</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
         </div>
     </div>
 

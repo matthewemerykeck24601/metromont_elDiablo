@@ -17,6 +17,8 @@ let activityElementMap = new Map(); // Map<activityName, Set<propertyValue>>
 let dayActivitiesMap = new Map(); // Map<dayISO, Set<activityName>>
 let modelCategories = new Map(); // Map<category, Set<propertyNames>>
 let filterRowCount = 1;
+let propGridRows = []; // array of {dbId, name, family, typeName, level, mapCategory, mapProperty, mapValue, seqNum, seqDate}
+let currentFilter = null; // { category, property }
 
 // Make token available globally for GraphQL helper
 window.forgeAccessToken = null;
@@ -648,6 +650,14 @@ function populateCategoryDropdowns() {
         console.warn('Default filter seed skipped:', e);
     }
     
+    // Initialize properties grid panel
+    showPropertiesGridPanel(true);
+    bindPropertiesGridUI();
+    
+    // Set default filter for element isolation
+    currentFilter = { category: 'Identity Data', property: 'Mark' };
+    console.log('✅ Default mapping set to Identity Data → Mark');
+    
     showNotification('Model properties extracted. You can now configure filters.', 'success');
 }
 
@@ -970,15 +980,14 @@ Roof Structure,2025-01-17,3,2025-01-19,Construct,Install roof beams,MK-024|MK-02
 function playSequence() {
     if (isPlaying) return;
 
-    // Hard-stop if no valid filters are configured
-    const filters = getConfiguredFilters();
-    if (!filters || filters.length === 0) {
+    // Hard-stop if no valid filter is configured
+    if (!currentFilter || !currentFilter.property) {
         showNotification('Please configure at least one element filter (e.g., Identity Data → Mark).', 'warning');
-        console.warn('⚠️  Playback blocked: no element filters configured.');
+        console.warn('⚠️  Playback blocked: no element filter configured.');
         return;
     }
 
-    console.log('▶️ Playing sequence');
+    console.log('▶️ Playing sequence using filter:', currentFilter);
     isPlaying = true;
 
     document.getElementById('esBtnPlay').disabled = true;
@@ -1094,19 +1103,17 @@ async function isolateElementsForCurrentDay() {
         return;
     }
 
+    // Use currentFilter (set by property grid or auto-seed)
+    if (!currentFilter || !currentFilter.property) {
+        showNotification('Please configure at least one element filter', 'warning');
+        viewer.showAll();
+        return;
+    }
+
     updateViewerStatus(`Loading elements for ${currentDay}...`);
 
     try {
-        // Get configured filters
-        const filters = getConfiguredFilters();
-        if (filters.length === 0) {
-            showNotification('Please configure at least one element filter', 'warning');
-            viewer.showAll();
-            return;
-        }
-
-        const primaryFilter = filters[0];
-        console.log(`🔍 Isolating elements for ${activities.size} activities using ${primaryFilter.category} → ${primaryFilter.property}`);
+        console.log(`🔍 Isolating elements for ${activities.size} activities using ${currentFilter.category} → ${currentFilter.property}`);
 
         // Collect dbIds for all activities on this day
         const allDbIds = [];
@@ -1118,12 +1125,8 @@ async function isolateElementsForCurrentDay() {
             const valuesArray = Array.from(elementValues);
             console.log(`   Activity: ${activityName}, Values: ${valuesArray.join(', ')}`);
 
-            // Query dbIds directly from viewer property DB
-            const dbIds = await getDbIdsByPropertyEquals({
-                category: primaryFilter.category,
-                property: primaryFilter.property,
-                values: valuesArray
-            });
+            // Query dbIds using the simpler getBulkProperties approach
+            const dbIds = await getDbIdsByPropertyEquals(viewerModel, currentFilter.property, valuesArray);
 
             if (dbIds.length > 0) {
                 allDbIds.push(...dbIds);
@@ -1153,6 +1156,228 @@ async function isolateElementsForCurrentDay() {
     }
 }
 
+// ---- Utility Functions ----
+
+// Normalized values helper: always returns an array of trimmed strings
+function normalizeValueList(values) {
+    if (!values) return [];
+    if (Array.isArray(values)) return values.map(v => String(v).trim()).filter(Boolean);
+    // CSV string or single value
+    return String(values).split(',').map(v => v.trim()).filter(Boolean);
+}
+
+// HTML escape utility
+function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, m => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[m]));
+}
+
+// CSV field formatter
+function csv(s) {
+    const v = (s == null) ? '' : String(s);
+    if (v.includes('"') || v.includes(',') || v.includes('\n')) {
+        return `"${v.replaceAll('"', '""')}"`;
+    }
+    return v;
+}
+
+// ---- Properties Grid Panel Functions ----
+
+function showPropertiesGridPanel(show = true) {
+    const panel = document.getElementById('properties-grid-panel');
+    if (panel) {
+        panel.style.display = show ? 'block' : 'none';
+    }
+}
+
+function bindPropertiesGridUI() {
+    const btnLoad = document.getElementById('btnLoadPropGrid');
+    const btnExport = document.getElementById('btnExportPropGrid');
+    const catSel = document.getElementById('propGridCategory');
+    const propSel = document.getElementById('propGridProperty');
+
+    if (!btnLoad || !btnExport || !catSel || !propSel) return;
+
+    // Fill category + property combos from discovered categories
+    fillCategoryPropertyCombos(catSel, propSel);
+
+    // Default selection
+    selectComboValue(catSel, 'Identity Data');
+    onPropGridCategoryChanged();
+    selectComboValue(propSel, 'Mark');
+
+    catSel.addEventListener('change', onPropGridCategoryChanged);
+    
+    function onPropGridCategoryChanged() {
+        const cat = catSel.value;
+        fillPropertyComboForCategory(propSel, cat);
+    }
+
+    btnLoad.addEventListener('click', () => loadPropGrid(catSel.value, propSel.value));
+    btnExport.addEventListener('click', exportPropGridCsv);
+}
+
+function fillCategoryPropertyCombos(catSel, propSel) {
+    catSel.innerHTML = '';
+    const categories = Array.from(modelCategories.keys()).sort();
+    for (const cat of categories) {
+        const opt = document.createElement('option');
+        opt.value = cat;
+        opt.textContent = cat;
+        catSel.appendChild(opt);
+    }
+}
+
+function fillPropertyComboForCategory(propSel, categoryName) {
+    propSel.innerHTML = '';
+    const props = Array.from(modelCategories.get(categoryName) || []).sort();
+    for (const p of props) {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        propSel.appendChild(opt);
+    }
+}
+
+function selectComboValue(sel, value) {
+    const opt = Array.from(sel.options).find(o => o.value === value);
+    if (opt) sel.value = value;
+}
+
+async function loadPropGrid(categoryName, propertyName) {
+    if (!viewerModel) {
+        showNotification('No model loaded', 'warning');
+        return;
+    }
+
+    currentFilter = { category: categoryName, property: propertyName };
+    document.getElementById('propGridStatus').textContent = `(loading ${categoryName} → ${propertyName}…)`;
+
+    const model = viewerModel;
+
+    // Get all leaf dbIds
+    const dbIds = await new Promise(resolve => {
+        model.getObjectTree(tree => {
+            const leaf = [];
+            tree.enumNodeChildren(tree.getRootId(), child => {
+                if (tree.getChildCount(child) === 0) leaf.push(child);
+            }, true);
+            resolve(leaf);
+        });
+    });
+
+    // Pull a small, Revit-friendly set of columns (fast)
+    const propFilter = [
+        propertyName,
+        'Name', 'Family', 'Type Name', 'Level'
+    ];
+
+    const bulk = await new Promise((resolve, reject) => {
+        model.getBulkProperties(dbIds, { propFilter },
+            res => resolve(res), err => reject(err));
+    });
+
+    propGridRows = bulk.map(r => {
+        const get = (n) => {
+            const p = r.properties && r.properties.find(p => p.displayName === n || p.attributeName === n);
+            return p ? (p.displayValue ?? '') : '';
+        };
+        return {
+            dbId: r.dbId,
+            name: get('Name'),
+            family: get('Family'),
+            typeName: get('Type Name'),
+            level: get('Level'),
+            mapCategory: categoryName,
+            mapProperty: propertyName,
+            mapValue: get(propertyName),
+            seqNum: '',
+            seqDate: ''
+        };
+    });
+
+    renderPropGrid();
+    showPropertiesGridPanel(true);
+    document.getElementById('propGridStatus').textContent = `(loaded ${propGridRows.length} rows)`;
+    showNotification(`Loaded ${propGridRows.length} elements into property grid`, 'success');
+}
+
+function renderPropGrid() {
+    const tbody = document.querySelector('#propGrid tbody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    for (const row of propGridRows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${row.dbId}</td>
+            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.name)}</td>
+            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.family)}</td>
+            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.typeName)}</td>
+            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.level)}</td>
+            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.mapCategory)}</td>
+            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.mapProperty)}</td>
+            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.mapValue)}</td>
+            <td style="padding:0;border-bottom:1px solid #f1f5f9;">
+                <input data-k="seqNum" data-id="${row.dbId}" value="${row.seqNum}" style="width:100%;padding:4px;border:1px solid #e5e7eb;">
+            </td>
+            <td style="padding:0;border-bottom:1px solid #f1f5f9;">
+                <input data-k="seqDate" data-id="${row.dbId}" value="${row.seqDate}" type="date" style="width:100%;padding:4px;border:1px solid #e5e7eb;">
+            </td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    // Editable cells
+    tbody.addEventListener('input', (e) => {
+        const t = e.target;
+        if (!t.dataset || !t.dataset.k) return;
+        const row = propGridRows.find(r => String(r.dbId) === t.dataset.id);
+        if (row) row[t.dataset.k] = t.value;
+    });
+}
+
+function exportPropGridCsv() {
+    if (!propGridRows.length) {
+        showNotification('No property grid data to export', 'warning');
+        return;
+    }
+    
+    const cols = ['dbId', 'Element Name', 'Family', 'Type Name', 'Level', 'Category', 'Property', 'Value', 'Sequence #', 'Sequence Date'];
+    const lines = [cols.join(',')];
+    
+    for (const r of propGridRows) {
+        const line = [
+            r.dbId,
+            csv(r.name),
+            csv(r.family),
+            csv(r.typeName),
+            csv(r.level),
+            csv(r.mapCategory),
+            csv(r.mapProperty),
+            csv(r.mapValue),
+            csv(r.seqNum),
+            csv(r.seqDate)
+        ].join(',');
+        lines.push(line);
+    }
+    
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'model-properties-sequencing.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    showNotification('CSV exported successfully', 'success');
+}
+
 // ---- Viewer Controls (exact implementations) ----
 let _homeState = null;
 
@@ -1163,69 +1388,40 @@ function _saveHomeState() {
 }
 
 /**
- * Query dbIds whose property (by category/name) equals ANY of the provided values.
- * NOTE: Property names/cases come from viewer property DB extraction.
+ * Bulk property match using Viewer.getBulkProperties (fast + safe)
+ * Queries all leaf nodes and returns dbIds where property value matches any of equalsValues
  */
-async function getDbIdsByPropertyEquals({ category, property, values }) {
-    if (!viewerModel || !category || !property || !Array.isArray(values) || values.length === 0) return [];
+async function getDbIdsByPropertyEquals(model, propName, equalsValues) {
+    const wanted = new Set(normalizeValueList(equalsValues));
+    if (wanted.size === 0) return [];
 
-    const pdb = viewerModel.getPropertyDb();
+    // Grab all leaf dbIds
+    const dbIds = await new Promise(resolve => {
+        model.getObjectTree(tree => {
+            const leaf = [];
+            tree.enumNodeChildren(tree.getRootId(), child => {
+                if (tree.getChildCount(child) === 0) leaf.push(child);
+            }, true);
+            resolve(leaf);
+        });
+    });
 
-    // Build quick lookup (lowercased text compare)
-    const targetVals = new Set(values.map(v => String(v).toLowerCase()));
+    // Pull the property just once for all elements
+    const bulk = await new Promise((resolve, reject) => {
+        model.getBulkProperties(dbIds, { propFilter: [propName] },
+            res => resolve(res), err => reject(err));
+    });
 
-    // Run inside worker for speed (same pattern already used)
-    const dbIds = await pdb.executeUserFunction(function(pdb, category, property, valueSetJSON) {
-        var result = [];
-        try {
-            var valueSet = new Set(JSON.parse(valueSetJSON));
-            pdb.enumObjects(function(dbId) {
-                var matched = false;
-                pdb.enumObjectProperties(dbId, function(attrId, valId) {
-                    var def = pdb.getAttributeDef(attrId);
-                    // Category match
-                    var cat = (def && def.category) ? def.category : null;
-                    if (!cat || cat.toLowerCase() !== category.toLowerCase()) return;
-
-                    // Name match
-                    var name = (def && (def.displayName || def.name)) ? (def.displayName || def.name) : null;
-                    if (!name || name.toLowerCase() !== property.toLowerCase()) return;
-
-                    // Value fetch
-                    // NOTE: getAttrValue(attrId, valId) returns raw; stringify for comparison
-                    var val = pdb.getAttrValue(attrId, valId);
-                    var valText = (val == null) ? '' : String(val).toLowerCase();
-                    if (valueSet.has(valText)) {
-                        matched = true;
-                    }
-                });
-                if (matched) result.push(dbId);
-            });
-        } catch (e) {
-            return { __error__: true, message: (e && e.message) ? e.message : String(e) };
-        }
-        return result;
-    }, category, property, JSON.stringify(Array.from(targetVals)));
-
-    if (dbIds && dbIds.__error__) throw new Error(dbIds.message);
-    return dbIds || [];
-}
-
-/**
- * Given current configured UI filters and an activity payload,
- * compute a union of matching dbIds.
- */
-async function getDbIdsForActivity(activity) {
-    const filters = getConfiguredFilters(); // from UI rows
-    if (!filters || filters.length === 0) return [];
-
-    // Get element values from activity (these come from CSV ElementValues column)
-    const values = activity.elementValues || [];
-    if (values.length === 0) return [];
-
-    // For now, use only the first filter row—keep it simple and predictable.
-    const { category, property } = filters[0];
-    return await getDbIdsByPropertyEquals({ category, property, values });
+    // Return dbIds whose propName equals any of the wanted values (string compare)
+    const hits = [];
+    for (const row of bulk) {
+        const p = row.properties && row.properties.find(p => p.displayName === propName || p.attributeName === propName);
+        if (!p || p.displayValue == null) continue;
+        const val = String(p.displayValue).trim();
+        if (wanted.has(val)) hits.push(row.dbId);
+    }
+    
+    return hits;
 }
 
 function viewerReset() {
