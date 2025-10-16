@@ -340,6 +340,77 @@ function initializeViewer() {
     });
 }
 
+/**
+ * Encode URN for Autodesk Viewer/Model Derivative API
+ * AEC-DM returns plain URNs; the Viewer expects base64-encoded URNs
+ * @param {string} rawUrn - Raw URN from AEC Data Model
+ * @returns {string} Base64-encoded URN (URL-safe, no padding)
+ */
+function encodeUrn(rawUrn) {
+    // Strip any query parameters (e.g., ?version=...)
+    const noQuery = String(rawUrn).split('?')[0];
+    
+    // Ensure single 'urn:' prefix (remove if already present)
+    const withPrefix = noQuery.startsWith('urn:') ? noQuery : `urn:${noQuery}`;
+    
+    // Base64-encode (URL-safe: + → -, / → _, remove padding =)
+    const encoded = btoa(withPrefix)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+    
+    // Guard against common issues
+    console.assert(!rawUrn.startsWith('urn:urn:'), '❌ Double urn: prefix detected in input');
+    console.assert(/^[A-Za-z0-9_-]+$/.test(encoded), '❌ Encoded URN is not URL-safe');
+    
+    return encoded;
+}
+
+/**
+ * Debug utility: Test if a URN's manifest is accessible
+ * Useful for verifying URN encoding before loading in viewer
+ * @param {string} rawUrn - Raw URN from AEC Data Model
+ */
+async function testManifestAccess(rawUrn) {
+    console.log('\n🔍 === TESTING MANIFEST ACCESS ===');
+    console.log('Raw URN:', rawUrn);
+    
+    const encoded = encodeUrn(rawUrn);
+    console.log('Encoded URN:', encoded);
+    
+    const manifestUrl = `https://developer.api.autodesk.com/modelderivative/v2/designdata/${encoded}/manifest`;
+    console.log('Manifest URL:', manifestUrl);
+    
+    try {
+        const response = await fetch(manifestUrl, {
+            headers: {
+                'Authorization': `Bearer ${window.forgeAccessToken}`
+            }
+        });
+        
+        console.log('Response status:', response.status);
+        
+        if (response.ok) {
+            const manifest = await response.json();
+            console.log('✅ Manifest accessible:', manifest.status);
+            console.log('Progress:', manifest.progress);
+            return true;
+        } else {
+            const errorText = await response.text();
+            console.error('❌ Manifest fetch failed:', errorText);
+            return false;
+        }
+    } catch (error) {
+        console.error('❌ Manifest test error:', error);
+        return false;
+    } finally {
+        console.log('=================================\n');
+    }
+}
+
+// Expose for debugging in console
+window.testManifestAccess = testManifestAccess;
+
 async function loadModelInViewer(urn) {
     if (!viewer) {
         showNotification('Viewer not initialized', 'error');
@@ -355,8 +426,13 @@ async function loadModelInViewer(urn) {
     updateViewerStatus('Loading model...');
     showNotification('Loading model in viewer...', 'info');
 
-    const documentId = `urn:${urn}`;
-    console.log('Loading document:', documentId);
+    // IMPORTANT: AEC-DM returns plain URNs; the Viewer expects base64-encoded URNs
+    console.log('Raw URN from AEC-DM:', urn);
+    const encoded = encodeUrn(urn);
+    const documentId = `urn:${encoded}`;
+    
+    console.log('Encoded URN:', encoded);
+    console.log('Document ID for Viewer:', documentId);
 
     Autodesk.Viewing.Document.load(
         documentId,
