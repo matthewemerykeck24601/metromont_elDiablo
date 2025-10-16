@@ -518,29 +518,42 @@ function extractModelProperties() {
     }
 
     console.log('📊 Extracting model categories and properties...');
-    
+
+    // Run a pure function inside the Prop DB worker (no external refs)
     viewerModel.getPropertyDb().executeUserFunction(function(pdb) {
-        modelCategories.clear();
-        
+        // Build a plain object of arrays so it's postMessage-serializable
+        const result = {}; // { [category: string]: string[] }
+
         pdb.enumObjects(function(dbId) {
             pdb.enumObjectProperties(dbId, function(attrId, valId, attrDef) {
                 const category = attrDef.category || 'General';
-                const propertyName = attrDef.displayName || attrDef.name;
-                
-                if (!modelCategories.has(category)) {
-                    modelCategories.set(category, new Set());
+                const propName = attrDef.displayName || attrDef.name;
+
+                if (!result[category]) result[category] = [];
+                // De-dupe cheaply; Sets aren't serializable across workers
+                if (result[category].indexOf(propName) === -1) {
+                    result[category].push(propName);
                 }
-                modelCategories.get(category).add(propertyName);
             });
         });
-        
+
+        // Return value is transferred back to the main thread
+        return result;
+    }).then(function(workerResult) {
+        // Back on main thread: update Map and UI
+        modelCategories.clear(); // global (main thread) Map
+        Object.keys(workerResult).forEach(function(cat) {
+            modelCategories.set(cat, new Set(workerResult[cat]));
+        });
+
         console.log(`✅ Found ${modelCategories.size} categories`);
-        modelCategories.forEach((props, category) => {
+        modelCategories.forEach(function(props, category) {
             console.log(`   ${category}: ${props.size} properties`);
         });
-        
-        // Populate category dropdowns
-        populateCategoryDropdowns();
+
+        populateCategoryDropdowns(); // safe to call on main thread
+    }).catch(function(err) {
+        console.error('❌ Property extraction failed:', err);
     });
 }
 
