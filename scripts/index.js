@@ -406,6 +406,9 @@ async function loadAllProjectsFromHub(hubId) {
 
         const projectsData = await projectsResponse.json();
         const validProjects = [];
+        const filteredProjects = [];
+
+        console.log(`📋 Retrieved ${projectsData.data.length} total projects from hub`);
 
         const strictPattern = /^(\d{5})\s*-\s*(.+)$/;
         const flexiblePattern = /^(\d{3,6})\s*[-_\s]+(.+)$/;
@@ -416,6 +419,7 @@ async function loadAllProjectsFromHub(hubId) {
 
             const projectStatus = project.attributes.status || '';
             if (projectStatus === 'archived' || projectStatus === 'inactive') {
+                filteredProjects.push({ name: projectName, reason: `Status: ${projectStatus}` });
                 continue;
             }
 
@@ -426,6 +430,7 @@ async function loadAllProjectsFromHub(hubId) {
                 projectName.toLowerCase().includes('legacy') ||
                 projectName.startsWith('zz') ||
                 projectName.startsWith('ZZ')) {
+                filteredProjects.push({ name: projectName, reason: 'Name filter (test/template/training/mockup/legacy/zz)' });
                 continue;
             }
 
@@ -468,23 +473,58 @@ async function loadAllProjectsFromHub(hubId) {
             });
         }
 
+        console.log(`✅ Found ${validProjects.length} valid projects`);
+        if (filteredProjects.length > 0) {
+            console.log(`🔍 Filtered out ${filteredProjects.length} projects:`);
+            filteredProjects.slice(0, 10).forEach(p => {
+                console.log(`   - "${p.name}" (${p.reason})`);
+            });
+            if (filteredProjects.length > 10) {
+                console.log(`   ... and ${filteredProjects.length - 10} more`);
+            }
+        }
+
         // Process each project to get additional details
         const projects = [];
-        for (const validProject of validProjects) {
-            const { project, projectNumber, projectDisplayName, fullProjectName } = validProject;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        console.log(`📊 Processing ${validProjects.length} valid projects...`);
+        
+        for (let i = 0; i < validProjects.length; i++) {
+            const { project, projectNumber, projectDisplayName, fullProjectName } = validProjects[i];
 
             let location = '';
             let actualProjectNumber = projectNumber;
 
             try {
-                // Small delay to avoid rate limiting
-                await new Promise(resolve => setTimeout(resolve, 50));
+                // Increased delay to avoid rate limiting (200ms instead of 50ms)
+                await new Promise(resolve => setTimeout(resolve, 200));
 
                 const projectDetailResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}/projects/${project.id}`, {
                     headers: {
                         'Authorization': `Bearer ${forgeAccessToken}`
                     }
                 });
+
+                // Handle rate limiting with exponential backoff
+                if (projectDetailResponse.status === 429) {
+                    console.warn(`⚠️ Rate limited on project ${i + 1}/${validProjects.length}: ${fullProjectName}`);
+                    
+                    if (retryCount < maxRetries) {
+                        const backoffDelay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+                        console.log(`   Waiting ${backoffDelay}ms before continuing...`);
+                        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+                        retryCount++;
+                        i--; // Retry this project
+                        continue;
+                    } else {
+                        console.warn(`   Max retries reached, skipping detail fetch for: ${fullProjectName}`);
+                        retryCount = 0; // Reset for next potential rate limit
+                    }
+                } else {
+                    retryCount = 0; // Reset retry count on success
+                }
 
                 if (projectDetailResponse.ok) {
                     const projectDetail = await projectDetailResponse.json();
@@ -520,7 +560,7 @@ async function loadAllProjectsFromHub(hubId) {
                     }
                 }
             } catch (detailError) {
-                console.log('Could not get detailed project info for', fullProjectName, ':', detailError.message);
+                console.log(`⚠️ Could not get detailed project info for ${fullProjectName}:`, detailError.message);
             }
 
             projects.push({
@@ -535,6 +575,11 @@ async function loadAllProjectsFromHub(hubId) {
                 projectType: 'ACC',
                 status: project.attributes.status || 'active'
             });
+            
+            // Progress logging every 10 projects
+            if ((i + 1) % 10 === 0) {
+                console.log(`   Progress: ${i + 1}/${validProjects.length} projects processed`);
+            }
         }
 
         // Sort projects by number
@@ -553,6 +598,10 @@ async function loadAllProjectsFromHub(hubId) {
         }
 
         console.log(`✅ Processed ${sortedProjects.length} projects from hub`);
+        console.log(`📊 Project Loading Summary:`);
+        console.log(`   Total from API: ${projectsData.data.length}`);
+        console.log(`   Filtered out: ${filteredProjects.length}`);
+        console.log(`   Successfully loaded: ${sortedProjects.length}`);
 
     } catch (error) {
         console.error('Error in loadAllProjectsFromHub:', error);
