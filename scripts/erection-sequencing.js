@@ -519,39 +519,60 @@ function extractModelProperties() {
 
     console.log('📊 Extracting model categories and properties...');
 
-    // Run a pure function inside the Prop DB worker (no external refs)
+    // IMPORTANT: the function passed to executeUserFunction runs in a Web Worker.
+    // It must be self-contained and must NOT reference outer-scope variables or functions.
     viewerModel.getPropertyDb().executeUserFunction(function(pdb) {
-        // Build a plain object of arrays so it's postMessage-serializable
-        const result = {}; // { [category: string]: string[] }
+        // Build a serializable result: { [category: string]: string[] }
+        var result = Object.create(null);
 
-        pdb.enumObjects(function(dbId) {
-            pdb.enumObjectProperties(dbId, function(attrId, valId, attrDef) {
-                const category = attrDef.category || 'General';
-                const propName = attrDef.displayName || attrDef.name;
+        try {
+            pdb.enumObjects(function(dbId) {
+                // enumObjectProperties callback signature is (dbId, attrId, valId)
+                pdb.enumObjectProperties(dbId, function(attrId /*, valId */) {
+                    // Get the attribute definition from the id. This MAY be null/undefined.
+                    var def = pdb.getAttributeDef(attrId);
 
-                if (!result[category]) result[category] = [];
-                // De-dupe cheaply; Sets aren't serializable across workers
-                if (result[category].indexOf(propName) === -1) {
-                    result[category].push(propName);
-                }
+                    // Category
+                    var category = (def && def.category) ? def.category : 'General';
+
+                    // Property display name. Fallbacks ensure we always get some string.
+                    var propName =
+                        (def && (def.displayName || def.name)) ||
+                        (typeof attrId === 'number' ? ('attr:' + attrId) : String(attrId));
+
+                    if (!result[category]) result[category] = [];
+                    // Cheap de-dupe without Set (better cross-worker serialization)
+                    if (result[category].indexOf(propName) === -1) {
+                        result[category].push(propName);
+                    }
+                });
             });
-        });
+        } catch (e) {
+            // Return a recognizable error payload; main thread will handle it.
+            return { __error__: true, message: (e && e.message) ? e.message : String(e) };
+        }
 
-        // Return value is transferred back to the main thread
         return result;
     }).then(function(workerResult) {
-        // Back on main thread: update Map and UI
-        modelCategories.clear(); // global (main thread) Map
+        // Back on the main thread.
+        if (workerResult && workerResult.__error__) {
+            throw new Error('Worker error: ' + workerResult.message);
+        }
+
+        // Update in-memory structures/UI on the main thread only.
+        modelCategories.clear();
         Object.keys(workerResult).forEach(function(cat) {
+            // Store as Set locally (UI likes Sets), but we send/receive arrays over postMessage.
             modelCategories.set(cat, new Set(workerResult[cat]));
         });
 
-        console.log(`✅ Found ${modelCategories.size} categories`);
-        modelCategories.forEach(function(props, category) {
-            console.log(`   ${category}: ${props.size} properties`);
+        console.log('✅ Found ' + modelCategories.size + ' categories');
+        modelCategories.forEach(function(props, cat) {
+            console.log('   ' + cat + ': ' + props.size + ' properties');
         });
 
-        populateCategoryDropdowns(); // safe to call on main thread
+        // Rebuild the dropdowns now that categories/props are available.
+        populateCategoryDropdowns();
     }).catch(function(err) {
         console.error('❌ Property extraction failed:', err);
     });
