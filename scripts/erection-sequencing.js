@@ -345,15 +345,16 @@ function initializeViewer() {
 /**
  * Encode URN for Autodesk Viewer/Model Derivative API
  * AEC-DM returns plain URNs; the Viewer expects base64-encoded URNs
+ * IMPORTANT: Keeps query parameters (e.g., ?version=2) as they're required for ACC models
  * @param {string} rawUrn - Raw URN from AEC Data Model
  * @returns {string} Base64-encoded URN (URL-safe, no padding)
  */
 function encodeUrn(rawUrn) {
-    // Strip any query parameters (e.g., ?version=...)
-    const noQuery = String(rawUrn).split('?')[0];
+    // Keep the full URN including ?version for ACC (Viewer/Derivative requires it)
+    const raw = String(rawUrn);
     
-    // Ensure single 'urn:' prefix (remove if already present)
-    const withPrefix = noQuery.startsWith('urn:') ? noQuery : `urn:${noQuery}`;
+    // Ensure single 'urn:' prefix
+    const withPrefix = raw.startsWith('urn:') ? raw : `urn:${raw}`;
     
     // Base64-encode (URL-safe: + → -, / → _, remove padding =)
     const encoded = btoa(withPrefix)
