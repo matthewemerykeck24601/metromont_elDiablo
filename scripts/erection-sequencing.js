@@ -614,6 +614,40 @@ function populateCategoryDropdowns() {
         btnAddFilter.disabled = false;
     }
     
+    // ---- DEFAULT FILTER SEED (Revit-style) ----
+    try {
+        // We prefer Revit's "Identity Data" → "Mark" when available.
+        const defaultCat = Array.from(modelCategories.keys()).find(c => c.toLowerCase() === 'identity data')
+                        || Array.from(modelCategories.keys()).find(c => c.toLowerCase() === 'identity')
+                        || null;
+
+        if (defaultCat) {
+            const props = Array.from(modelCategories.get(defaultCat) || []);
+            const markProp = props.find(p => p.toLowerCase() === 'mark') || null;
+
+            // Point to the first (built-in) row in the HTML: #filterCategory0 / #filterProperty0
+            const catSel = document.getElementById('filterCategory0');
+            const propSel = document.getElementById('filterProperty0');
+            if (catSel && propSel) {
+                // Set category
+                catSel.value = defaultCat;
+                catSel.disabled = false;
+
+                // Populate properties for this category using existing helper
+                onCategoryChange(0); // fills #filterProperty0 for the selected category
+
+                // Set property if "Mark" exists; otherwise leave the list for the user
+                if (markProp) {
+                    propSel.value = markProp;
+                    propSel.disabled = false;
+                    console.log('✅ Auto-seeded default filter: ' + defaultCat + ' → ' + markProp);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Default filter seed skipped:', e);
+    }
+    
     showNotification('Model properties extracted. You can now configure filters.', 'success');
 }
 
@@ -936,6 +970,14 @@ Roof Structure,2025-01-17,3,2025-01-19,Construct,Install roof beams,MK-024|MK-02
 function playSequence() {
     if (isPlaying) return;
 
+    // Hard-stop if no valid filters are configured
+    const filters = getConfiguredFilters();
+    if (!filters || filters.length === 0) {
+        showNotification('Please configure at least one element filter (e.g., Identity Data → Mark).', 'warning');
+        console.warn('⚠️  Playback blocked: no element filters configured.');
+        return;
+    }
+
     console.log('▶️ Playing sequence');
     isPlaying = true;
 
@@ -1038,7 +1080,7 @@ function updateCurrentActivities() {
 }
 
 async function isolateElementsForCurrentDay() {
-    if (!viewer || !viewerModel || !selectedElementGroup) {
+    if (!viewer || !viewerModel) {
         console.log('Viewer or model not ready');
         return;
     }
@@ -1055,23 +1097,6 @@ async function isolateElementsForCurrentDay() {
     updateViewerStatus(`Loading elements for ${currentDay}...`);
 
     try {
-        // Collect all element values for today's activities
-        const elementValues = new Set();
-        activities.forEach(activityName => {
-            const values = activityElementMap.get(activityName);
-            if (values) {
-                values.forEach(v => elementValues.add(v));
-            }
-        });
-
-        if (elementValues.size === 0) {
-            console.log('No element values for current activities');
-            viewer.showAll();
-            return;
-        }
-
-        console.log(`🔍 Isolating ${elementValues.size} elements for ${activities.size} activities`);
-
         // Get configured filters
         const filters = getConfiguredFilters();
         if (filters.length === 0) {
@@ -1080,63 +1105,46 @@ async function isolateElementsForCurrentDay() {
             return;
         }
 
-        console.log('Using filters:', filters);
-
-        // Use first configured filter for now (can be enhanced to use multiple)
         const primaryFilter = filters[0];
-        const linkProperty = primaryFilter.property;
+        console.log(`🔍 Isolating elements for ${activities.size} activities using ${primaryFilter.category} → ${primaryFilter.property}`);
 
-        // Build GraphQL filter for multiple values using IN clause
-        const filter = window.AECDataModel.buildFilterForValues(Array.from(elementValues), linkProperty);
-        console.log('GraphQL Filter:', filter);
+        // Collect dbIds for all activities on this day
+        const allDbIds = [];
+        
+        for (const activityName of activities) {
+            const elementValues = activityElementMap.get(activityName);
+            if (!elementValues || elementValues.size === 0) continue;
 
-        // Query elements from AEC DM
-        const elements = await window.AECDataModel.getElements({
-            token: window.forgeAccessToken,
-            region: 'US',
-            elementGroupId: selectedElementGroup.id,
-            filter: filter
-        });
+            const valuesArray = Array.from(elementValues);
+            console.log(`   Activity: ${activityName}, Values: ${valuesArray.join(', ')}`);
 
-        console.log(`✅ Got ${elements.length} elements from AEC DM`);
-
-        if (elements.length === 0) {
-            showNotification(`No elements found matching ${linkProperty} values`, 'warning');
-            viewer.showAll();
-            return;
-        }
-
-        // Extract external IDs
-        const externalIds = elements.map(e => e.externalId).filter(id => id);
-        console.log(`External IDs: ${externalIds.length}`);
-
-        if (externalIds.length === 0) {
-            showNotification('No external IDs found for elements', 'warning');
-            viewer.showAll();
-            return;
-        }
-
-        // Map external IDs to dbIds using Viewer API
-        viewerModel.getExternalIdMapping((mapping) => {
-            const dbIds = [];
-            externalIds.forEach(extId => {
-                const dbId = mapping[extId];
-                if (dbId) {
-                    dbIds.push(dbId);
-                }
+            // Query dbIds directly from viewer property DB
+            const dbIds = await getDbIdsByPropertyEquals({
+                category: primaryFilter.category,
+                property: primaryFilter.property,
+                values: valuesArray
             });
 
-            console.log(`✅ Mapped to ${dbIds.length} dbIds`);
-
             if (dbIds.length > 0) {
-                viewer.isolate(dbIds);
-                viewer.fitToView(dbIds);
-                updateViewerStatus(`Showing ${dbIds.length} elements`);
+                allDbIds.push(...dbIds);
+                console.log(`   ✅ Matched ${dbIds.length} elements`);
             } else {
-                showNotification('No matching elements found in model', 'warning');
-                viewer.showAll();
+                console.log(`   ⚠️  No matches for ${activityName}`);
             }
-        });
+        }
+
+        console.log(`✅ Total elements to show: ${allDbIds.length}`);
+
+        if (allDbIds.length > 0) {
+            viewer.showAll();
+            viewer.isolate(allDbIds);
+            viewer.fitToView(allDbIds);
+            updateViewerStatus(`Showing ${allDbIds.length} elements`);
+        } else {
+            showNotification('No matching elements found in model', 'warning');
+            viewer.showAll();
+            updateViewerStatus('No matches - showing all');
+        }
 
     } catch (error) {
         console.error('Error isolating elements:', error);
@@ -1152,6 +1160,72 @@ function _saveHomeState() {
     if (viewer) {
         _homeState = viewer.getState({ viewport: true, objectSet: true, renderOptions: true });
     }
+}
+
+/**
+ * Query dbIds whose property (by category/name) equals ANY of the provided values.
+ * NOTE: Property names/cases come from viewer property DB extraction.
+ */
+async function getDbIdsByPropertyEquals({ category, property, values }) {
+    if (!viewerModel || !category || !property || !Array.isArray(values) || values.length === 0) return [];
+
+    const pdb = viewerModel.getPropertyDb();
+
+    // Build quick lookup (lowercased text compare)
+    const targetVals = new Set(values.map(v => String(v).toLowerCase()));
+
+    // Run inside worker for speed (same pattern already used)
+    const dbIds = await pdb.executeUserFunction(function(pdb, category, property, valueSetJSON) {
+        var result = [];
+        try {
+            var valueSet = new Set(JSON.parse(valueSetJSON));
+            pdb.enumObjects(function(dbId) {
+                var matched = false;
+                pdb.enumObjectProperties(dbId, function(attrId, valId) {
+                    var def = pdb.getAttributeDef(attrId);
+                    // Category match
+                    var cat = (def && def.category) ? def.category : null;
+                    if (!cat || cat.toLowerCase() !== category.toLowerCase()) return;
+
+                    // Name match
+                    var name = (def && (def.displayName || def.name)) ? (def.displayName || def.name) : null;
+                    if (!name || name.toLowerCase() !== property.toLowerCase()) return;
+
+                    // Value fetch
+                    // NOTE: getAttrValue(attrId, valId) returns raw; stringify for comparison
+                    var val = pdb.getAttrValue(attrId, valId);
+                    var valText = (val == null) ? '' : String(val).toLowerCase();
+                    if (valueSet.has(valText)) {
+                        matched = true;
+                    }
+                });
+                if (matched) result.push(dbId);
+            });
+        } catch (e) {
+            return { __error__: true, message: (e && e.message) ? e.message : String(e) };
+        }
+        return result;
+    }, category, property, JSON.stringify(Array.from(targetVals)));
+
+    if (dbIds && dbIds.__error__) throw new Error(dbIds.message);
+    return dbIds || [];
+}
+
+/**
+ * Given current configured UI filters and an activity payload,
+ * compute a union of matching dbIds.
+ */
+async function getDbIdsForActivity(activity) {
+    const filters = getConfiguredFilters(); // from UI rows
+    if (!filters || filters.length === 0) return [];
+
+    // Get element values from activity (these come from CSV ElementValues column)
+    const values = activity.elementValues || [];
+    if (values.length === 0) return [];
+
+    // For now, use only the first filter row—keep it simple and predictable.
+    const { category, property } = filters[0];
+    return await getDbIdsByPropertyEquals({ category, property, values });
 }
 
 function viewerReset() {
