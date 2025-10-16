@@ -338,6 +338,10 @@ function initializeViewer() {
         }
 
         console.log('✅ Viewer started successfully');
+        
+        // Load Document Browser extension for view selector
+        viewer.loadExtension('Autodesk.DocumentBrowser');
+        
         updateViewerStatus('Viewer ready');
     });
 }
@@ -467,7 +471,11 @@ function onModelLoaded(model) {
     console.log('✅ Model loaded successfully');
     viewerModel = model;
 
+    // Make absolutely sure everything is visible, then fit, then save home view.
+    viewer.showAll();
     viewer.fitToView();
+    _saveHomeState();
+
     updateViewerStatus('Model loaded');
     showNotification('Model loaded successfully', 'success');
 
@@ -1137,33 +1145,45 @@ async function isolateElementsForCurrentDay() {
     }
 }
 
-// Viewer Controls
-function viewerReset() {
+// ---- Viewer Controls (exact implementations) ----
+let _homeState = null;
+
+function _saveHomeState() {
     if (viewer) {
-        viewer.setViewFromCamera(viewer.getCamera());
+        _homeState = viewer.getState({ viewport: true, objectSet: true, renderOptions: true });
+    }
+}
+
+function viewerReset() {
+    if (!viewer) return;
+    // Restore "home" camera + visibility
+    if (_homeState) {
+        viewer.restoreState(_homeState);
+    } else {
+        viewer.showAll();
+        viewer.fitToView();
     }
 }
 
 function viewerFitToView() {
-    if (viewer) {
-        viewer.fitToView();
-    }
+    if (!viewer) return;
+    viewer.showAll();
+    viewer.fitToView();
 }
 
 function viewerIsolate() {
-    if (viewer) {
-        const selection = viewer.getSelection();
-        if (selection.length > 0) {
-            viewer.isolate(selection);
-        }
+    if (!viewer) return;
+    const sel = viewer.getSelection();
+    if (sel && sel.length > 0) {
+        viewer.isolate(sel);
+        viewer.fitToView(sel);
     }
 }
 
 function viewerShowAll() {
-    if (viewer) {
-        viewer.showAll();
-        viewer.fitToView();
-    }
+    if (!viewer) return;
+    viewer.showAll();
+    viewer.fitToView();
 }
 
 // AEC Data Model Diagnostic Test
