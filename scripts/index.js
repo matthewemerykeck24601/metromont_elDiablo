@@ -242,20 +242,35 @@ async function handleOAuthCallback(authCode) {
 
 async function completeAuthentication() {
     try {
-        updateAuthStatus('Connecting to Hub...', 'Loading your Metromont ACC account...');
+        updateAuthStatus('Fetching Available Hubs...', 'Loading ACC hubs for your account...');
 
-        // Connect to hub and load project data during main authentication
-        await connectToHubAndLoadProjects();
+        // Fetch available hubs but DON'T auto-connect
+        const availableHubs = await fetchAllAvailableHubs();
+        
+        // Initialize minimal globalHubData without connecting to a hub yet
+        globalHubData = {
+            hubId: null,
+            hubInfo: null,
+            projects: [],
+            projectMembers: {},
+            loadedAt: null,
+            availableHubs: availableHubs,
+            accountInfo: {
+                id: METROMONT_ACCOUNT_ID,
+                hubId: METROMONT_HUB_ID,
+                name: 'Metromont ACC Account'
+            }
+        };
 
-        updateAuthStatus('Testing Permissions...', 'Validating API access capabilities including OSS bucket access...');
+        updateAuthStatus('Testing Permissions...', 'Validating API access capabilities...');
         await testScopePermissions();
 
         isAuthenticated = true;
         authCheckComplete = true;
 
-        updateAuthStatus('Success!', `Successfully connected to Metromont ACC with ${globalHubData.projects.length} projects loaded`);
+        updateAuthStatus('Success!', `Authenticated successfully. Please select a hub to load projects.`);
 
-        // Initialize user profile widget
+        // Initialize user profile widget with available hubs
         if (window.UserProfile) {
             await window.UserProfile.initialize(forgeAccessToken, globalHubData);
         }
@@ -270,13 +285,15 @@ async function completeAuthentication() {
         // Initialize page interactions
         initializePageInteractions();
 
-        // Log successful authentication with scope info
+        // Log successful authentication
         console.log('=== AUTHENTICATION COMPLETE ===');
         console.log('Access token scope includes:', ACC_SCOPES);
-        console.log('Hub connected:', globalHubData.hubId);
-        console.log('Projects loaded:', globalHubData.projects.length);
-        console.log('Global hub data available for all modules');
+        console.log('Available hubs:', availableHubs.length);
+        console.log('⚠️  No hub selected yet - user must choose a hub');
         console.log('===============================');
+
+        // Check if there's a stored hub selection and auto-load it
+        await checkAndLoadStoredHub();
 
     } catch (error) {
         console.error('Authentication completion failed:', error);
@@ -318,27 +335,76 @@ async function fetchAllAvailableHubs() {
     }
 }
 
-// NEW: Hub Connection and Project Loading during main auth
-async function connectToHubAndLoadProjects() {
-    try {
-        // First, fetch all available hubs
-        const availableHubs = await fetchAllAvailableHubs();
+// NEW: Check if user has a previously selected hub and auto-load it
+async function checkAndLoadStoredHub() {
+    const storedHubId = sessionStorage.getItem('selected_hub_id') || localStorage.getItem('selected_hub_id');
+    
+    if (storedHubId) {
+        console.log('📂 Found stored hub selection:', storedHubId);
+        const hub = globalHubData.availableHubs?.find(h => h.id === storedHubId);
         
-        // Check if user has a preferred hub stored
-        let selectedHubId = sessionStorage.getItem('selected_hub_id') || localStorage.getItem('selected_hub_id');
-        
-        // If no stored hub or stored hub not in available hubs, use default
-        if (!selectedHubId || !availableHubs.find(h => h.id === selectedHubId)) {
-            selectedHubId = METROMONT_HUB_ID;
+        if (hub) {
+            console.log('✅ Auto-loading stored hub:', hub.name);
+            await loadHubAndProjects(storedHubId);
+        } else {
+            console.warn('⚠️  Stored hub not found in available hubs');
         }
+    } else {
+        console.log('ℹ️  No stored hub selection - user must select a hub');
+        showNotification('Please select a hub from the profile menu to load projects', 'info');
+    }
+}
+
+// NEW: Public function to load a specific hub and its projects
+async function loadHubAndProjects(selectedHubId) {
+    try {
+        console.log('=== LOADING HUB AND PROJECTS ===');
+        console.log('Selected hub ID:', selectedHubId);
         
+        // Show loading indicator
+        showNotification('Loading hub and projects...', 'info');
+        
+        // Set the selected hub
         hubId = selectedHubId;
         globalHubData.hubId = hubId;
-        globalHubData.availableHubs = availableHubs;
+        
+        // Store selection
+        sessionStorage.setItem('selected_hub_id', selectedHubId);
+        localStorage.setItem('selected_hub_id', selectedHubId);
+        
+        // Load hub info and projects
+        await connectToHubAndLoadProjects();
+        
+        // Update user profile widget
+        if (window.UserProfile) {
+            await window.UserProfile.initialize(forgeAccessToken, globalHubData);
+        }
+        
+        const projectCount = globalHubData.projects?.length || 0;
+        showNotification(`Loaded ${projectCount} projects from ${globalHubData.hubInfo?.attributes?.name || 'hub'}`, 'success');
+        
+        console.log('✅ Hub and projects loaded successfully');
+        console.log('Hub:', globalHubData.hubInfo?.attributes?.name);
+        console.log('Projects:', projectCount);
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Failed to load hub and projects:', error);
+        showNotification('Failed to load hub: ' + error.message, 'error');
+        return false;
+    }
+}
+
+// Hub Connection and Project Loading (called after hub selection)
+async function connectToHubAndLoadProjects() {
+    try {
+        if (!hubId) {
+            throw new Error('No hub selected. Please select a hub first.');
+        }
 
         console.log('=== HUB CONNECTION ===');
-        console.log('Available hubs:', availableHubs.length);
-        console.log('Selected hub:', hubId);
+        console.log('Connecting to hub:', hubId);
         console.log('Account ID:', METROMONT_ACCOUNT_ID);
 
         const hubResponse = await fetch(`https://developer.api.autodesk.com/project/v1/hubs/${hubId}`, {
@@ -848,6 +914,7 @@ window.CastLinkAuth = {
     getToken: () => forgeAccessToken,
     getScopes: () => ACC_SCOPES,
     getHubData: () => globalHubData,
+    loadHub: loadHubAndProjects, // NEW: Expose hub loading for user profile widget
     waitForAuth: async () => {
         while (!authCheckComplete) {
             await new Promise(resolve => setTimeout(resolve, 100));

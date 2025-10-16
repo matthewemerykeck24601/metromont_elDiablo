@@ -186,9 +186,9 @@ class UserProfile {
                         </svg>
                         <span>${hubName}</span>
                     </div>
-                    ${this.availableHubs.length > 1 ? this.renderHubSelector() : `
+                    ${this.availableHubs.length > 0 ? this.renderHubSelector() : `
                         <div style="margin-top: 0.75rem; padding: 0.5rem; background: #f9fafb; border-radius: 6px; font-size: 0.75rem; color: #6b7280; text-align: center;">
-                            Multi-hub switching coming soon
+                            No hubs available
                         </div>
                     `}
                 </div>
@@ -218,9 +218,12 @@ class UserProfile {
     }
 
     renderHubSelector() {
+        const hasSelectedHub = this.selectedHub && this.selectedHub.id;
+        
         return `
-            <div class="dropdown-label" style="margin-top: 1rem;">Switch Hub</div>
+            <div class="dropdown-label" style="margin-top: 1rem;">${hasSelectedHub ? 'Switch Hub' : 'Select Hub'}</div>
             <select class="hub-selector" onchange="window.UserProfile.switchHub(this.value)">
+                ${!hasSelectedHub ? '<option value="">-- Select a hub --</option>' : ''}
                 ${this.availableHubs.map(hub => `
                     <option value="${hub.id}" ${hub.id === this.selectedHub?.id ? 'selected' : ''}>
                         ${hub.name}
@@ -254,7 +257,7 @@ class UserProfile {
         }
     }
 
-    switchHub(hubId) {
+    async switchHub(hubId) {
         console.log('🔄 Switching hub to:', hubId);
         
         const hub = this.availableHubs.find(h => h.id === hubId);
@@ -268,7 +271,7 @@ class UserProfile {
             sessionStorage.setItem('selected_hub_id', hubId);
             localStorage.setItem('selected_hub_id', hubId);
             
-            // Clear old hub data
+            // Clear old hub data before loading new one
             sessionStorage.removeItem('castlink_hub_data');
             
             console.log(`💾 Stored hub selection: ${hub.name}`);
@@ -280,11 +283,22 @@ class UserProfile {
                 alert(`Switching to ${hub.name}...`);
             }
             
-            // Reload page to load new hub's projects
-            setTimeout(() => {
-                console.log('🔄 Reloading to apply hub change...');
-                location.reload();
-            }, 1000);
+            // Trigger hub loading if on main page (index.html)
+            if (window.CastLinkAuth && window.CastLinkAuth.loadHub) {
+                console.log('🔄 Triggering hub load from main auth...');
+                const success = await window.CastLinkAuth.loadHub(hubId);
+                
+                if (success) {
+                    // Re-render profile widget with new hub data
+                    this.render();
+                }
+            } else {
+                // If not on main page, reload to apply hub change
+                setTimeout(() => {
+                    console.log('🔄 Reloading to apply hub change...');
+                    location.reload();
+                }, 1000);
+            }
         } else {
             console.error('❌ Hub not found:', hubId);
         }
