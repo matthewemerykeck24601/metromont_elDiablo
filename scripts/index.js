@@ -6,6 +6,11 @@ const ACC_CALLBACK_URL = 'https://metrocastpro.com/';
 const METROMONT_ACCOUNT_ID = 'f61b9f7b-5481-4d25-a552-365ba99077b8'; // Change this for testing
 const METROMONT_HUB_ID = `b.${METROMONT_ACCOUNT_ID}`;
 
+// Project Filtering Configuration
+// Set to true to filter out projects with test/template/training/mockup/legacy/zz in their names
+// Set to false to show all projects (recommended for production use)
+const ENABLE_NAME_BASED_FILTERS = false;
+
 // Enhanced scope configuration for full ACC integration including OSS bucket management
 // AEC Data Model Beta uses standard data:read and viewables:read scopes
 const ACC_SCOPES = [
@@ -409,6 +414,10 @@ async function loadAllProjectsFromHub(hubId) {
         const filteredProjects = [];
 
         console.log(`📋 Retrieved ${projectsData.data.length} total projects from hub`);
+        console.log(`🔧 Name-based filtering: ${ENABLE_NAME_BASED_FILTERS ? 'ENABLED' : 'DISABLED'}`);
+        if (!ENABLE_NAME_BASED_FILTERS) {
+            console.log('   ℹ️  All projects will be loaded (except archived/inactive)');
+        }
 
         const strictPattern = /^(\d{5})\s*-\s*(.+)$/;
         const flexiblePattern = /^(\d{3,6})\s*[-_\s]+(.+)$/;
@@ -423,15 +432,18 @@ async function loadAllProjectsFromHub(hubId) {
                 continue;
             }
 
-            if (projectName.toLowerCase().includes('test') ||
-                projectName.toLowerCase().includes('template') ||
-                projectName.toLowerCase().includes('training') ||
-                projectName.toLowerCase().includes('mockup') ||
-                projectName.toLowerCase().includes('legacy') ||
-                projectName.startsWith('zz') ||
-                projectName.startsWith('ZZ')) {
-                filteredProjects.push({ name: projectName, reason: 'Name filter (test/template/training/mockup/legacy/zz)' });
-                continue;
+            // Optional name-based filtering (controlled by ENABLE_NAME_BASED_FILTERS flag)
+            if (ENABLE_NAME_BASED_FILTERS) {
+                if (projectName.toLowerCase().includes('test') ||
+                    projectName.toLowerCase().includes('template') ||
+                    projectName.toLowerCase().includes('training') ||
+                    projectName.toLowerCase().includes('mockup') ||
+                    projectName.toLowerCase().includes('legacy') ||
+                    projectName.startsWith('zz') ||
+                    projectName.startsWith('ZZ')) {
+                    filteredProjects.push({ name: projectName, reason: 'Name filter (test/template/training/mockup/legacy/zz)' });
+                    continue;
+                }
             }
 
             let nameMatch = null;

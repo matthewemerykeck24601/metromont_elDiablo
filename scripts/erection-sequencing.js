@@ -212,13 +212,19 @@ async function loadDesignsForProject({ projectName, accProjectId }) {
 
         const region = 'US'; // Could be made configurable later
         
+        // Get the preferred hub name from globalHubData (if available)
+        // This ensures we query the same hub that was used during authentication
+        const preferredHubName = globalHubData?.hubInfo?.attributes?.name || 'Metromont Development Hub';
+        
+        console.log('🏢 Using hub for AEC DM lookup:', preferredHubName);
+        
         // Call new AEC DM API with project NAME (not ACC ID)
         // This resolves: hub → project (by name) → element groups
         const elementGroups = await window.AECDataModel.getElementGroups({
             token,
             region,
             projectName,
-            preferredHubName: null // Will use first hub
+            preferredHubName // Use the actual hub name to match the correct hub
         });
         
         if (!elementGroups || elementGroups.length === 0) {
