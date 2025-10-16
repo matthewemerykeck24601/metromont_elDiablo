@@ -504,3 +504,45 @@ body.auth-loading {
     }
 }
 
+
+/* Element Filter Rows */
+.filter-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    align-items: center;
+}
+
+.filter-category,
+.filter-property {
+    flex: 1;
+    padding: 0.5rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    background: white;
+}
+
+.filter-category:disabled,
+.filter-property:disabled {
+    background: #f1f5f9;
+    cursor: not-allowed;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #64748b;
+    padding: 0.25rem;
+    transition: color 0.2s;
+}
+
+.btn-icon:hover {
+    color: #dc2626;
+}
+
+.btn-remove-filter {
+    font-size: 1.2rem;
+    line-height: 1;
+}

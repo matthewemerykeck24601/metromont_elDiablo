@@ -71,9 +71,27 @@
                 </div>
 
                 <div class="control-group">
-                    <label for="esLinkProperty">Link Property:</label>
-                    <input type="text" id="esLinkProperty" value="Mark" placeholder="e.g., Mark, Type Mark, etc.">
-                    <small>Property name to link activities to elements</small>
+                    <label>Element Filters:</label>
+                    <div id="elementFiltersContainer">
+                        <div class="filter-row" data-filter-id="0">
+                            <select class="filter-category" id="filterCategory0" aria-label="Element category" disabled onchange="onCategoryChange(0)">
+                                <option value="">Load a model first...</option>
+                            </select>
+                            <select class="filter-property" id="filterProperty0" aria-label="Element property" disabled>
+                                <option value="">Select category first...</option>
+                            </select>
+                            <button class="btn-icon btn-remove-filter" onclick="removeFilter(0)" style="display: none;" title="Remove filter" aria-label="Remove filter">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="btnAddFilter" onclick="addFilterRow()" disabled style="margin-top: 0.5rem;">
+                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                        </svg>
+                        Add Filter
+                    </button>
+                    <small>Select element category and property to link activities</small>
                 </div>
 
                 <div class="control-group" style="margin-top: 1rem;">

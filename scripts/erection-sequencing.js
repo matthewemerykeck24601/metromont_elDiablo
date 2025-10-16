@@ -15,6 +15,8 @@ let currentDayIndex = 0;
 let timelineDays = [];
 let activityElementMap = new Map(); // Map<activityName, Set<propertyValue>>
 let dayActivitiesMap = new Map(); // Map<dayISO, Set<activityName>>
+let modelCategories = new Map(); // Map<category, Set<propertyNames>>
+let filterRowCount = 1;
 
 // Make token available globally for GraphQL helper
 window.forgeAccessToken = null;
@@ -473,6 +475,9 @@ function onModelLoaded(model) {
     if (viewerInfo && selectedElementGroup) {
         viewerInfo.textContent = `Model: ${selectedElementGroup.name}`;
     }
+
+    // Extract categories and properties from model
+    extractModelProperties();
 }
 
 function onModelLoadError(error) {
@@ -502,6 +507,171 @@ function onDocumentLoadFailure(errorCode, errorMsg) {
     }
     
     showNotification(userMessage, 'error');
+}
+
+// Extract categories and properties from loaded model
+function extractModelProperties() {
+    if (!viewerModel) {
+        console.warn('No model loaded');
+        return;
+    }
+
+    console.log('📊 Extracting model categories and properties...');
+    
+    viewerModel.getPropertyDb().executeUserFunction(function(pdb) {
+        modelCategories.clear();
+        
+        pdb.enumObjects(function(dbId) {
+            pdb.enumObjectProperties(dbId, function(attrId, valId, attrDef) {
+                const category = attrDef.category || 'General';
+                const propertyName = attrDef.displayName || attrDef.name;
+                
+                if (!modelCategories.has(category)) {
+                    modelCategories.set(category, new Set());
+                }
+                modelCategories.get(category).add(propertyName);
+            });
+        });
+        
+        console.log(`✅ Found ${modelCategories.size} categories`);
+        modelCategories.forEach((props, category) => {
+            console.log(`   ${category}: ${props.size} properties`);
+        });
+        
+        // Populate category dropdowns
+        populateCategoryDropdowns();
+    });
+}
+
+// Populate all category dropdowns with extracted categories
+function populateCategoryDropdowns() {
+    const categories = Array.from(modelCategories.keys()).sort();
+    
+    // Update all existing filter category dropdowns
+    document.querySelectorAll('.filter-category').forEach(select => {
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">-- Select Category --</option>';
+        
+        categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category;
+            option.textContent = category;
+            if (category === currentValue) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+        
+        select.disabled = false;
+    });
+    
+    // Enable the add filter button
+    const btnAddFilter = document.getElementById('btnAddFilter');
+    if (btnAddFilter) {
+        btnAddFilter.disabled = false;
+    }
+    
+    showNotification('Model properties extracted. You can now configure filters.', 'success');
+}
+
+// Handle category selection change
+function onCategoryChange(filterId) {
+    const categorySelect = document.getElementById(`filterCategory${filterId}`);
+    const propertySelect = document.getElementById(`filterProperty${filterId}`);
+    
+    if (!categorySelect || !propertySelect) return;
+    
+    const selectedCategory = categorySelect.value;
+    
+    if (!selectedCategory) {
+        propertySelect.innerHTML = '<option value="">Select category first...</option>';
+        propertySelect.disabled = true;
+        return;
+    }
+    
+    const properties = Array.from(modelCategories.get(selectedCategory) || []).sort();
+    
+    propertySelect.innerHTML = '<option value="">-- Select Property --</option>';
+    properties.forEach(prop => {
+        const option = document.createElement('option');
+        option.value = prop;
+        option.textContent = prop;
+        propertySelect.appendChild(option);
+    });
+    
+    propertySelect.disabled = false;
+}
+
+// Add a new filter row
+function addFilterRow() {
+    const container = document.getElementById('elementFiltersContainer');
+    if (!container) return;
+    
+    const newFilterId = filterRowCount++;
+    const newRow = document.createElement('div');
+    newRow.className = 'filter-row';
+    newRow.setAttribute('data-filter-id', newFilterId);
+    
+    // Get available categories
+    const categories = Array.from(modelCategories.keys()).sort();
+    const categoriesHTML = categories.map(cat => 
+        `<option value="${cat}">${cat}</option>`
+    ).join('');
+    
+    newRow.innerHTML = `
+        <select class="filter-category" id="filterCategory${newFilterId}" aria-label="Element category" onchange="onCategoryChange(${newFilterId})">
+            <option value="">-- Select Category --</option>
+            ${categoriesHTML}
+        </select>
+        <select class="filter-property" id="filterProperty${newFilterId}" aria-label="Element property" disabled>
+            <option value="">Select category first...</option>
+        </select>
+        <button class="btn-icon btn-remove-filter" onclick="removeFilter(${newFilterId})" title="Remove filter" aria-label="Remove filter">
+            ✕
+        </button>
+    `;
+    
+    container.appendChild(newRow);
+    
+    // Show remove buttons on all rows except the first
+    updateRemoveButtons();
+}
+
+// Remove a filter row
+function removeFilter(filterId) {
+    const row = document.querySelector(`[data-filter-id="${filterId}"]`);
+    if (row && filterId !== 0) { // Don't remove the first row
+        row.remove();
+        updateRemoveButtons();
+    }
+}
+
+// Update visibility of remove buttons
+function updateRemoveButtons() {
+    const rows = document.querySelectorAll('.filter-row');
+    rows.forEach((row, index) => {
+        const removeBtn = row.querySelector('.btn-remove-filter');
+        if (removeBtn) {
+            removeBtn.style.display = rows.length > 1 && index > 0 ? 'inline-block' : 'none';
+        }
+    });
+}
+
+// Get all configured filters
+function getConfiguredFilters() {
+    const filters = [];
+    document.querySelectorAll('.filter-row').forEach(row => {
+        const categorySelect = row.querySelector('.filter-category');
+        const propertySelect = row.querySelector('.filter-property');
+        
+        if (categorySelect && propertySelect && categorySelect.value && propertySelect.value) {
+            filters.push({
+                category: categorySelect.value,
+                property: propertySelect.value
+            });
+        }
+    });
+    return filters;
 }
 
 // Token Management
@@ -859,12 +1029,23 @@ async function isolateElementsForCurrentDay() {
 
         console.log(`🔍 Isolating ${elementValues.size} elements for ${activities.size} activities`);
 
-        // Get link property name
-        const linkProperty = document.getElementById('esLinkProperty').value || 'Mark';
+        // Get configured filters
+        const filters = getConfiguredFilters();
+        if (filters.length === 0) {
+            showNotification('Please configure at least one element filter', 'warning');
+            viewer.showAll();
+            return;
+        }
+
+        console.log('Using filters:', filters);
+
+        // Use first configured filter for now (can be enhanced to use multiple)
+        const primaryFilter = filters[0];
+        const linkProperty = primaryFilter.property;
 
         // Build GraphQL filter for multiple values using IN clause
         const filter = window.AECDataModel.buildFilterForValues(Array.from(elementValues), linkProperty);
-        console.log('Filter:', filter);
+        console.log('GraphQL Filter:', filter);
 
         // Query elements from AEC DM
         const elements = await window.AECDataModel.getElements({
