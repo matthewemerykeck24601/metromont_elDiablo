@@ -775,16 +775,17 @@ async function isolateElementsForCurrentDay() {
         // Get link property name
         const linkProperty = document.getElementById('esLinkProperty').value || 'Mark';
 
-        // Build GraphQL filter
-        const filter = window.AECDataModel.buildFilter(Array.from(elementValues));
+        // Build GraphQL filter for multiple values using IN clause
+        const filter = window.AECDataModel.buildFilterForValues(Array.from(elementValues), linkProperty);
         console.log('Filter:', filter);
 
         // Query elements from AEC DM
-        const elements = await window.AECDataModel.getElements(
-            selectedElementGroup.id,
-            filter,
-            'US'
-        );
+        const elements = await window.AECDataModel.getElements({
+            token: window.forgeAccessToken,
+            region: 'US',
+            elementGroupId: selectedElementGroup.id,
+            filter: filter
+        });
 
         console.log(`✅ Got ${elements.length} elements from AEC DM`);
 

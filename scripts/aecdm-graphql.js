@@ -252,6 +252,28 @@ function buildElementFilter({ category, property, value }) {
 }
 
 /**
+ * Build a GraphQL filter for elements matching multiple property values (IN clause)
+ * Used for erection sequencing to find elements by Mark values
+ * @param {string[]} values - Array of property values to match (e.g., ["MK-001", "MK-002"])
+ * @param {string} propertyName - Property name to filter on (default: "Mark")
+ * @returns {string} GraphQL filter string like: ('property.name.Element Context'==Instance) and ('property.name.Mark' in ['MK-001','MK-002'])
+ */
+function buildElementFilterForValues(values, propertyName = 'Mark') {
+    if (!values || values.length === 0) {
+        return 'true';
+    }
+
+    // Format values for GraphQL IN clause: ['value1','value2']
+    const formattedValues = values.map(v => `'${v}'`).join(',');
+    
+    // Build filter: Instance elements with Mark IN [values]
+    const filter = `('property.name.Element Context'==Instance) and ('property.name.${propertyName}' in [${formattedValues}])`;
+    
+    console.log('Built filter for values:', filter);
+    return filter;
+}
+
+/**
  * Get elements from an element group with filter
  * @param {object} options - Options
  * @param {string} options.token - APS access token
@@ -342,6 +364,7 @@ window.AECDataModel = {
     getElementGroups: getElementGroupsForProject,
     getElements: getElementsByElementGroup,
     buildFilter: buildElementFilter,
+    buildFilterForValues: buildElementFilterForValues,
     introspect: introspectSchema,
     // Lower-level helpers (exported for advanced use)
     getHubId: getAecdmHubId,
