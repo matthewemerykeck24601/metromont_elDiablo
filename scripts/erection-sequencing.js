@@ -916,6 +916,10 @@ async function testAECDataModel() {
         regions: []
     };
     
+    // Get the preferred hub name to match runtime behavior
+    const preferredHubName = globalHubData?.hubInfo?.attributes?.name || null;
+    console.log('🏢 Using preferred hub for diagnostic:', preferredHubName || 'none (will use first hub)');
+    
     // Test different regions using PROJECT NAME (not ACC ID)
     const regions = ['US', 'EMEA', 'AUS'];
     console.log('\n🌍 Testing Regions with Project Name Lookup:');
@@ -927,7 +931,7 @@ async function testAECDataModel() {
                 token,
                 region,
                 projectName,
-                preferredHubName: null
+                preferredHubName
             });
             
             results.regions.push({

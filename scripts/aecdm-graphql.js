@@ -174,8 +174,6 @@ async function fetchElementGroupsByAecProjectId({ token, region = 'US', projectI
                 results {
                     id
                     name
-                    createdAt
-                    updatedAt
                     alternativeIdentifiers {
                         fileVersionUrn
                         fileUrn
@@ -195,9 +193,7 @@ async function fetchElementGroupsByAecProjectId({ token, region = 'US', projectI
         id: eg.id,
         name: eg.name,
         fileVersionUrn: eg.alternativeIdentifiers?.fileVersionUrn || null,
-        fileUrn: eg.alternativeIdentifiers?.fileUrn || null,
-        createdAt: eg.createdAt,
-        updatedAt: eg.updatedAt
+        fileUrn: eg.alternativeIdentifiers?.fileUrn || null
     }));
 }
 
