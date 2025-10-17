@@ -21,9 +21,9 @@ let propGridRows = []; // array of {dbId, name, family, typeName, level, mapCate
 let currentFilter = null; // { category, property }
 
 // ---- Grouping state ----
-let currentGrouping = ['Category', 'Family', 'Type Name', 'Mark'];
+let currentGrouping = ['Category', 'CONTROL_MARK', 'CONTROL_NUMBER'];
 const savedFormats = {
-  'Default': ['Category', 'Family', 'Type Name', 'Mark']
+  'Default': ['Category', 'CONTROL_MARK', 'CONTROL_NUMBER']
 };
 
 // Make token available globally for GraphQL helper
@@ -622,16 +622,16 @@ function populateCategoryDropdowns() {
         btnAddFilter.disabled = false;
     }
     
-    // ---- DEFAULT FILTER SEED (Revit-style) ----
+    // ---- DEFAULT FILTER SEED (Metromont Structural Framing) ----
     try {
-        // We prefer Revit's "Identity Data" → "Mark" when available.
-        const defaultCat = Array.from(modelCategories.keys()).find(c => c.toLowerCase() === 'identity data')
-                        || Array.from(modelCategories.keys()).find(c => c.toLowerCase() === 'identity')
+        // Look for "Revit Structural Framing" category and CONTROL_MARK property
+        const defaultCat = Array.from(modelCategories.keys()).find(c => c.toLowerCase().includes('structural framing'))
+                        || Array.from(modelCategories.keys()).find(c => c.toLowerCase().includes('framing'))
                         || null;
 
         if (defaultCat) {
             const props = Array.from(modelCategories.get(defaultCat) || []);
-            const markProp = props.find(p => p.toLowerCase() === 'mark') || null;
+            const controlMarkProp = props.find(p => p === 'CONTROL_MARK') || null;
 
             // Point to the first (built-in) row in the HTML: #filterCategory0 / #filterProperty0
             const catSel = document.getElementById('filterCategory0');
@@ -644,11 +644,11 @@ function populateCategoryDropdowns() {
                 // Populate properties for this category using existing helper
                 onCategoryChange(0); // fills #filterProperty0 for the selected category
 
-                // Set property if "Mark" exists; otherwise leave the list for the user
-                if (markProp) {
-                    propSel.value = markProp;
+                // Set property if "CONTROL_MARK" exists; otherwise leave the list for the user
+                if (controlMarkProp) {
+                    propSel.value = controlMarkProp;
                     propSel.disabled = false;
-                    console.log('✅ Auto-seeded default filter: ' + defaultCat + ' → ' + markProp);
+                    console.log('✅ Auto-seeded default filter: ' + defaultCat + ' → ' + controlMarkProp);
                 }
             }
         }
@@ -661,8 +661,8 @@ function populateCategoryDropdowns() {
     bindPropertiesGridUI();
     
     // Set default filter for element isolation
-    currentFilter = { category: 'Identity Data', property: 'Mark' };
-    console.log('✅ Default mapping set to Identity Data → Mark');
+    currentFilter = { category: 'Revit Structural Framing', property: 'CONTROL_MARK' };
+    console.log('✅ Default mapping set to Revit Structural Framing → CONTROL_MARK');
     
     showNotification('Model properties extracted. You can now configure filters.', 'success');
 }
@@ -988,7 +988,7 @@ function playSequence() {
 
     // Hard-stop if no valid filter is configured
     if (!currentFilter || !currentFilter.property) {
-        showNotification('Please configure at least one element filter (e.g., Identity Data → Mark).', 'warning');
+        showNotification('Please configure at least one element filter (e.g., Revit Structural Framing → CONTROL_MARK).', 'warning');
         console.warn('⚠️  Playback blocked: no element filter configured.');
         return;
     }
@@ -1249,7 +1249,7 @@ function openGroupingModal() {
 
   // Fill "available" lists. We derive buckets:
   // Common = a small curated set; Extended = everything except Common; Model = __document__/__name__/etc.
-  const commonSet = new Set(['Category','Family','Type Name','Mark','Level']);
+  const commonSet = new Set(['Category','Family','Type Name','CONTROL_MARK','CONTROL_NUMBER','Level']);
   const modelBucket = ['__document__','__name__','__category__','__categoryId__','__instanceof__','__viewable_in__','__revit__'];
 
   const availCommon = document.getElementById('groupAvailCommon');
@@ -1382,12 +1382,13 @@ function renderPropertiesGrid(rows, groupingOrder) {
   tbody.innerHTML = '';
   for (const r of data) {
     const tr = document.createElement('tr');
-    // Keep your existing columns; we write common ones Revit folks expect:
+    // Display columns for Metromont structural framing scheduling:
     tr.innerHTML = `
       <td>${r['Category'] ?? r.category ?? ''}</td>
+      <td>${r['CONTROL_MARK'] ?? r.controlMark ?? ''}</td>
+      <td>${r['CONTROL_NUMBER'] ?? r.controlNumber ?? ''}</td>
       <td>${r['Family'] ?? r.family ?? ''}</td>
       <td>${r['Type Name'] ?? r.typeName ?? ''}</td>
-      <td>${r['Mark'] ?? r.mark ?? ''}</td>
       <td>${r['Element ID'] ?? r.elementId ?? r.dbId ?? ''}</td>
       <td>${r['Level'] ?? r.level ?? ''}</td>
     `;
@@ -1424,9 +1425,9 @@ async function loadPropGrid(categoryName, propertyName) {
         });
     });
 
-    // Pull a Revit-friendly set of columns including Category
+    // Pull Metromont-specific properties for structural framing scheduling
     const propFilter = [
-        'Category', 'Family', 'Type Name', 'Mark', 'Level', 'Name'
+        'Category', 'CONTROL_MARK', 'CONTROL_NUMBER', 'Family', 'Type Name', 'Level', 'Name'
     ];
 
     const bulk = await new Promise((resolve, reject) => {
@@ -1442,12 +1443,14 @@ async function loadPropGrid(categoryName, propertyName) {
         return {
             'Category': get('Category'),
             'category': get('Category'),
+            'CONTROL_MARK': get('CONTROL_MARK'),
+            'controlMark': get('CONTROL_MARK'),
+            'CONTROL_NUMBER': get('CONTROL_NUMBER'),
+            'controlNumber': get('CONTROL_NUMBER'),
             'Family': get('Family'),
             'family': get('Family'),
             'Type Name': get('Type Name'),
             'typeName': get('Type Name'),
-            'Mark': get('Mark'),
-            'mark': get('Mark'),
             'Element ID': r.dbId,
             'elementId': r.dbId,
             'dbId': r.dbId,
@@ -1469,15 +1472,16 @@ function exportPropGridCsv() {
         return;
     }
     
-    const cols = ['Category', 'Family', 'Type Name', 'Mark', 'Element ID', 'Level'];
+    const cols = ['Category', 'CONTROL_MARK', 'CONTROL_NUMBER', 'Family', 'Type Name', 'Element ID', 'Level'];
     const lines = [cols.join(',')];
     
     for (const r of propGridRows) {
         const line = [
             csv(r['Category'] ?? r.category ?? ''),
+            csv(r['CONTROL_MARK'] ?? r.controlMark ?? ''),
+            csv(r['CONTROL_NUMBER'] ?? r.controlNumber ?? ''),
             csv(r['Family'] ?? r.family ?? ''),
             csv(r['Type Name'] ?? r.typeName ?? ''),
-            csv(r['Mark'] ?? r.mark ?? ''),
             csv(r['Element ID'] ?? r.elementId ?? r.dbId ?? ''),
             csv(r['Level'] ?? r.level ?? '')
         ].join(',');
