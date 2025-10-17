@@ -1219,8 +1219,8 @@ function showPropertiesGridPanel(show = true) {
 function bindPropertiesGridUI() {
   const savedSel = document.getElementById('propGridSavedFormat');
   const btnGrouping = document.getElementById('btnEditGrouping');
-  const btnLoad = document.getElementById('btnLoadPropGrid');
-  const btnExport = document.getElementById('btnExportPropGrid');
+    const btnLoad = document.getElementById('btnLoadPropGrid');
+    const btnExport = document.getElementById('btnExportPropGrid');
   const btnPopOut = document.getElementById('btnPopOutGrid');
 
   if (savedSel) {
@@ -1685,7 +1685,7 @@ async function loadPropGrid(categoryName, propertyName) {
 
     // Use the passed parameters if provided, otherwise derive from currentFilter
     if (categoryName && propertyName) {
-        currentFilter = { category: categoryName, property: propertyName };
+    currentFilter = { category: categoryName, property: propertyName };
     }
 
     const status = document.getElementById('propGridStatus');
