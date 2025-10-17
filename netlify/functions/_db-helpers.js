@@ -170,3 +170,13 @@ export function uuid() {
   });
 }
 
+/**
+ * Ensure bucket exists (wrapper for OSS client method)
+ * @param {Object} oss - OSS client instance
+ * @param {string} bucketKey - Bucket identifier
+ * @returns {Promise<Object>} Bucket status
+ */
+export async function ensureBucket(oss, bucketKey) {
+  return await oss.ensureBucket(bucketKey);
+}
+

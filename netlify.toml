@@ -32,3 +32,8 @@
   from = "/api/db/rows/:tableId"
   to = "/.netlify/functions/db-rows"
   status = 200
+
+[[redirects]]
+  from = "/api/ai/db"
+  to = "/.netlify/functions/ai-db"
+  status = 200

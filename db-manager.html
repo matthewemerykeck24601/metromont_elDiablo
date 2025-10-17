@@ -176,6 +176,25 @@
         </div>
     </div>
 
+    <!-- AI Floating Action Button -->
+    <button id="aiFab" class="ai-fab" aria-label="Open AI Assistant">✦</button>
+
+    <!-- AI Chat Modal -->
+    <div id="aiModal" class="ai-modal" aria-hidden="true">
+      <div class="ai-modal__backdrop"></div>
+      <div class="ai-modal__panel">
+        <div class="ai-modal__header">
+          <h2>DB AI Assistant</h2>
+          <button id="aiClose" class="ai-close" aria-label="Close">×</button>
+        </div>
+        <div id="aiChat" class="ai-chat"></div>
+        <form id="aiForm" class="ai-form">
+          <input id="aiInput" type="text" placeholder="e.g., Create a table 'Assets' with columns id, description, status_id" autocomplete="off" required />
+          <button id="aiSend" type="submit">Send</button>
+        </form>
+      </div>
+    </div>
+
     <!-- Scripts -->
     <script src="scripts/env.js"></script>
     <script src="scripts/db-manager.js"></script>

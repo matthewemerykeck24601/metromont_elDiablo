@@ -1,0 +1,14 @@
+{
+  "name": "metromont-el-diablo",
+  "version": "1.0.0",
+  "description": "Metromont El Diablo Manufacturing Execution System",
+  "type": "module",
+  "dependencies": {
+    "openai": "^4.56.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "build": "node netlify/generate-env.js"
+  }
+}
+

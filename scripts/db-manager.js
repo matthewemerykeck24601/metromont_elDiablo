@@ -692,6 +692,108 @@ function showNotification(message, type = 'info') {
   }
 }
 
+// ==== AI Chat wiring ====
+(function setupAI() {
+  const fab = document.getElementById('aiFab');
+  const modal = document.getElementById('aiModal');
+  const closeBtn = document.getElementById('aiClose');
+  const chat = document.getElementById('aiChat');
+  const form = document.getElementById('aiForm');
+  const input = document.getElementById('aiInput');
+
+  if (!fab || !modal || !closeBtn || !chat || !form || !input) {
+    console.warn('AI components not found, skipping AI setup');
+    return;
+  }
+
+  fab.addEventListener('click', () => openModal());
+  closeBtn.addEventListener('click', () => closeModal());
+  modal.querySelector('.ai-modal__backdrop').addEventListener('click', () => closeModal());
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    appendMsg('user', text);
+    input.value = '';
+    await sendToAI(text);
+  });
+
+  function openModal() {
+    modal.setAttribute('aria-hidden', 'false');
+    input.focus();
+  }
+
+  function closeModal() {
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function appendMsg(role, text) {
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    div.innerHTML = `<span>${escapeHtml(text)}</span>`;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  async function sendToAI(userText) {
+    try {
+      appendMsg('assistant', 'Thinking...');
+
+      const idHeader = getIdentityHeader ? getIdentityHeader() : null;
+
+      const res = await fetch('/api/ai/db', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idHeader ? { 'x-netlify-identity': idHeader } : {})
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'user', content: userText }
+          ]
+        })
+      });
+
+      // Remove "Thinking..." message
+      chat.removeChild(chat.lastChild);
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'AI error');
+
+      const summary = summarizeResult(data);
+      appendMsg('assistant', summary);
+
+      // On success, refresh tables/folders in the DB manager
+      try {
+        if (typeof loadAll === 'function') await loadAll();
+      } catch (e) {
+        console.warn('Failed to refresh after AI action:', e);
+      }
+
+    } catch (err) {
+      // Remove "Thinking..." if still there
+      if (chat.lastChild && chat.lastChild.textContent.includes('Thinking')) {
+        chat.removeChild(chat.lastChild);
+      }
+      appendMsg('assistant', `Error: ${String(err.message || err)}`);
+    }
+  }
+
+  function summarizeResult(payload) {
+    if (payload?.ok && payload?.action === 'create_table') {
+      return `✅ Table "${payload.tableId}" created successfully.`;
+    }
+    if (payload?.ok && payload?.action === 'insert_rows') {
+      return `✅ Inserted ${payload.written} row(s) into "${payload.tableId}".`;
+    }
+    if (payload?.action) {
+      return `✅ Action "${payload.action}" completed.`;
+    }
+    return JSON.stringify(payload, null, 2);
+  }
+})();
+
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
   console.log('DB Manager page loaded');
