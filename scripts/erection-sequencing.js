@@ -26,6 +26,9 @@ const savedFormats = {
   'Default': ['Category', 'CONTROL_MARK', 'CONTROL_NUMBER']
 };
 
+// ---- Pop-out window state ----
+let propGridPopup = null;
+
 // Make token available globally for GraphQL helper
 window.forgeAccessToken = null;
 
@@ -1218,6 +1221,7 @@ function bindPropertiesGridUI() {
   const btnGrouping = document.getElementById('btnEditGrouping');
   const btnLoad = document.getElementById('btnLoadPropGrid');
   const btnExport = document.getElementById('btnExportPropGrid');
+  const btnPopOut = document.getElementById('btnPopOutGrid');
 
   if (savedSel) {
     // Populate saved formats (only Default for now)
@@ -1253,7 +1257,265 @@ function bindPropertiesGridUI() {
   if (btnExport) {
     btnExport.onclick = exportPropGridCsv;
   }
+
+  if (btnPopOut) {
+    btnPopOut.onclick = popOutPropertiesGrid;
+  }
 }
+
+// ---- Pop-out Properties Grid Functions ----
+
+function popOutPropertiesGrid() {
+  // Check if popup already exists and is open
+  if (propGridPopup && !propGridPopup.closed) {
+    propGridPopup.focus();
+    return;
+  }
+
+  if (!propGridRows || propGridRows.length === 0) {
+    showNotification('No data to display. Please load properties first.', 'warning');
+    return;
+  }
+
+  // Open new window with appropriate size
+  const width = 1200;
+  const height = 800;
+  const left = window.screenX + 100;
+  const top = window.screenY + 100;
+
+  propGridPopup = window.open(
+    '',
+    'PropertiesGrid',
+    `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+  );
+
+  if (!propGridPopup) {
+    showNotification('Failed to open popup. Please allow popups for this site.', 'error');
+    return;
+  }
+
+  // Build the popup HTML
+  const popupHTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Model Properties - Metromont El Diablo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #f8f9fa;
+      padding: 1rem;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    .header {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      color: white;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+    .status {
+      font-size: 0.875rem;
+      color: #cbd5e1;
+    }
+    .controls {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.75rem;
+      background: white;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    .btn {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      background: #6b7280;
+      color: white;
+      transition: all 0.2s;
+    }
+    .btn:hover {
+      background: #4b5563;
+    }
+    .btn-primary {
+      background: #059669;
+    }
+    .btn-primary:hover {
+      background: #047857;
+    }
+    .table-container {
+      flex: 1;
+      overflow: auto;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      z-index: 1;
+    }
+    th, td {
+      border-bottom: 1px solid #eef2f7;
+      padding: 8px 12px;
+      white-space: nowrap;
+      text-align: left;
+    }
+    th {
+      font-weight: 600;
+      color: #475569;
+      border-bottom: 2px solid #dfe7f3;
+    }
+    tbody tr:hover {
+      background: #f8fafc;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Model Properties</h1>
+      <div class="status" id="status">Loading...</div>
+    </div>
+    <button class="btn" onclick="window.close()">Close Window</button>
+  </div>
+  
+  <div class="controls">
+    <strong>Grouped by:</strong>
+    <span id="grouping">-</span>
+    <div style="margin-left: auto;">
+      <button class="btn btn-primary" onclick="exportCSV()">Export CSV</button>
+    </div>
+  </div>
+  
+  <div class="table-container">
+    <table id="propTable">
+      <thead>
+        <tr id="tableHeaders"></tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // Receive data from parent window
+    window.addEventListener('message', function(event) {
+      if (event.data.type === 'PROP_GRID_DATA') {
+        renderTable(event.data.rows, event.data.grouping);
+      }
+    });
+
+    function renderTable(rows, grouping) {
+      const status = document.getElementById('status');
+      const groupingEl = document.getElementById('grouping');
+      const headers = document.getElementById('tableHeaders');
+      const tbody = document.getElementById('tableBody');
+
+      status.textContent = rows.length + ' rows';
+      groupingEl.textContent = grouping.join(' → ');
+
+      // Headers
+      const columns = ['Category', 'CONTROL_MARK', 'CONTROL_NUMBER', 'Family', 'Type Name', 'Element ID', 'Level'];
+      headers.innerHTML = columns.map(col => '<th>' + col + '</th>').join('');
+
+      // Rows
+      tbody.innerHTML = '';
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = 
+          '<td>' + (r.Category || r.category || '') + '</td>' +
+          '<td>' + (r.CONTROL_MARK || r.controlMark || '') + '</td>' +
+          '<td>' + (r.CONTROL_NUMBER || r.controlNumber || '') + '</td>' +
+          '<td>' + (r.Family || r.family || '') + '</td>' +
+          '<td>' + (r['Type Name'] || r.typeName || '') + '</td>' +
+          '<td>' + (r['Element ID'] || r.elementId || r.dbId || '') + '</td>' +
+          '<td>' + (r.Level || r.level || '') + '</td>';
+        tbody.appendChild(tr);
+      });
+    }
+
+    function exportCSV() {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'EXPORT_PROP_GRID' }, '*');
+      }
+    }
+
+    // Request initial data
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage({ type: 'REQUEST_PROP_GRID_DATA' }, '*');
+    }
+
+    // Notify parent when popup closes
+    window.addEventListener('beforeunload', function() {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'POPUP_CLOSED' }, '*');
+      }
+    });
+  </script>
+</body>
+</html>
+  `;
+
+  propGridPopup.document.write(popupHTML);
+  propGridPopup.document.close();
+
+  // Send initial data to popup
+  setTimeout(() => {
+    syncDataToPopup();
+  }, 100);
+
+  showNotification('Properties grid opened in new window', 'success');
+}
+
+function syncDataToPopup() {
+  if (propGridPopup && !propGridPopup.closed && propGridRows && propGridRows.length > 0) {
+    propGridPopup.postMessage({
+      type: 'PROP_GRID_DATA',
+      rows: propGridRows,
+      grouping: currentGrouping
+    }, '*');
+  }
+}
+
+// Listen for messages from popup
+window.addEventListener('message', function(event) {
+  if (event.data.type === 'REQUEST_PROP_GRID_DATA') {
+    syncDataToPopup();
+  } else if (event.data.type === 'EXPORT_PROP_GRID') {
+    exportPropGridCsv();
+  } else if (event.data.type === 'POPUP_CLOSED') {
+    propGridPopup = null;
+  }
+});
 
 function openGroupingModal() {
   const modal = document.getElementById('groupingModal');
@@ -1408,6 +1670,11 @@ function renderPropertiesGrid(rows, groupingOrder) {
   }
 
   if (status) status.textContent = `Grouped by: ${groupingOrder.join(' → ')}  •  ${data.length} rows`;
+  
+  // Sync to popup if it's open
+  if (propGridPopup && !propGridPopup.closed) {
+    syncDataToPopup();
+  }
 }
 
 async function loadPropGrid(categoryName, propertyName) {
