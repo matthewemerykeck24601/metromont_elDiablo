@@ -6,6 +6,22 @@ The Metromont DB Manager provides a pseudo-database built on APS Object Storage 
 
 ## Architecture
 
+### Authentication Model
+
+**3-Legged OAuth Token (3LO) Only:**
+- DB Manager uses the **client's existing 3LO token** from main app authentication
+- Token is sent from browser in `Authorization: Bearer <token>` header
+- Server-side functions extract and reuse this token for OSS operations
+- **No 2-legged (2LO) server tokens needed** - avoids AUTH-001 errors
+- Simpler architecture - reuses existing auth infrastructure
+
+**Flow:**
+1. User authenticates via main El Diablo dashboard (3LO flow)
+2. Token stored in sessionStorage with bucket:* scopes
+3. DB Manager reads token and sends to Netlify Functions
+4. Functions use token for all OSS operations
+5. User's permissions apply (no elevated server credentials)
+
 ### Storage Structure
 
 ```
@@ -57,14 +73,15 @@ Add to your Netlify environment:
 
 ```bash
 # Required
-APS_CLIENT_ID=your-client-id
-APS_CLIENT_SECRET=your-client-secret
 PSEUDO_DB_BUCKET=metromont-el-diablo-db-dev
+ADMIN_EMAILS=mkeck@metromont.com
 
 # Optional
 APS_REGION=US
-ADMIN_EMAILS=mkeck@metromont.com,other@metromont.com
 NODE_ENV=production
+
+# Note: APS_CLIENT_ID and APS_CLIENT_SECRET are NOT needed for DB Manager
+# We use the client's 3-legged OAuth token (already has bucket:* scopes)
 ```
 
 ### 3. Create OSS Bucket
