@@ -61,6 +61,7 @@ body {
     background: rgba(255, 255, 255, 0.1);
     padding: 0.5rem 1rem;
     border-radius: 0.5rem;
+    -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
 }
 
@@ -142,6 +143,7 @@ body {
 .module-card.quality::before { --accent-color: #ef4444; }
 .module-card.fab::before { --accent-color: #8b5cf6; }
 .module-card.design::before { --accent-color: #06b6d4; }
+.module-card.data::before { --accent-color: #6366f1; }
 
 .module-icon {
     width: 48px;
@@ -160,6 +162,7 @@ body {
 .module-card.quality .module-icon { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
 .module-card.fab .module-icon { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
 .module-card.design .module-icon { background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); }
+.module-card.data .module-icon { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); }
 
 .module-title {
     font-size: 1.25rem;

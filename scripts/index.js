@@ -868,6 +868,9 @@ function navigateToModule(module) {
         case 'production':
             window.location.href = 'scheduling-hub.html';
             break;
+        case 'db-manager':
+            window.location.href = 'db-manager.html';
+            break;
         case 'inventory':
             showNotification('Inventory Tracking coming Q1 2025');
             break;
