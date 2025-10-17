@@ -166,7 +166,7 @@
                 </div>
 
                 <div class="timeline-scrubber">
-                    <input type="range" id="timelineScrubber" min="0" max="0" value="0" disabled>
+                    <input type="range" id="timelineScrubber" min="0" max="0" value="0" disabled aria-label="Timeline scrubber">
                     <div class="timeline-labels">
                         <span id="timelineStart">-</span>
                         <span id="timelineEnd">-</span>
@@ -225,32 +225,31 @@
             <section id="properties-grid-panel" style="display:none; border-top:1px solid #e5e7eb; padding:12px 8px; background: white;">
                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
                     <strong>Model Properties</strong>
-                    <span id="propGridStatus" style="font-size:12px;color:#6b7280;">(not loaded)</span>
-                    <button id="btnLoadPropGrid" class="btn btn-secondary btn-sm">Load Grid</button>
                     <button id="btnExportPropGrid" class="btn btn-secondary btn-sm">Export CSV</button>
                 </div>
 
-                <div style="display:flex; gap:12px; margin-bottom:8px; align-items:center;">
-                    <label style="font-weight:500;">Primary mapping:</label>
-                    <select id="propGridCategory" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px;"></select>
-                    <select id="propGridProperty" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px;"></select>
-                    <span style="font-size:12px;color:#6b7280;">(default: Identity Data → Mark)</span>
+                <div class="propgrid-toolbar">
+                  <label for="propGridSavedFormat" style="margin-right:.5rem;">Saved format:</label>
+                  <select id="propGridSavedFormat" aria-label="Saved format" style="min-width:220px;">
+                    <option value="Default">Default (Category → Family → Type Name → Mark)</option>
+                  </select>
+                  <button id="btnEditGrouping" class="btn" style="margin-left:.5rem;">Grouping…</button>
+                  <span id="propGridStatus" class="muted" style="margin-left:1rem;"></span>
+                  <div style="margin-left:auto;">
+                    <button id="btnLoadPropGrid" class="btn btn-primary">Load properties table</button>
+                  </div>
                 </div>
 
-                <div style="overflow:auto; max-height:360px; border:1px solid #e5e7eb;">
+                <div style="overflow:auto; max-height:360px; border:1px solid #e5e7eb; margin-top:8px;">
                     <table id="propGrid" style="width:100%; border-collapse:collapse;">
                         <thead style="position:sticky; top:0; background:#f9fafb;">
                             <tr>
-                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">dbId</th>
-                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Element Name</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Category</th>
                                 <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Family</th>
                                 <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Type Name</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Mark</th>
+                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Element ID</th>
                                 <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Level</th>
-                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Category</th>
-                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Property</th>
-                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Value</th>
-                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Sequence #</th>
-                                <th style="text-align:left; padding:6px; border-bottom:1px solid #e5e7eb;">Sequence Date</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -263,6 +262,48 @@
     <!-- Notification Toast -->
     <div id="notification" class="notification">
         <div class="notification-content" id="notificationContent"></div>
+    </div>
+
+    <!-- Grouping Modal -->
+    <div id="groupingModal" class="modal" style="display:none;">
+      <div class="modal-content" style="max-width:900px;">
+        <div class="modal-header">
+          <h3>Edit grouping</h3>
+          <button id="groupingClose" class="btn-icon" aria-label="Close">✕</button>
+        </div>
+
+        <div class="modal-body" style="display:flex; gap:1rem;">
+          <!-- Available properties -->
+          <div style="flex:1; min-width:320px;">
+            <div class="muted" style="margin-bottom:.25rem;">Add properties</div>
+            <input id="groupAvailSearch" type="search" placeholder="Search…" style="width:100%; margin-bottom:.5rem;">
+            <details open>
+              <summary>Common properties</summary>
+              <ul id="groupAvailCommon" class="list selectable"></ul>
+            </details>
+            <details>
+              <summary>Extended properties</summary>
+              <ul id="groupAvailExtended" class="list selectable"></ul>
+            </details>
+            <details>
+              <summary>Model properties</summary>
+              <ul id="groupAvailModel" class="list selectable"></ul>
+            </details>
+          </div>
+
+          <!-- Grouping order -->
+          <div style="flex:1; min-width:320px;">
+            <div class="muted" style="margin-bottom:.25rem;">Grouping order</div>
+            <input id="groupOrderSearch" type="search" placeholder="Search…" style="width:100%; margin-bottom:.5rem;">
+            <ul id="groupOrder" class="list sortable"></ul>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:.5rem;">
+          <button id="groupingCancel" class="btn">Cancel</button>
+          <button id="groupingApply" class="btn btn-primary">Apply</button>
+        </div>
+      </div>
     </div>
 
     <!-- Scripts -->

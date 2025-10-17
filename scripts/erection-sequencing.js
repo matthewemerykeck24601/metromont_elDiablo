@@ -20,6 +20,12 @@ let filterRowCount = 1;
 let propGridRows = []; // array of {dbId, name, family, typeName, level, mapCategory, mapProperty, mapValue, seqNum, seqDate}
 let currentFilter = null; // { category, property }
 
+// ---- Grouping state ----
+let currentGrouping = ['Category', 'Family', 'Type Name', 'Mark'];
+const savedFormats = {
+  'Default': ['Category', 'Family', 'Type Name', 'Mark']
+};
+
 // Make token available globally for GraphQL helper
 window.forgeAccessToken = null;
 
@@ -1196,57 +1202,199 @@ function showPropertiesGridPanel(show = true) {
 }
 
 function bindPropertiesGridUI() {
-    const btnLoad = document.getElementById('btnLoadPropGrid');
-    const btnExport = document.getElementById('btnExportPropGrid');
-    const catSel = document.getElementById('propGridCategory');
-    const propSel = document.getElementById('propGridProperty');
+  const savedSel = document.getElementById('propGridSavedFormat');
+  const btnGrouping = document.getElementById('btnEditGrouping');
+  const btnLoad = document.getElementById('btnLoadPropGrid');
+  const btnExport = document.getElementById('btnExportPropGrid');
 
-    if (!btnLoad || !btnExport || !catSel || !propSel) return;
+  if (savedSel) {
+    // Populate saved formats (only Default for now)
+    savedSel.innerHTML = '';
+    Object.keys(savedFormats).forEach(k => {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = k + ' (' + savedFormats[k].join(' → ') + ')';
+      savedSel.appendChild(opt);
+    });
+    savedSel.value = 'Default';
+    currentGrouping = [...savedFormats[savedSel.value]];
+    savedSel.onchange = () => {
+      currentGrouping = [...savedFormats[savedSel.value]];
+      // If the grid is already loaded, re-render with the new grouping
+      if (propGridRows && propGridRows.length) {
+        renderPropertiesGrid(propGridRows, currentGrouping);
+      }
+    };
+  }
 
-    // Fill category + property combos from discovered categories
-    fillCategoryPropertyCombos(catSel, propSel);
+  if (btnGrouping) {
+    btnGrouping.onclick = openGroupingModal;
+  }
 
-    // Default selection
-    selectComboValue(catSel, 'Identity Data');
-    onPropGridCategoryChanged();
-    selectComboValue(propSel, 'Mark');
+  if (btnLoad) {
+    // Call loadPropGrid without parameters (it will use the extracted properties)
+    btnLoad.onclick = async () => {
+      await loadPropGrid(null, null);
+    };
+  }
 
-    catSel.addEventListener('change', onPropGridCategoryChanged);
-    
-    function onPropGridCategoryChanged() {
-        const cat = catSel.value;
-        fillPropertyComboForCategory(propSel, cat);
-    }
-
-    btnLoad.addEventListener('click', () => loadPropGrid(catSel.value, propSel.value));
-    btnExport.addEventListener('click', exportPropGridCsv);
+  if (btnExport) {
+    btnExport.onclick = exportPropGridCsv;
+  }
 }
 
-function fillCategoryPropertyCombos(catSel, propSel) {
-    catSel.innerHTML = '';
-    const categories = Array.from(modelCategories.keys()).sort();
-    for (const cat of categories) {
-        const opt = document.createElement('option');
-        opt.value = cat;
-        opt.textContent = cat;
-        catSel.appendChild(opt);
+function openGroupingModal() {
+  const modal = document.getElementById('groupingModal');
+  if (!modal) return;
+
+  // Fill "available" lists. We derive buckets:
+  // Common = a small curated set; Extended = everything except Common; Model = __document__/__name__/etc.
+  const commonSet = new Set(['Category','Family','Type Name','Mark','Level']);
+  const modelBucket = ['__document__','__name__','__category__','__categoryId__','__instanceof__','__viewable_in__','__revit__'];
+
+  const availCommon = document.getElementById('groupAvailCommon');
+  const availExtended = document.getElementById('groupAvailExtended');
+  const availModel = document.getElementById('groupAvailModel');
+  [availCommon, availExtended, availModel].forEach(ul => ul && (ul.innerHTML = ''));
+
+  // Build a flat list of property display names from extracted categories
+  const allPropNames = new Set();
+  modelCategories.forEach((props, cat) => props.forEach(p => allPropNames.add(p)));
+
+  allPropNames.forEach(p => {
+    const li = document.createElement('li');
+    li.textContent = p;
+    li.tabIndex = 0;
+    li.onclick = () => addToGrouping(p);
+
+    if (modelBucket.includes(p)) {
+      availModel.appendChild(li.cloneNode(true)).onclick = () => addToGrouping(p);
+    } else if (commonSet.has(p)) {
+      availCommon.appendChild(li.cloneNode(true)).onclick = () => addToGrouping(p);
+    } else {
+      availExtended.appendChild(li.cloneNode(true)).onclick = () => addToGrouping(p);
     }
+  });
+
+  // Fill current order
+  const orderUl = document.getElementById('groupOrder');
+  orderUl.innerHTML = '';
+  currentGrouping.forEach(p => appendGroupingItem(p));
+
+  // Wire modal controls
+  document.getElementById('groupingApply').onclick = applyGrouping;
+  document.getElementById('groupingCancel').onclick = closeGroupingModal;
+  document.getElementById('groupingClose').onclick = closeGroupingModal;
+
+  // (Simple drag-sort: mouse-based re-order)
+  enableSimpleDragSort(orderUl);
+
+  modal.style.display = 'block';
 }
 
-function fillPropertyComboForCategory(propSel, categoryName) {
-    propSel.innerHTML = '';
-    const props = Array.from(modelCategories.get(categoryName) || []).sort();
-    for (const p of props) {
-        const opt = document.createElement('option');
-        opt.value = p;
-        opt.textContent = p;
-        propSel.appendChild(opt);
-    }
+function closeGroupingModal() {
+  const modal = document.getElementById('groupingModal');
+  if (modal) modal.style.display = 'none';
 }
 
-function selectComboValue(sel, value) {
-    const opt = Array.from(sel.options).find(o => o.value === value);
-    if (opt) sel.value = value;
+function addToGrouping(propName) {
+  const orderUl = document.getElementById('groupOrder');
+  // de-dupe
+  const exists = Array.from(orderUl.querySelectorAll('li')).some(li => li.dataset.prop === propName);
+  if (!exists) appendGroupingItem(propName);
+}
+
+function appendGroupingItem(propName) {
+  const li = document.createElement('li');
+  li.textContent = propName;
+  li.dataset.prop = propName;
+  li.draggable = true;
+
+  const del = document.createElement('button');
+  del.className = 'btn-icon';
+  del.style.marginLeft = '.5rem';
+  del.textContent = '🗑';
+  del.title = 'Remove';
+  del.onclick = (e) => { e.stopPropagation(); li.remove(); };
+
+  li.appendChild(del);
+  document.getElementById('groupOrder').appendChild(li);
+}
+
+function applyGrouping() {
+  const order = Array.from(document.getElementById('groupOrder').querySelectorAll('li'))
+    .map(li => li.dataset.prop)
+    .filter(Boolean);
+
+  if (order.length === 0) return closeGroupingModal();
+
+  currentGrouping = order;
+
+  // Update saved dropdown selection label if on Default
+  const savedSel = document.getElementById('propGridSavedFormat');
+  if (savedSel && savedSel.value === 'Default') {
+    savedFormats['Default'] = [...currentGrouping];
+    // refresh label text
+    savedSel.options[savedSel.selectedIndex].textContent =
+      'Default (' + currentGrouping.join(' → ') + ')';
+  }
+
+  // Re-render grid using new grouping
+  if (propGridRows && propGridRows.length) {
+    renderPropertiesGrid(propGridRows, currentGrouping);
+  }
+
+  closeGroupingModal();
+}
+
+function enableSimpleDragSort(listEl) {
+  let dragEl = null;
+  listEl.addEventListener('dragstart', (e) => { dragEl = e.target; e.dataTransfer.effectAllowed='move'; });
+  listEl.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const after = Array.from(listEl.children).find(li => {
+      const rect = li.getBoundingClientRect();
+      return e.clientY < rect.top + rect.height / 2;
+    });
+    if (after) listEl.insertBefore(dragEl, after); else listEl.appendChild(dragEl);
+  });
+  listEl.addEventListener('dragend', () => { dragEl = null; });
+}
+
+function renderPropertiesGrid(rows, groupingOrder) {
+  const tbody = document.querySelector('#propGrid tbody');
+  const status = document.getElementById('propGridStatus');
+  if (!tbody) return;
+
+  // Defensive copy
+  const data = rows.slice();
+
+  // Sort by grouping order (stable, left→right)
+  [...groupingOrder].reverse().forEach(key => {
+    data.sort((a, b) => {
+      const av = (a[key] ?? a[key.toLowerCase()] ?? '').toString();
+      const bv = (b[key] ?? b[key.toLowerCase()] ?? '').toString();
+      return av.localeCompare(bv, undefined, {numeric:true, sensitivity:'base'});
+    });
+  });
+
+  // Redraw
+  tbody.innerHTML = '';
+  for (const r of data) {
+    const tr = document.createElement('tr');
+    // Keep your existing columns; we write common ones Revit folks expect:
+    tr.innerHTML = `
+      <td>${r['Category'] ?? r.category ?? ''}</td>
+      <td>${r['Family'] ?? r.family ?? ''}</td>
+      <td>${r['Type Name'] ?? r.typeName ?? ''}</td>
+      <td>${r['Mark'] ?? r.mark ?? ''}</td>
+      <td>${r['Element ID'] ?? r.elementId ?? r.dbId ?? ''}</td>
+      <td>${r['Level'] ?? r.level ?? ''}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  if (status) status.textContent = `Grouped by: ${groupingOrder.join(' → ')}  •  ${data.length} rows`;
 }
 
 async function loadPropGrid(categoryName, propertyName) {
@@ -1255,8 +1403,13 @@ async function loadPropGrid(categoryName, propertyName) {
         return;
     }
 
-    currentFilter = { category: categoryName, property: propertyName };
-    document.getElementById('propGridStatus').textContent = `(loading ${categoryName} → ${propertyName}…)`;
+    // Use the passed parameters if provided, otherwise derive from currentFilter
+    if (categoryName && propertyName) {
+        currentFilter = { category: categoryName, property: propertyName };
+    }
+
+    const status = document.getElementById('propGridStatus');
+    if (status) status.textContent = '(loading properties…)';
 
     const model = viewerModel;
 
@@ -1271,10 +1424,9 @@ async function loadPropGrid(categoryName, propertyName) {
         });
     });
 
-    // Pull a small, Revit-friendly set of columns (fast)
+    // Pull a Revit-friendly set of columns including Category
     const propFilter = [
-        propertyName,
-        'Name', 'Family', 'Type Name', 'Level'
+        'Category', 'Family', 'Type Name', 'Mark', 'Level', 'Name'
     ];
 
     const bulk = await new Promise((resolve, reject) => {
@@ -1288,59 +1440,28 @@ async function loadPropGrid(categoryName, propertyName) {
             return p ? (p.displayValue ?? '') : '';
         };
         return {
-            dbId: r.dbId,
-            name: get('Name'),
-            family: get('Family'),
-            typeName: get('Type Name'),
-            level: get('Level'),
-            mapCategory: categoryName,
-            mapProperty: propertyName,
-            mapValue: get(propertyName),
-            seqNum: '',
-            seqDate: ''
+            'Category': get('Category'),
+            'category': get('Category'),
+            'Family': get('Family'),
+            'family': get('Family'),
+            'Type Name': get('Type Name'),
+            'typeName': get('Type Name'),
+            'Mark': get('Mark'),
+            'mark': get('Mark'),
+            'Element ID': r.dbId,
+            'elementId': r.dbId,
+            'dbId': r.dbId,
+            'Level': get('Level'),
+            'level': get('Level')
         };
     });
 
-    renderPropGrid();
+    // Render with current grouping
+    renderPropertiesGrid(propGridRows, currentGrouping);
     showPropertiesGridPanel(true);
-    document.getElementById('propGridStatus').textContent = `(loaded ${propGridRows.length} rows)`;
     showNotification(`Loaded ${propGridRows.length} elements into property grid`, 'success');
 }
 
-function renderPropGrid() {
-    const tbody = document.querySelector('#propGrid tbody');
-    if (!tbody) return;
-    
-    tbody.innerHTML = '';
-    for (const row of propGridRows) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${row.dbId}</td>
-            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.name)}</td>
-            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.family)}</td>
-            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.typeName)}</td>
-            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.level)}</td>
-            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.mapCategory)}</td>
-            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.mapProperty)}</td>
-            <td style="padding:4px;border-bottom:1px solid #f1f5f9;">${escapeHtml(row.mapValue)}</td>
-            <td style="padding:0;border-bottom:1px solid #f1f5f9;">
-                <input data-k="seqNum" data-id="${row.dbId}" value="${row.seqNum}" style="width:100%;padding:4px;border:1px solid #e5e7eb;">
-            </td>
-            <td style="padding:0;border-bottom:1px solid #f1f5f9;">
-                <input data-k="seqDate" data-id="${row.dbId}" value="${row.seqDate}" type="date" style="width:100%;padding:4px;border:1px solid #e5e7eb;">
-            </td>
-        `;
-        tbody.appendChild(tr);
-    }
-
-    // Editable cells
-    tbody.addEventListener('input', (e) => {
-        const t = e.target;
-        if (!t.dataset || !t.dataset.k) return;
-        const row = propGridRows.find(r => String(r.dbId) === t.dataset.id);
-        if (row) row[t.dataset.k] = t.value;
-    });
-}
 
 function exportPropGridCsv() {
     if (!propGridRows.length) {
@@ -1348,21 +1469,17 @@ function exportPropGridCsv() {
         return;
     }
     
-    const cols = ['dbId', 'Element Name', 'Family', 'Type Name', 'Level', 'Category', 'Property', 'Value', 'Sequence #', 'Sequence Date'];
+    const cols = ['Category', 'Family', 'Type Name', 'Mark', 'Element ID', 'Level'];
     const lines = [cols.join(',')];
     
     for (const r of propGridRows) {
         const line = [
-            r.dbId,
-            csv(r.name),
-            csv(r.family),
-            csv(r.typeName),
-            csv(r.level),
-            csv(r.mapCategory),
-            csv(r.mapProperty),
-            csv(r.mapValue),
-            csv(r.seqNum),
-            csv(r.seqDate)
+            csv(r['Category'] ?? r.category ?? ''),
+            csv(r['Family'] ?? r.family ?? ''),
+            csv(r['Type Name'] ?? r.typeName ?? ''),
+            csv(r['Mark'] ?? r.mark ?? ''),
+            csv(r['Element ID'] ?? r.elementId ?? r.dbId ?? ''),
+            csv(r['Level'] ?? r.level ?? '')
         ].join(',');
         lines.push(line);
     }
