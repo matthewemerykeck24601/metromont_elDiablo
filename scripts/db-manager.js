@@ -7,12 +7,51 @@ let tables = [];
 let currentTable = null;
 let currentRows = [];
 
+// Identity Helper - Read from user profile cache
+function getIdentityHeader() {
+  try {
+    const stored = localStorage.getItem('user_profile_data');
+    if (!stored) {
+      console.warn('⚠️ No user profile data in localStorage - user may need to authenticate first');
+      return null;
+    }
+    
+    const data = JSON.parse(stored);
+    const email = data?.userInfo?.email || '';
+    const name = data?.userInfo?.name || email || 'User';
+    const hubId = data?.selectedHub?.id || 'default-hub';
+    
+    if (!email) {
+      console.warn('⚠️ User profile exists but has no email');
+      return null;
+    }
+    
+    console.log('✓ Building identity header for:', email, `(hub: ${hubId})`);
+    
+    return JSON.stringify({
+      email,
+      user_metadata: {
+        full_name: name,
+        hubId
+      }
+    });
+  } catch (e) {
+    console.warn('Failed to build identity header:', e);
+    return null;
+  }
+}
+
 // API Helper
 async function api(path, opts = {}) {
   try {
     const url = `/api/db${path}`;
+    const identity = getIdentityHeader();
     const options = {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(identity ? { 'x-netlify-identity': identity } : {})
+      },
+      credentials: 'same-origin',
       ...opts
     };
 
@@ -40,12 +79,32 @@ async function init() {
   console.log('Initializing DB Manager...');
   
   try {
+    // Check if user identity is available
+    const identity = getIdentityHeader();
+    if (!identity) {
+      console.error('❌ No user identity found - user must authenticate via main app first');
+      document.getElementById('dbStatusText').textContent = 'Not authenticated';
+      
+      const pane = document.getElementById('dbPane');
+      pane.innerHTML = `
+        <div class="empty-state">
+          <svg fill="currentColor" viewBox="0 0 24 24" style="width: 64px; height: 64px; opacity: 0.3;">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+          </svg>
+          <h3>Authentication Required</h3>
+          <p>Please authenticate via the main El Diablo dashboard first.</p>
+          <button class="btn btn-primary" onclick="window.location.href='index.html'">Go to Dashboard</button>
+        </div>
+      `;
+      return;
+    }
+    
     // Check health
     const health = await api('/health');
     console.log('✅ DB Health:', health);
     
     document.getElementById('dbStatusText').textContent = 
-      `Connected to ${health.bucket} (${health.region})`;
+      `Connected to ${health.bucket} (${health.region}) as ${health.user.email}`;
     
     const badge = document.getElementById('dbStatusBadge');
     if (badge) {
@@ -64,7 +123,35 @@ async function init() {
   } catch (error) {
     console.error('❌ Initialization failed:', error);
     document.getElementById('dbStatusText').textContent = 'Connection failed';
-    showNotification('Failed to connect to DB', 'error');
+    
+    // Check if it's a 401/403 error
+    if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+      showNotification('Not authorized - Admin access required', 'error');
+      
+      const pane = document.getElementById('dbPane');
+      pane.innerHTML = `
+        <div class="empty-state">
+          <h3>Admin Access Required</h3>
+          <p>Only authorized administrators can access the DB Manager.</p>
+          <p style="margin-top: 0.5rem;">Contact your system administrator if you need access.</p>
+        </div>
+      `;
+    } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+      showNotification('Access denied - Not in admin list', 'error');
+      
+      const pane = document.getElementById('dbPane');
+      pane.innerHTML = `
+        <div class="empty-state">
+          <h3>Access Denied</h3>
+          <p>Your account is not authorized for DB Manager access.</p>
+          <p style="margin-top: 0.5rem; font-size: 0.875rem; color: #64748b;">
+            Admin emails must be added to ADMIN_EMAILS environment variable.
+          </p>
+        </div>
+      `;
+    } else {
+      showNotification('Failed to connect to DB: ' + error.message, 'error');
+    }
   }
 }
 

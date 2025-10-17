@@ -47,21 +47,30 @@ export function isAdmin(user) {
  */
 export function parseUser(event) {
   // Try Netlify Identity first
-  if (event.headers['x-netlify-identity']) {
+  const identityHeader = event.headers['x-netlify-identity'] || event.headers['X-Netlify-Identity'];
+  
+  if (identityHeader) {
     try {
-      const identity = JSON.parse(event.headers['x-netlify-identity']);
-      return {
+      const identity = JSON.parse(identityHeader);
+      const user = {
         email: identity.email,
         name: identity.user_metadata?.full_name || identity.email,
         hubId: identity.user_metadata?.hubId || 'default-hub'
       };
+      console.log('✓ Parsed user identity:', user.email, `(hub: ${user.hubId})`);
+      return user;
     } catch (e) {
-      console.error('Failed to parse Netlify Identity:', e);
+      console.error('Failed to parse x-netlify-identity header:', e);
+      console.error('Header value:', identityHeader);
     }
+  } else {
+    console.warn('⚠️ No x-netlify-identity header found in request');
+    console.log('Available headers:', Object.keys(event.headers));
   }
 
   // Fallback for development (remove in production)
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV !== 'production') {
+    console.log('⚠️ Using development fallback user');
     return {
       email: 'mkeck@metromont.com',
       name: 'Matthew Keck',
@@ -69,6 +78,7 @@ export function parseUser(event) {
     };
   }
 
+  console.error('❌ No user identity available and not in development mode');
   return null;
 }
 
@@ -81,7 +91,7 @@ export function response(statusCode, body, headers = {}) {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, x-netlify-identity, authorization',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       ...headers
     },
@@ -105,13 +115,17 @@ export function errorResponse(statusCode, message, error = null) {
  */
 export function requireAdmin(user) {
   if (!user) {
+    console.error('❌ Auth failed: No user object');
     return errorResponse(401, 'Unauthorized - No user found');
   }
   
   if (!isAdmin(user)) {
-    return errorResponse(403, 'Forbidden - Admin access required');
+    console.error(`❌ Auth failed: ${user.email} is not in admin list`);
+    console.log('Admin emails:', ADMIN_EMAILS);
+    return errorResponse(403, `Forbidden - Admin access required. User ${user.email} is not authorized.`);
   }
   
+  console.log(`✓ Admin access granted for ${user.email}`);
   return null; // No error, user is admin
 }
 
