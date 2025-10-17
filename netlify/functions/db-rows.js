@@ -65,6 +65,9 @@ export async function handler(event) {
         return errorResponse(400, 'Row data is required');
       }
 
+      // Ensure bucket exists before writing
+      await oss.ensureBucket(bucket);
+
       const newRowId = uuid();
       const key = buildKey(user, 'tables', tableId, 'rows', `${newRowId}.json`);
 
@@ -91,6 +94,9 @@ export async function handler(event) {
       if (!data) {
         return errorResponse(400, 'Row data is required');
       }
+
+      // Ensure bucket exists before writing
+      await oss.ensureBucket(bucket);
 
       const key = buildKey(user, 'tables', tableId, 'rows', `${rowId}.json`);
 

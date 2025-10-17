@@ -44,6 +44,9 @@ export async function handler(event) {
         return errorResponse(400, 'Folder name is required');
       }
 
+      // Ensure bucket exists before writing
+      await oss.ensureBucket(bucket);
+
       // Generate folder ID from name
       const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const key = buildKey(user, 'folders', id, 'meta.json');

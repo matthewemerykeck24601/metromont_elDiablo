@@ -48,6 +48,9 @@ export async function handler(event) {
         return errorResponse(400, 'Valid JSON schema is required');
       }
 
+      // Ensure bucket exists before writing
+      await oss.ensureBucket(bucket);
+
       // Generate table ID from name
       const tableId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const key = buildKey(user, 'tables', tableId, 'schema.json');

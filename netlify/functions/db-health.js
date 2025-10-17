@@ -1,5 +1,5 @@
 // DB Health Check Endpoint
-import { response, errorResponse, parseUser, requireAdmin, getBucket } from './_db-helpers.js';
+import { createOssClient, response, errorResponse, parseUser, requireAdmin, getBucket } from './_db-helpers.js';
 
 export async function handler(event) {
   try {
@@ -13,10 +13,16 @@ export async function handler(event) {
     const authError = requireAdmin(user);
     if (authError) return authError;
 
+    // Ensure bucket exists (auto-create if needed)
+    const bucket = getBucket();
+    const oss = createOssClient(event);
+    const bucketStatus = await oss.ensureBucket(bucket);
+
     // Return health status
     return response(200, {
       ok: true,
-      bucket: getBucket(),
+      bucket,
+      bucketStatus,
       region: process.env.APS_REGION || 'US',
       user: {
         email: user.email,

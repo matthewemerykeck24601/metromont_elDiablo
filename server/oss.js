@@ -21,6 +21,59 @@ export function makeOssClient({ region = "US", getToken }) {
 
   return {
     /**
+     * Ensure bucket exists, create if missing
+     * @param {string} bucketKey - Bucket identifier
+     * @returns {Promise<Object>} { exists: true, created?: true }
+     */
+    async ensureBucket(bucketKey) {
+      const headers = await _headers();
+      
+      // Check if bucket exists
+      const checkUrl = `https://${host}/oss/v2/buckets/${encodeURIComponent(bucketKey)}/details`;
+      const checkResponse = await fetch(checkUrl, { headers });
+      
+      if (checkResponse.ok) {
+        console.log(`✅ Bucket ${bucketKey} already exists`);
+        return { exists: true };
+      }
+      
+      if (checkResponse.status === 404) {
+        console.log(`🏗️ Creating bucket ${bucketKey}...`);
+        
+        // Create bucket
+        const createResponse = await fetch(`https://${host}/oss/v2/buckets`, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            bucketKey: bucketKey,
+            policyKey: 'persistent'
+          })
+        });
+        
+        if (!createResponse.ok) {
+          const errorText = await createResponse.text();
+          
+          // Handle race condition where bucket was created between check and create
+          if (errorText.includes('already exists')) {
+            console.log('ℹ️ Bucket already exists (race condition)');
+            return { exists: true };
+          }
+          
+          throw new Error(`Failed to create bucket: ${createResponse.status} ${errorText}`);
+        }
+        
+        console.log(`✅ Created bucket ${bucketKey}`);
+        return { exists: true, created: true };
+      }
+      
+      const errorText = await checkResponse.text();
+      throw new Error(`Bucket check failed: ${checkResponse.status} ${errorText}`);
+    },
+
+    /**
      * List objects in a bucket with optional prefix filter
      * @param {string} bucketKey - Bucket identifier
      * @param {string} prefix - Object key prefix to filter by
@@ -33,6 +86,11 @@ export function makeOssClient({ region = "US", getToken }) {
       const response = await fetch(url, { headers });
       
       if (!response.ok) {
+        // Bucket doesn't exist yet → return empty list instead of error
+        if (response.status === 404) {
+          console.log(`ℹ️ Bucket ${bucketKey} not found - returning empty list`);
+          return [];
+        }
         const errorText = await response.text();
         throw new Error(`OSS list failed: ${response.status} ${errorText}`);
       }
@@ -46,26 +104,36 @@ export function makeOssClient({ region = "US", getToken }) {
     },
 
     /**
-     * Get an object from the bucket as a Buffer
+     * Get an object from the bucket as a Buffer (using signed S3 download)
      * @param {string} bucketKey - Bucket identifier
      * @param {string} objectKey - Object key/path
      * @returns {Promise<Buffer>} Object contents as Buffer
      */
     async getObject(bucketKey, objectKey) {
       const headers = await _headers();
-      const url = `https://${host}/oss/v2/buckets/${encodeURIComponent(bucketKey)}/objects/${encodeURIComponent(objectKey)}`;
       
-      const response = await fetch(url, { headers });
+      // Step 1: Get signed S3 download URL
+      const signUrl = `https://${host}/oss/v2/buckets/${encodeURIComponent(bucketKey)}/objects/${encodeURIComponent(objectKey)}/signeds3download`;
+      const signResponse = await fetch(signUrl, { headers });
       
-      if (!response.ok) {
-        if (response.status === 404) {
+      if (!signResponse.ok) {
+        if (signResponse.status === 404) {
           throw new Error(`Object not found: ${objectKey}`);
         }
-        const errorText = await response.text();
-        throw new Error(`OSS get failed: ${response.status} ${errorText}`);
+        const errorText = await signResponse.text();
+        throw new Error(`OSS get failed: ${signResponse.status} ${errorText}`);
       }
       
-      const arrayBuffer = await response.arrayBuffer();
+      const { url: s3Url } = await signResponse.json();
+      
+      // Step 2: Download from S3
+      const s3Response = await fetch(s3Url);
+      if (!s3Response.ok) {
+        const errorText = await s3Response.text();
+        throw new Error(`S3 download failed: ${s3Response.status} ${errorText}`);
+      }
+      
+      const arrayBuffer = await s3Response.arrayBuffer();
       return Buffer.from(arrayBuffer);
     },
 
@@ -89,7 +157,7 @@ export function makeOssClient({ region = "US", getToken }) {
     },
 
     /**
-     * Put an object in the bucket
+     * Put an object in the bucket (using signed S3 upload)
      * @param {string} bucketKey - Bucket identifier
      * @param {string} objectKey - Object key/path
      * @param {Buffer|string} bufferOrString - Content to upload
@@ -98,20 +166,46 @@ export function makeOssClient({ region = "US", getToken }) {
      */
     async putObject(bucketKey, objectKey, bufferOrString, contentType = "application/octet-stream") {
       const headers = await _headers();
-      headers["Content-Type"] = contentType;
       
-      const url = `https://${host}/oss/v2/buckets/${encodeURIComponent(bucketKey)}/objects/${encodeURIComponent(objectKey)}`;
+      // Step 1: Request signed S3 upload URL (single part)
+      const signUrl = `https://${host}/oss/v2/buckets/${encodeURIComponent(bucketKey)}/objects/${encodeURIComponent(objectKey)}/signeds3upload?parts=1`;
+      const signResponse = await fetch(signUrl, { headers });
+      
+      if (!signResponse.ok) {
+        const errorText = await signResponse.text();
+        throw new Error(`Failed to get signed upload URL: ${signResponse.status} ${errorText}`);
+      }
+      
+      const { urls, uploadKey } = await signResponse.json();
+      const uploadUrl = urls[0]; // URL for part 1
+      
+      // Step 2: Upload to S3
       const body = typeof bufferOrString === "string" ? bufferOrString : bufferOrString;
-      
-      const response = await fetch(url, { 
-        method: "PUT", 
-        headers, 
-        body 
+      const s3Response = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/octet-stream" },
+        body
       });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`OSS put failed: ${response.status} ${errorText}`);
+      if (!s3Response.ok) {
+        const errorText = await s3Response.text();
+        throw new Error(`S3 upload failed: ${s3Response.status} ${errorText}`);
+      }
+      
+      // Step 3: Finalize upload
+      const finalizeUrl = `https://${host}/oss/v2/buckets/${encodeURIComponent(bucketKey)}/objects/${encodeURIComponent(objectKey)}/signeds3upload`;
+      const finalizeResponse = await fetch(finalizeUrl, {
+        method: "POST",
+        headers: { 
+          ...headers,
+          "Content-Type": "application/json" 
+        },
+        body: JSON.stringify({ uploadKey })
+      });
+      
+      if (!finalizeResponse.ok) {
+        const errorText = await finalizeResponse.text();
+        throw new Error(`Failed to finalize upload: ${finalizeResponse.status} ${errorText}`);
       }
       
       return true;
