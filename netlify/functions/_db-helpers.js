@@ -1,37 +1,31 @@
 // Shared DB helpers for Netlify Functions
-import { makeOssClient, getOssToken } from '../../server/oss.js';
+import { makeOssClient } from '../../server/oss.js';
 
 // Configuration (load from environment)
-const APS_CLIENT_ID = process.env.APS_CLIENT_ID;
-const APS_CLIENT_SECRET = process.env.APS_CLIENT_SECRET;
 const BUCKET = process.env.PSEUDO_DB_BUCKET || "metromont-el-diablo-db-dev";
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "mkeck@metromont.com").split(',').map(e => e.trim());
 
-let tokenCache = null;
-let tokenExpiry = 0;
-
 /**
- * Get cached OSS token or fetch new one
+ * Create OSS client instance using 3LO token from client
+ * @param {Object} event - Netlify function event with headers
+ * @returns {Object} OSS client instance
  */
-async function getCachedToken() {
-  const now = Date.now();
-  if (tokenCache && now < tokenExpiry) {
-    return tokenCache;
+export function createOssClient(event) {
+  // Extract 3LO bearer token from Authorization header
+  const auth = event?.headers?.authorization || event?.headers?.Authorization || '';
+  const bearerToken = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  
+  if (!bearerToken) {
+    console.error('❌ No Authorization bearer token found in request');
+    console.log('Available headers:', Object.keys(event?.headers || {}));
+    throw new Error('No APS token provided - client must send Authorization header');
   }
   
-  tokenCache = await getOssToken(APS_CLIENT_ID, APS_CLIENT_SECRET);
-  tokenExpiry = now + (3500 * 1000); // Token valid for ~1 hour, refresh after 58min
+  console.log('✓ Using 3LO token from client (length:', bearerToken.length, ')');
   
-  return tokenCache;
-}
-
-/**
- * Create OSS client instance
- */
-export function createOssClient() {
   return makeOssClient({
     region: process.env.APS_REGION || "US",
-    getToken: getCachedToken
+    getToken: async () => bearerToken  // Use client's 3LO token exclusively
   });
 }
 

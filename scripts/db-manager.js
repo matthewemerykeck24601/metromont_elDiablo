@@ -46,10 +46,16 @@ async function api(path, opts = {}) {
   try {
     const url = `/api/db${path}`;
     const identity = getIdentityHeader();
+    
+    // Get 3LO token from session/localStorage (from main app auth)
+    const stored = sessionStorage.getItem('forge_token') || localStorage.getItem('forge_token_backup');
+    const token = stored ? JSON.parse(stored).access_token : null;
+    
     const options = {
       headers: { 
         'Content-Type': 'application/json',
-        ...(identity ? { 'x-netlify-identity': identity } : {})
+        ...(identity ? { 'x-netlify-identity': identity } : {}),
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       },
       credentials: 'same-origin',
       ...opts

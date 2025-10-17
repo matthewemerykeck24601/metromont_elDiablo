@@ -14,7 +14,7 @@ export async function handler(event) {
     const authError = requireAdmin(user);
     if (authError) return authError;
 
-    const oss = createOssClient();
+    const oss = createOssClient(event);
     const bucket = getBucket();
 
     // Extract tableId from path

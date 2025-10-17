@@ -24,7 +24,7 @@ export async function handler(event) {
     const prefix = params.prefix || '';
 
     // List objects from OSS
-    const oss = createOssClient();
+    const oss = createOssClient(event);
     const bucket = getBucket();
     const objects = await oss.listObjects(bucket, prefix);
 
