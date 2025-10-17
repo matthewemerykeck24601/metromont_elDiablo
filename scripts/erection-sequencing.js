@@ -1195,9 +1195,9 @@ function csv(s) {
 // ---- Properties Grid Panel Functions ----
 
 function showPropertiesGridPanel(show = true) {
-    const panel = document.getElementById('properties-grid-panel');
+    const panel = document.getElementById('bottom-panel');
     if (panel) {
-        panel.style.display = show ? 'block' : 'none';
+        panel.style.display = show ? 'flex' : 'none';
     }
 }
 
@@ -1711,6 +1711,69 @@ function showNotification(message, type = 'info') {
         }, 4000);
     }
 }
+
+// Initialize vertical splitter for viewer/properties resize
+(function initVerticalSplitter() {
+  const splitter = document.getElementById('splitter');
+  const viewerPanel = document.getElementById('viewer-panel');
+  const bottomPanel = document.getElementById('bottom-panel');
+  const ROOT_KEY = 'ess_viewer_height_px';
+
+  if (!splitter || !viewerPanel || !bottomPanel) {
+    console.warn('Splitter elements not found, skipping splitter init');
+    return;
+  }
+
+  // 1) Restore height from localStorage (if present)
+  const savedPx = parseInt(localStorage.getItem(ROOT_KEY), 10);
+  if (!isNaN(savedPx) && savedPx > 180) {
+    viewerPanel.style.height = savedPx + 'px';
+  }
+
+  let dragging = false;
+  let startY = 0;
+  let startHeight = 0;
+
+  const minViewer = 200; // px
+  const minBottom = 160; // px
+
+  function onMouseMove(e) {
+    if (!dragging) return;
+    const dy = e.clientY - startY;
+    const newHeight = Math.max(minViewer, startHeight + dy);
+
+    // prevent bottom panel collapsing
+    const mainVertical = document.getElementById('main-vertical');
+    if (!mainVertical) return;
+    
+    const available = mainVertical.clientHeight - splitter.offsetHeight;
+    const maxViewer = available - minBottom;
+    viewerPanel.style.height = Math.min(newHeight, maxViewer) + 'px';
+  }
+
+  function stopDragging() {
+    if (!dragging) return;
+    dragging = false;
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', stopDragging);
+    // persist
+    const h = viewerPanel.getBoundingClientRect().height | 0;
+    localStorage.setItem(ROOT_KEY, String(h));
+  }
+
+  splitter.addEventListener('mousedown', (e) => {
+    dragging = true;
+    startY = e.clientY;
+    startHeight = viewerPanel.getBoundingClientRect().height;
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', stopDragging);
+  });
+
+  // defensive: stop drag if window loses focus
+  window.addEventListener('blur', stopDragging);
+  
+  console.log('✅ Vertical splitter initialized');
+})();
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {

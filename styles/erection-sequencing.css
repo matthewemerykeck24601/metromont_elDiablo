@@ -546,3 +546,99 @@ body.auth-loading {
     font-size: 1.2rem;
     line-height: 1;
 }
+
+/* ===== Vertical layout container (viewer + splitter + bottom panel) ===== */
+.ess-vertical {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 600px;
+}
+
+/* ===== Viewer panel ===== */
+.ess-viewer-panel {
+  /* default height; JS will override via inline style or CSS var */
+  height: var(--viewer-height, 52vh);
+  min-height: 220px;
+  position: relative;
+  background: #f7f9fb;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ensure your actual Viewer canvas fills the viewer panel */
+.ess-viewer-panel #esViewer,
+.ess-viewer-panel .adsk-viewing-viewer {
+  flex: 1;
+  position: relative;
+}
+
+/* ===== Horizontal splitter (grab bar) ===== */
+.ess-splitter {
+  height: 8px;
+  cursor: row-resize;
+  background: linear-gradient(to bottom, #e9eef4, #d8e2ee);
+  border-top: 1px solid #c5d1df;
+  border-bottom: 1px solid #c5d1df;
+  -webkit-user-select: none;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.ess-splitter:hover {
+  background: linear-gradient(to bottom, #d8e2ee, #c5d1df);
+}
+
+/* ===== Bottom panel ===== */
+.ess-bottom-panel {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* header fixed, table scrolls inside wrapper */
+  background: #fff;
+}
+
+/* Header row above the table (use your existing markup) */
+.ess-properties-header {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-top: 1px solid #e3e8ef;
+  border-bottom: 1px solid #e3e8ef;
+  background: #fff;
+}
+
+/* Scroll wrapper that provides BOTH scrollbars when needed */
+.ess-table-scroll {
+  flex: 1 1 auto;
+  overflow-x: auto;   /* <-- horizontal scroll */
+  overflow-y: auto;   /* <-- vertical scroll */
+  background: #fff;
+}
+
+/* Make the table prefer its content width so the x-scroll appears */
+.ess-properties-table {
+  width: max-content;            /* critical for horizontal scrolling */
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 100%;               /* ensures table fills width when content is narrow */
+}
+
+.ess-properties-table th,
+.ess-properties-table td {
+  border-bottom: 1px solid #eef2f7;
+  padding: 6px 10px;
+  white-space: nowrap;           /* keep columns tight—use x-scroll instead of wrapping */
+  text-align: left;
+}
+
+/* Optional: sticky header */
+.ess-properties-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  z-index: 1;
+  border-bottom: 1px solid #dfe7f3;
+  font-weight: 600;
+  color: #475569;
+}
