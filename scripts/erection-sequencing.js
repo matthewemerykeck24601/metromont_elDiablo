@@ -1196,8 +1196,20 @@ function csv(s) {
 
 function showPropertiesGridPanel(show = true) {
     const panel = document.getElementById('bottom-panel');
+    const splitter = document.getElementById('splitter');
+    
     if (panel) {
         panel.style.display = show ? 'flex' : 'none';
+    }
+    
+    if (splitter) {
+        splitter.style.display = show ? 'block' : 'none';
+    }
+    
+    // If showing for the first time, ensure splitter is initialized
+    if (show && splitter && !splitter.dataset.initialized) {
+        initVerticalSplitter();
+        splitter.dataset.initialized = 'true';
     }
 }
 
@@ -1713,7 +1725,7 @@ function showNotification(message, type = 'info') {
 }
 
 // Initialize vertical splitter for viewer/properties resize
-(function initVerticalSplitter() {
+function initVerticalSplitter() {
   const splitter = document.getElementById('splitter');
   const viewerPanel = document.getElementById('viewer-panel');
   const bottomPanel = document.getElementById('bottom-panel');
@@ -1773,11 +1785,12 @@ function showNotification(message, type = 'info') {
   window.addEventListener('blur', stopDragging);
   
   console.log('✅ Vertical splitter initialized');
-})();
+}
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {
     console.log('Erection Sequencing page loaded');
     initializeErectionSequencing();
+    // Note: splitter will be initialized when properties panel is first shown
 });
 
