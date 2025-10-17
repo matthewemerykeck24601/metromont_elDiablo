@@ -721,11 +721,14 @@ function showNotification(message, type = 'info') {
 
   function openModal() {
     modal.setAttribute('aria-hidden', 'false');
-    input.focus();
+    // Focus on next frame to avoid aria-hidden warning
+    requestAnimationFrame(() => input.focus());
   }
 
   function closeModal() {
     modal.setAttribute('aria-hidden', 'true');
+    // Return focus to FAB to keep focus order clean
+    fab.focus();
   }
 
   function appendMsg(role, text) {

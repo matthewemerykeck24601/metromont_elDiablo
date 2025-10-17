@@ -1,5 +1,27 @@
 # Metromont DB Manager - Setup Guide
 
+## Quick Start Checklist
+
+**Before using DB Manager, ensure these environment variables are set in Netlify:**
+
+| Variable | Required | Example | Purpose |
+|----------|----------|---------|---------|
+| `OPENAI_API_KEY` | ✅ YES | `sk-proj-abc123...` | AI Assistant (GPT-4o) |
+| `APS_CLIENT_ID` | ✅ YES | `abc123...` | 2LO token for OSS |
+| `APS_CLIENT_SECRET` | ✅ YES | `secret123...` | 2LO token for OSS |
+| `ACC_CLIENT_ID` | ✅ YES | `abc123...` | User OAuth (can be same as APS) |
+| `ACC_CLIENT_SECRET` | ✅ YES | `secret123...` | User OAuth (can be same as APS) |
+| `PSEUDO_DB_BUCKET` | ✅ YES | `metromont-el-diablo-db-dev` | OSS bucket name |
+| `ADMIN_EMAILS` | ✅ YES | `mkeck@metromont.com` | Admin allowlist |
+| `APS_REGION` | ⚪ Optional | `US` | Default: US |
+
+**After setting variables:**
+1. Save in Netlify
+2. Trigger new deployment
+3. Test at `/db-manager.html`
+
+---
+
 ## Overview
 
 The Metromont DB Manager provides a pseudo-database built on APS Object Storage Service (OSS). It allows admin users to manage application data including schedules, mappings, and configuration without requiring a traditional database.
@@ -82,27 +104,53 @@ These are already configured in `scripts/index.js` - ACC_SCOPES.
 
 ### 2. Environment Variables
 
-Add to your Netlify environment:
+**⚠️ CRITICAL:** Set these in Netlify → Site Settings → Environment Variables → Production Context
+
+#### **Required Variables:**
 
 ```bash
-# Required - APS Credentials for 2LO Token
-APS_CLIENT_ID=your-client-id
-APS_CLIENT_SECRET=your-client-secret
+# 1. APS Credentials for 2LO Token (OSS Access)
+APS_CLIENT_ID=your-aps-client-id
+APS_CLIENT_SECRET=your-aps-client-secret
 
-# Required - DB Configuration  
+# 2. Main App OAuth (for user login)
+ACC_CLIENT_ID=your-acc-client-id
+ACC_CLIENT_SECRET=your-acc-client-secret
+
+# 3. OpenAI API Key (for AI Assistant)
+OPENAI_API_KEY=sk-proj-...your-openai-key...
+
+# 4. DB Configuration
 PSEUDO_DB_BUCKET=metromont-el-diablo-db-dev
 ADMIN_EMAILS=mkeck@metromont.com
 
-# Optional
+# 5. Optional Configuration
 APS_REGION=US
 NODE_ENV=production
-
-# IMPORTANT: OSS operations require 2-legged (2LO) server-side tokens
-# 2LO is for app-managed buckets (pseudo DB storage)
-# 3LO is for ACC/BIM360 user data (model viewing, project access)
 ```
 
-**Why 2LO for OSS?**
+#### **Environment Variable Verification Checklist:**
+
+- [ ] **OPENAI_API_KEY** - Get from https://platform.openai.com/api-keys
+- [ ] **APS_CLIENT_ID** - From APS application (must have Data Management API enabled)
+- [ ] **APS_CLIENT_SECRET** - From APS application
+- [ ] **ACC_CLIENT_ID** - Same as APS_CLIENT_ID (or separate for user OAuth)
+- [ ] **ACC_CLIENT_SECRET** - Same as APS_CLIENT_SECRET (or separate)
+- [ ] **PSEUDO_DB_BUCKET** - Your bucket name (e.g., metromont-el-diablo-db-dev)
+- [ ] **ADMIN_EMAILS** - mkeck@metromont.com (comma-separated for multiple)
+
+#### **After Setting Variables:**
+1. Save all variables
+2. **Trigger manual deploy** (Netlify → Deploys → Trigger deploy → Deploy site)
+3. Wait for build to complete
+4. Test AI assistant
+
+#### **Why Both APS and ACC Variables?**
+- **APS_* (2LO)** - Server-side OSS operations (app-managed buckets)
+- **ACC_* (3LO)** - User authentication and ACC/BIM360 access
+- Some deployments use the same app for both, some use separate apps
+
+#### **Why 2LO for OSS?**
 - App-managed buckets require server-side 2-legged OAuth
 - Functions generate 2LO tokens using CLIENT_ID/SECRET
 - Tokens are cached (3500s TTL) for performance
@@ -419,6 +467,55 @@ Only users in the `ADMIN_EMAILS` environment variable can:
 ### "No objects found"
 
 This is normal for a new installation. The bucket is empty until you create folders/tables.
+
+### AI Assistant Returns 500 Error
+
+**Cause:** Missing or incorrect environment variables.
+
+**Diagnostic Steps:**
+
+1. **Check Netlify Logs** (Deploys → Function logs)
+   - Look for error messages from ai-db function
+   - Check if OPENAI_API_KEY is missing
+
+2. **Test from Browser Console:**
+```javascript
+fetch('/api/ai/db', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-netlify-identity': JSON.stringify({
+      email: 'mkeck@metromont.com',
+      user_metadata: { 
+        full_name: 'Matthew Keck', 
+        hubId: 'b.f61b9f7b-5481-4d25-a552-365ba99077b8' 
+      }
+    })
+  },
+  body: JSON.stringify({ 
+    messages: [{ 
+      role: 'user', 
+      content: 'create a table named test_table with fields name:string, count:number' 
+    }] 
+  })
+}).then(r => r.json()).then(console.log)
+```
+
+3. **Common Error Messages:**
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "AI service not configured" | Missing OPENAI_API_KEY | Add key to Netlify env vars |
+| "Forbidden - Admin access required" | Email not in ADMIN_EMAILS | Add mkeck@metromont.com to ADMIN_EMAILS |
+| "Unauthorized - No user found" | Missing x-netlify-identity | Clear cache, re-login via dashboard |
+| "Missing APS_CLIENT_ID" | APS vars not set | Add APS_CLIENT_ID/SECRET to env vars |
+
+4. **Verify All Env Vars Set:**
+   - Go to Netlify → Site Settings → Environment Variables
+   - Ensure **all 7 required variables** are present
+   - Save changes
+   - Trigger new deployment
+   - Test AI assistant again
 
 ### "OSS list failed: 404"
 
