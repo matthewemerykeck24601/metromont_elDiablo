@@ -8,19 +8,32 @@ The Metromont DB Manager provides a pseudo-database built on APS Object Storage 
 
 ### Authentication Model
 
-**3-Legged OAuth Token (3LO) Only:**
-- DB Manager uses the **client's existing 3LO token** from main app authentication
-- Token is sent from browser in `Authorization: Bearer <token>` header
-- Server-side functions extract and reuse this token for OSS operations
-- **No 2-legged (2LO) server tokens needed** - avoids AUTH-001 errors
-- Simpler architecture - reuses existing auth infrastructure
+**Hybrid Authentication (2LO for OSS + 3LO for User Auth):**
+
+**User Authentication (3LO):**
+- User identity comes from client's 3LO token (main app OAuth)
+- Sent via `x-netlify-identity` header with email and hubId
+- Used for authorization (admin check)
+- NOT used for OSS operations
+
+**OSS Operations (2LO):**
+- Server generates 2-legged OAuth tokens for OSS bucket access
+- Uses APS_CLIENT_ID/SECRET from environment variables
+- Tokens are cached (58min TTL) for performance
+- Required because app-managed buckets must use 2LO (not 3LO)
+
+**Why This Split?**
+- **APS Requirement:** App-owned OSS buckets MUST use 2LO tokens
+- **3LO tokens** are for user data (ACC projects, BIM360, viewing models)
+- **2LO tokens** are for app data (storage, databases, app-managed buckets)
 
 **Flow:**
 1. User authenticates via main El Diablo dashboard (3LO flow)
-2. Token stored in sessionStorage with bucket:* scopes
-3. DB Manager reads token and sends to Netlify Functions
-4. Functions use token for all OSS operations
-5. User's permissions apply (no elevated server credentials)
+2. User profile cached in localStorage with email/hubId
+3. DB Manager sends identity header for authorization
+4. Netlify Function validates admin access (checks ADMIN_EMAILS)
+5. Function generates 2LO token for OSS operations
+6. OSS operations succeed with app-level permissions
 
 ### Storage Structure
 
@@ -72,7 +85,11 @@ These are already configured in `scripts/index.js` - ACC_SCOPES.
 Add to your Netlify environment:
 
 ```bash
-# Required
+# Required - APS Credentials for 2LO Token
+APS_CLIENT_ID=your-client-id
+APS_CLIENT_SECRET=your-client-secret
+
+# Required - DB Configuration  
 PSEUDO_DB_BUCKET=metromont-el-diablo-db-dev
 ADMIN_EMAILS=mkeck@metromont.com
 
@@ -80,9 +97,16 @@ ADMIN_EMAILS=mkeck@metromont.com
 APS_REGION=US
 NODE_ENV=production
 
-# Note: APS_CLIENT_ID and APS_CLIENT_SECRET are NOT needed for DB Manager
-# We use the client's 3-legged OAuth token (already has bucket:* scopes)
+# IMPORTANT: OSS operations require 2-legged (2LO) server-side tokens
+# 2LO is for app-managed buckets (pseudo DB storage)
+# 3LO is for ACC/BIM360 user data (model viewing, project access)
 ```
+
+**Why 2LO for OSS?**
+- App-managed buckets require server-side 2-legged OAuth
+- Functions generate 2LO tokens using CLIENT_ID/SECRET
+- Tokens are cached (3500s TTL) for performance
+- Client's 3LO token is only used for user authentication/authorization
 
 ### 3. Create OSS Bucket
 
@@ -360,7 +384,26 @@ Only users in the `ADMIN_EMAILS` environment variable can:
 
 ### "Forbidden - Admin access required"
 
-**Solution:** Add your email to `ADMIN_EMAILS` environment variable in Netlify.
+**Cause:** Your email is not in the admin allowlist.
+
+**Solution:** 
+1. Go to Netlify → Site Settings → Environment Variables
+2. Add/Update `ADMIN_EMAILS` variable
+3. Set value: `mkeck@metromont.com` (or add more with commas)
+4. Redeploy or trigger a new build
+
+### "AUTH-001: client_id does not have access to the api product"
+
+**Cause:** APS application not configured for Data Management API / OSS access.
+
+**Solution:**
+1. Go to https://aps.autodesk.com
+2. Select your application
+3. Enable "Data Management API" product
+4. Ensure bucket:* scopes are enabled
+5. Regenerate CLIENT_SECRET if needed
+6. Update Netlify environment variables
+7. Redeploy
 
 ### "Failed to create bucket"
 
@@ -368,8 +411,10 @@ Only users in the `ADMIN_EMAILS` environment variable can:
 
 **Solution:** 
 1. Check if bucket exists in APS console
-2. Verify `bucket:create` scope in OAuth token
+2. Verify 2LO token has `bucket:create` scope
 3. Use existing bucket name in `PSEUDO_DB_BUCKET` env var
+4. Check that APS_CLIENT_ID/SECRET are correct
+5. Verify app has Data Management API enabled
 
 ### "No objects found"
 

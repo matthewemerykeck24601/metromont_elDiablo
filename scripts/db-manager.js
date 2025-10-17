@@ -47,15 +47,12 @@ async function api(path, opts = {}) {
     const url = `/api/db${path}`;
     const identity = getIdentityHeader();
     
-    // Get 3LO token from session/localStorage (from main app auth)
-    const stored = sessionStorage.getItem('forge_token') || localStorage.getItem('forge_token_backup');
-    const token = stored ? JSON.parse(stored).access_token : null;
-    
+    // Note: We only send identity for authorization (admin check)
+    // OSS operations use server-side 2LO tokens (not client 3LO)
     const options = {
       headers: { 
         'Content-Type': 'application/json',
-        ...(identity ? { 'x-netlify-identity': identity } : {}),
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        ...(identity ? { 'x-netlify-identity': identity } : {})
       },
       credentials: 'same-origin',
       ...opts

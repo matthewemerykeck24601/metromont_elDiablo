@@ -1,31 +1,53 @@
 // Shared DB helpers for Netlify Functions
-import { makeOssClient } from '../../server/oss.js';
+import { makeOssClient, getOssToken } from '../../server/oss.js';
 
 // Configuration (load from environment)
+const APS_CLIENT_ID = process.env.APS_CLIENT_ID;
+const APS_CLIENT_SECRET = process.env.APS_CLIENT_SECRET;
 const BUCKET = process.env.PSEUDO_DB_BUCKET || "metromont-el-diablo-db-dev";
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "mkeck@metromont.com").split(',').map(e => e.trim());
 
+// Token cache for 2LO (reused across function invocations)
+let tokenCache = null;
+let tokenExpiry = 0;
+
 /**
- * Create OSS client instance using 3LO token from client
- * @param {Object} event - Netlify function event with headers
- * @returns {Object} OSS client instance
+ * Get cached 2LO token or fetch new one
  */
-export function createOssClient(event) {
-  // Extract 3LO bearer token from Authorization header
-  const auth = event?.headers?.authorization || event?.headers?.Authorization || '';
-  const bearerToken = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+async function getCached2LOToken() {
+  const now = Date.now();
   
-  if (!bearerToken) {
-    console.error('❌ No Authorization bearer token found in request');
-    console.log('Available headers:', Object.keys(event?.headers || {}));
-    throw new Error('No APS token provided - client must send Authorization header');
+  // Return cached if still valid (with 2min buffer)
+  if (tokenCache && now < tokenExpiry) {
+    console.log('✓ Using cached 2LO token');
+    return tokenCache;
   }
   
-  console.log('✓ Using 3LO token from client (length:', bearerToken.length, ')');
+  console.log('🔄 Fetching new 2LO token for OSS...');
+  
+  if (!APS_CLIENT_ID || !APS_CLIENT_SECRET) {
+    throw new Error('Missing APS_CLIENT_ID or APS_CLIENT_SECRET environment variables');
+  }
+  
+  tokenCache = await getOssToken(APS_CLIENT_ID, APS_CLIENT_SECRET);
+  tokenExpiry = now + (3500 * 1000); // Token valid for ~1 hour, refresh after 58min
+  
+  return tokenCache;
+}
+
+/**
+ * Create OSS client instance using 2LO token (server-side)
+ * @param {Object} _event - Netlify function event (not used, for signature compatibility)
+ * @returns {Object} OSS client instance
+ */
+export function createOssClient(_event) {
+  // Always use 2LO for app-managed OSS buckets
+  // (3LO is for ACC/BIM360 user data, 2LO is for app-owned data)
+  console.log('✓ Creating OSS client with 2LO token');
   
   return makeOssClient({
     region: process.env.APS_REGION || "US",
-    getToken: async () => bearerToken  // Use client's 3LO token exclusively
+    getToken: getCached2LOToken  // Server-side 2LO with caching
   });
 }
 

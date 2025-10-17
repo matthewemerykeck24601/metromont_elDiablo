@@ -272,7 +272,7 @@ export function makeOssClient({ region = "US", getToken }) {
  * @param {string} scope - OAuth scope (default: data:read data:write)
  * @returns {Promise<string>} Access token
  */
-export async function getOssToken(clientId, clientSecret, scope = "data:read data:create data:write bucket:create bucket:read") {
+export async function getOssToken(clientId, clientSecret, scope = "data:read data:create data:write bucket:create bucket:read bucket:update bucket:delete") {
   const params = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: clientId,
@@ -288,10 +288,11 @@ export async function getOssToken(clientId, clientSecret, scope = "data:read dat
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Token error: ${response.status} ${errorText}`);
+    throw new Error(`2LO Token error: ${response.status} ${errorText}`);
   }
 
   const { access_token } = await response.json();
+  console.log('✅ 2LO token acquired for OSS operations');
   return access_token;
 }
 
