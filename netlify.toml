@@ -1,3 +1,34 @@
 [build]
   command = "node netlify/generate-env.js"
   publish = "."
+
+# DB API Function Routes
+[[redirects]]
+  from = "/api/db/health"
+  to = "/.netlify/functions/db-health"
+  status = 200
+
+[[redirects]]
+  from = "/api/db/objects"
+  to = "/.netlify/functions/db-objects"
+  status = 200
+
+[[redirects]]
+  from = "/api/db/folders"
+  to = "/.netlify/functions/db-folders"
+  status = 200
+
+[[redirects]]
+  from = "/api/db/tables"
+  to = "/.netlify/functions/db-tables"
+  status = 200
+
+[[redirects]]
+  from = "/api/db/rows/:tableId/:rowId"
+  to = "/.netlify/functions/db-rows"
+  status = 200
+
+[[redirects]]
+  from = "/api/db/rows/:tableId"
+  to = "/.netlify/functions/db-rows"
+  status = 200
