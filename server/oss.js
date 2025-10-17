@@ -81,7 +81,8 @@ export function makeOssClient({ region = "US", getToken }) {
      */
     async listObjects(bucketKey, prefix = "") {
       const headers = await _headers();
-      const url = `https://${host}/oss/v2/buckets/${encodeURIComponent(bucketKey)}/objects?limit=100&beginsWith=${encodeURIComponent(prefix)}`;
+      const base = `https://${host}/oss/v2/buckets/${encodeURIComponent(bucketKey)}/objects?limit=100`;
+      const url = prefix ? `${base}&beginsWith=${encodeURIComponent(prefix)}` : base;
       
       const response = await fetch(url, { headers });
       

@@ -19,9 +19,10 @@ export async function handler(event) {
     const authError = requireAdmin(user);
     if (authError) return authError;
 
-    // Get prefix from query
+    // Get prefix from query (normalize empty string to undefined)
     const params = event.queryStringParameters || {};
-    const prefix = params.prefix || '';
+    const raw = params.prefix ?? '';
+    const prefix = raw && raw.trim().length ? raw : undefined;
 
     // List objects from OSS
     const oss = createOssClient(event);
