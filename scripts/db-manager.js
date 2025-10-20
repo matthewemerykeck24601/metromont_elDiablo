@@ -7,6 +7,7 @@ let tables = [];
 let currentTable = null;
 let currentRows = [];
 let selectedFolderId = null;
+let aiWidget = null;
 
 // Store for easy access
 window.__allFolders = [];
@@ -254,6 +255,7 @@ function selectFolder(folderId) {
   selectedFolderId = folderId;
   renderFolders(window.__allFolders);
   applyFolderScope();
+  updateAIFolderContext();
 }
 
 // Apply Folder Scope (filter tables + update OSS prefix)
@@ -1022,9 +1024,44 @@ document.addEventListener('DOMContentLoaded', () => {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
 
-  // Initialize
-  init();
+    // Initialize
+    init();
+    
+    // Make getIdentityHeader available globally for AI widget
+    if (!window.getIdentityHeader) {
+      window.getIdentityHeader = getIdentityHeader;
+    }
 });
+
+// Initialize AI Widget
+function initAIWidget() {
+  if (window.AIWidget) {
+    aiWidget = new window.AIWidget({
+      moduleContext: 'db-manager',
+      folderContext: selectedFolderId,
+      onSuccess: async (data) => {
+        // Reload data after successful AI action
+        console.log('AI action successful:', data);
+        await loadAll();
+        showNotification('AI action completed successfully', 'success');
+      }
+    });
+    
+    console.log('✅ AI Widget initialized for DB Manager');
+  } else {
+    console.warn('⚠️ AI Widget not available');
+  }
+}
+
+// Update AI widget folder context when selection changes
+function updateAIFolderContext() {
+  if (aiWidget) {
+    const folderName = selectedFolderId 
+      ? (window.__allFolders.find(f => f.id === selectedFolderId)?.name || selectedFolderId)
+      : null;
+    aiWidget.setFolderContext(folderName);
+  }
+}
 
 // Make functions globally available for onclick handlers
 window.openTable = openTable;
