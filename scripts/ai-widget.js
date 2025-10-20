@@ -239,30 +239,59 @@ class AIWidget {
         throw new Error('Not authenticated. Please sign in first.');
       }
       
-      // Call AI endpoint
-      const response = await fetch(this.options.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-netlify-identity': identityHeader
-        },
-        body: JSON.stringify({
-          messages: this.conversationHistory,
-          context: {
-            module: this.options.moduleContext,
-            folder: this.options.folderContext
+      // Call AI endpoint with robust error handling
+      let data;
+      try {
+        const response = await fetch(this.options.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-netlify-identity': identityHeader
+          },
+          body: JSON.stringify({
+            messages: this.conversationHistory,
+            context: {
+              module: this.options.moduleContext,
+              folder: this.options.folderContext
+            }
+          })
+        });
+        
+        // Read response as text first
+        const rawText = await response.text();
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        
+        // Check if response is OK
+        if (!response.ok) {
+          // Try to parse as JSON for structured error
+          if (contentType.includes('application/json')) {
+            try {
+              const errorData = JSON.parse(rawText);
+              throw new Error(errorData.error || errorData.message || `HTTP ${response.status}`);
+            } catch (parseErr) {
+              throw new Error(`HTTP ${response.status}: ${rawText.slice(0, 200)}`);
+            }
+          } else {
+            // HTML error page from platform
+            throw new Error(`Server error (${response.status}): Platform issue or edge function not deployed. Check Netlify dashboard.`);
           }
-        })
-      });
-      
-      const data = await response.json();
+        }
+        
+        // Verify JSON response
+        if (!contentType.includes('application/json')) {
+          throw new Error(`Expected JSON but got ${contentType}`);
+        }
+        
+        // Parse JSON
+        data = JSON.parse(rawText);
+        
+      } catch (fetchError) {
+        this.removeMessage(loadingId);
+        throw fetchError;
+      }
       
       // Remove loading message
       this.removeMessage(loadingId);
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'AI request failed');
-      }
       
       // Handle clarification requests
       if (data.requiresClarification) {

@@ -48,7 +48,7 @@ function getIdentityHeader() {
   }
 }
 
-// API Helper
+// API Helper with robust error handling
 async function api(path, opts = {}) {
   try {
     const url = `/api/db${path}`;
@@ -67,16 +67,43 @@ async function api(path, opts = {}) {
 
     const res = await fetch(url, options);
     
+    // Read response once
+    const rawText = await res.text();
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    
+    // Handle non-OK responses
     if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`API Error ${res.status}: ${errorText}`);
+      // Try to parse JSON error
+      if (contentType.includes('application/json')) {
+        try {
+          const errorData = JSON.parse(rawText);
+          throw new Error(errorData.error || errorData.message || `HTTP ${res.status}`);
+        } catch (parseErr) {
+          throw new Error(`API Error ${res.status}: ${rawText.slice(0, 300)}`);
+        }
+      } else {
+        // HTML/text error page (likely platform error)
+        throw new Error(`Server Error ${res.status}: ${rawText.slice(0, 300)}`);
+      }
     }
 
-    if (res.status === 204) {
+    // Handle 204 No Content
+    if (res.status === 204 || !rawText) {
       return null;
     }
 
-    return await res.json();
+    // Parse JSON response
+    if (contentType.includes('application/json') || rawText.trim().startsWith('{') || rawText.trim().startsWith('[')) {
+      try {
+        return JSON.parse(rawText);
+      } catch (e) {
+        console.error('JSON parse failed:', e);
+        throw new Error(`Invalid JSON response: ${rawText.slice(0, 200)}`);
+      }
+    }
+    
+    throw new Error(`Unexpected response type: ${contentType}`);
+    
   } catch (error) {
     console.error('API call failed:', error);
     showNotification(`API Error: ${error.message}`, 'error');
