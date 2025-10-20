@@ -3,17 +3,12 @@
 
 import OpenAI from "openai";
 import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 import { response, parseUser, requireAdmin, ensureBucket, createOssClient, getBucket } from "./_db-helpers.js";
 import { dispatchAction } from "./ai/_dispatch.js";
 import { auditAiAction } from "./ai/_audit.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Load system prompt
-const SYSTEM_PROMPT = readFileSync(join(__dirname, 'ai/_system-prompt.txt'), 'utf8');
+// Load system prompt (ESM-safe, bundler-safe)
+const SYSTEM_PROMPT = readFileSync(new URL('./ai/_system-prompt.txt', import.meta.url), 'utf8');
 
 // OpenAI configuration
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
