@@ -706,6 +706,94 @@
   flex: 1;
 }
 
+/* Schema Display */
+.table-details {
+  padding: 0;
+}
+
+.schema-section {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid var(--mm-border);
+  border-radius: 8px;
+}
+
+.schema-section h4 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--mm-text);
+}
+
+.info-list,
+.field-list,
+.relationship-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.info-list li,
+.field-list li,
+.relationship-list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--mm-border-light);
+  font-size: 0.875rem;
+  color: var(--mm-text-muted);
+}
+
+.info-list li:last-child,
+.field-list li:last-child,
+.relationship-list li:last-child {
+  border-bottom: none;
+}
+
+.relationship-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.source-info {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #f8fafc;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: var(--mm-text-muted);
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.badge-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-info {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
   .db-layout {

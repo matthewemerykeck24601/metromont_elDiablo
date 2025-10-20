@@ -10,6 +10,7 @@ const ACTION_REGISTRY = [
   'db.create_table',
   'db.insert_rows',
   'db.ensure_canonical_table',
+  'db.ensure_admin_pack',
   
   // ACC import actions
   'acc.import.assets',

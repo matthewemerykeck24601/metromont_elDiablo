@@ -2,7 +2,7 @@
 // Routes AI actions to appropriate internal functions
 
 import { response, createOssClient, getBucket, buildKey, parseUser } from '../_db-helpers.js';
-import { fetchAccEntitySchema, mapAccSchemaToDb } from './_acc-schema.js';
+import { getEntitySchema as fetchAccEntitySchema, mapAccSchemaToDb, getAdminPackEntities } from './_acc-schema.js';
 
 /**
  * Normalize ID for database keys
@@ -60,7 +60,7 @@ export const dbActions = {
    * Ensure canonical table exists (ACC entity)
    */
   async ensure_canonical_table(event, args, user) {
-    const { entity } = args;
+    const { entity, folderId } = args;
     
     if (!entity) {
       throw new Error("Invalid ensure_canonical_table args: entity required");
@@ -68,14 +68,15 @@ export const dbActions = {
 
     const accSchema = await fetchAccEntitySchema(entity);
     if (!accSchema) {
-      throw new Error(`Unknown ACC entity: ${entity}. Available: assets, issues, forms, rfis, checklists, locations, companies`);
+      const available = ['accounts', 'business_units', 'roles', 'users', 'companies', 'projects', 'assets', 'issues', 'forms', 'rfis', 'checklists', 'locations'];
+      throw new Error(`Unknown entity: ${entity}. Available: ${available.join(', ')}`);
     }
 
     const oss = createOssClient(event);
     const bucket = getBucket();
     const tenantPrefix = `tenants/${user.hubId || "default-hub"}`;
     
-    const { tableName, schema, metadata } = mapAccSchemaToDb(entity, accSchema);
+    const { tableName, schema, relationships, version, description } = mapAccSchemaToDb(entity, accSchema);
     const tableId = normalizeId(tableName);
     const base = `${tenantPrefix}/tables/${tableId}`;
     
@@ -87,18 +88,31 @@ export const dbActions = {
       // Doesn't exist, create it
     }
     
-    await oss.putJson(bucket, `${base}/schema.json`, {
+    const tableDoc = {
       id: tableId,
       name: tableName,
-      folderId: args.folderId || null,
+      folderId: folderId || null,
       schema,
+      ...(relationships && Object.keys(relationships).length > 0 ? { relationships } : {}),
       createdBy: user.email,
       createdAt: new Date().toISOString(),
       createdVia: 'ai-assistant',
-      _source: metadata
-    });
+      _source: { 
+        type: "acc", 
+        entity, 
+        version,
+        description
+      }
+    };
+    
+    await oss.putJson(bucket, `${base}/schema.json`, tableDoc);
 
-    return { tableId, exists: false, message: `Canonical table "${tableName}" created successfully` };
+    return { 
+      tableId, 
+      exists: false, 
+      hasRelationships: Object.keys(relationships || {}).length > 0,
+      message: `Canonical table "${tableName}" created successfully` 
+    };
   },
 
   /**
@@ -156,6 +170,74 @@ export const dbActions = {
     }
 
     return { tableId, written, message: `Inserted ${written} row(s) into "${table}"` };
+  },
+
+  /**
+   * Batch create all admin tables (accounts, users, roles, projects, etc.)
+   */
+  async ensure_admin_pack(event, args, user) {
+    const { folderId } = args;
+    
+    const oss = createOssClient(event);
+    const bucket = getBucket();
+    const tenantPrefix = `tenants/${user.hubId || "default-hub"}`;
+    
+    const entities = getAdminPackEntities();
+    const created = [];
+    const skipped = [];
+    
+    for (const entity of entities) {
+      const accSchema = await fetchAccEntitySchema(entity);
+      if (!accSchema) {
+        console.warn(`No schema for ${entity}, skipping`);
+        continue;
+      }
+      
+      const { tableName, schema, relationships, version, description } = mapAccSchemaToDb(entity, accSchema);
+      const tableId = normalizeId(tableName);
+      const base = `${tenantPrefix}/tables/${tableId}`;
+      
+      // Check if already exists
+      try {
+        await oss.getObject(bucket, `${base}/schema.json`);
+        skipped.push({ entity, tableId, reason: 'already exists' });
+        continue;
+      } catch {
+        // Doesn't exist, create it
+      }
+      
+      const tableDoc = {
+        id: tableId,
+        name: tableName,
+        folderId: folderId || null,
+        schema,
+        ...(relationships && Object.keys(relationships).length > 0 ? { relationships } : {}),
+        createdBy: user.email,
+        createdAt: new Date().toISOString(),
+        createdVia: 'ai-assistant-admin-pack',
+        _source: { 
+          type: "acc-admin-pack", 
+          entity, 
+          version,
+          description
+        }
+      };
+      
+      await oss.putJson(bucket, `${base}/schema.json`, tableDoc);
+      
+      created.push({ 
+        entity, 
+        tableId,
+        hasRelationships: Object.keys(relationships || {}).length > 0 
+      });
+    }
+    
+    return { 
+      created: created.length,
+      skipped: skipped.length,
+      tables: created,
+      message: `Admin pack: created ${created.length} table(s), skipped ${skipped.length} existing`
+    };
   }
 };
 

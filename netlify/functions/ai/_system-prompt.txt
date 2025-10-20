@@ -30,8 +30,12 @@ db.insert_rows
   Example: "Add 3 rows to assets with id, name, status"
 
 db.ensure_canonical_table
-  Args: { entity: "assets"|"issues"|"forms"|"rfis"|"checklists"|"locations"|"companies" }
-  Example: "Create the assets table"
+  Args: { entity: "assets"|"issues"|"forms"|"rfis"|"checklists"|"locations"|"companies"|"accounts"|"users"|"roles"|"projects"|"business_units", folderId?: string }
+  Example: "Create the assets table", "Set up the projects table"
+
+db.ensure_admin_pack
+  Args: { folderId?: string }
+  Example: "Create all admin tables", "Set up the complete admin database"
 
 --- ACC IMPORT ACTIONS ---
 acc.import.assets

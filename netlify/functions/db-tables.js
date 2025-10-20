@@ -38,14 +38,19 @@ export async function handler(event) {
     // POST - Create table
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
-      const { name, folderId, schema } = body;
+      const { name, folderId, schema, relationships } = body;
 
       if (!name) {
         return errorResponse(400, 'Table name is required');
       }
 
-      if (!schema || !schema.properties) {
-        return errorResponse(400, 'Valid JSON schema is required');
+      if (!schema || !schema.properties || typeof schema.properties !== 'object') {
+        return errorResponse(400, 'Valid JSON schema with properties is required');
+      }
+
+      // Validate relationships if provided
+      if (relationships && typeof relationships !== 'object') {
+        return errorResponse(400, 'Relationships must be an object');
       }
 
       // Ensure bucket exists before writing
@@ -66,6 +71,7 @@ export async function handler(event) {
         name,
         folderId: folderId || null,
         schema,
+        ...(relationships && Object.keys(relationships).length > 0 ? { relationships } : {}),
         createdBy: user.email,
         createdAt: new Date().toISOString()
       };

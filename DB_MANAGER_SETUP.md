@@ -428,6 +428,140 @@ Only users in the `ADMIN_EMAILS` environment variable can:
 - Admin check happens server-side in Netlify Functions
 - Token validation on every request
 
+## Relationships (Foreign Keys)
+
+The pseudo-DB now supports relational metadata for referential integrity.
+
+### Defining Relationships
+
+Tables may declare relationships to other tables in their schema:
+
+```json
+{
+  "id": "projects",
+  "name": "Projects",
+  "schema": { ... },
+  "relationships": {
+    "bim360_account_id": { 
+      "references": "accounts.bim360_account_id", 
+      "onDelete": "restrict" 
+    },
+    "default_role_id": { 
+      "references": "roles.id", 
+      "onDelete": "setNull" 
+    }
+  }
+}
+```
+
+### Enforcement
+
+**On INSERT/UPDATE:**
+- Server validates that referenced values exist
+- Returns 400 error if foreign key violation detected
+
+**On DELETE:**
+- `restrict` (default): Blocks delete if child rows reference this row
+- `setNull`: Sets FK fields to null in child rows
+- `cascade`: Deletes all child rows that reference this row
+
+### Example Workflow
+
+```javascript
+// 1. Create parent table
+await fetch('/api/ai', {
+  method: 'POST',
+  body: JSON.stringify({
+    direct: { 
+      action: 'db.ensure_canonical_table', 
+      args: { entity: 'accounts' } 
+    }
+  })
+});
+
+// 2. Create child table with FK
+await fetch('/api/ai', {
+  method: 'POST',
+  body: JSON.stringify({
+    direct: { 
+      action: 'db.ensure_canonical_table', 
+      args: { entity: 'projects' } 
+    }
+  })
+});
+// projects.bim360_account_id -> accounts.bim360_account_id (restrict)
+
+// 3. Insert parent row
+await fetch('/api/db/rows/accounts', {
+  method: 'POST',
+  body: JSON.stringify({
+    data: { 
+      bim360_account_id: 'acc-001', 
+      display_name: 'Metromont' 
+    }
+  })
+});
+
+// 4. Insert child row (FK validated)
+await fetch('/api/db/rows/projects', {
+  method: 'POST',
+  body: JSON.stringify({
+    data: { 
+      id: 'proj-001', 
+      bim360_account_id: 'acc-001',  // ✅ Valid FK
+      name: 'Building A' 
+    }
+  })
+});
+
+// 5. Try invalid FK (will fail)
+await fetch('/api/db/rows/projects', {
+  method: 'POST',
+  body: JSON.stringify({
+    data: { 
+      id: 'proj-002', 
+      bim360_account_id: 'invalid',  // ❌ FK violation
+      name: 'Building B' 
+    }
+  })
+});
+// Returns: 400 "Foreign key violation: projects.bim360_account_id -> accounts.bim360_account_id value 'invalid' not found"
+
+// 6. Try to delete parent (will fail with restrict)
+await fetch('/api/db/rows/accounts/acc-001', {
+  method: 'DELETE'
+});
+// Returns: 409 "Cannot delete: 1 projects row(s) reference this accounts"
+```
+
+### Admin Pack
+
+Create all admin tables at once with proper relationships:
+
+```javascript
+await fetch('/api/ai', {
+  method: 'POST',
+  body: JSON.stringify({
+    direct: { 
+      action: 'db.ensure_admin_pack', 
+      args: { folderId: 'admin' } 
+    }
+  })
+});
+// Creates: accounts, users, roles, companies, projects, business_units, 
+//          and all join tables (project_users, project_companies, etc.)
+```
+
+### Viewing Relationships in UI
+
+1. Go to Tables tab
+2. Click "Schema" button next to any table
+3. View:
+   - Column definitions
+   - Foreign key relationships
+   - onDelete policies (color-coded badges)
+   - Source information
+
 ## Troubleshooting
 
 ### "Forbidden - Admin access required"

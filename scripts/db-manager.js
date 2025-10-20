@@ -462,6 +462,7 @@ function renderTablesView() {
           <th>Name</th>
           <th>Folder</th>
           <th>Fields</th>
+          <th>Relationships</th>
           <th>Created</th>
           <th>Actions</th>
         </tr>
@@ -470,14 +471,17 @@ function renderTablesView() {
         ${tables.map(t => {
           const folder = folders.find(f => f.id === t.folderId);
           const fieldCount = Object.keys(t.schema?.properties || {}).length;
+          const relCount = Object.keys(t.relationships || {}).length;
           return `
             <tr>
               <td><strong>${t.name}</strong></td>
               <td>${folder ? folder.name : '-'}</td>
               <td>${fieldCount} fields</td>
+              <td>${relCount > 0 ? `<span class="badge badge-success">${relCount} FK(s)</span>` : '-'}</td>
               <td>${formatDate(t.createdAt)}</td>
               <td>
                 <button class="btn btn-sm btn-secondary" onclick="openTable('${t.id}')">View Rows</button>
+                <button class="btn btn-sm btn-secondary" onclick="showTableSchema('${t.id}')">Schema</button>
               </td>
             </tr>
           `;
@@ -487,6 +491,74 @@ function renderTablesView() {
   `;
 
   pane.innerHTML = html;
+}
+
+// Show table schema with relationships
+function showTableSchema(tableId) {
+  const table = tables.find(t => t.id === tableId);
+  if (!table) {
+    showNotification('Table not found', 'error');
+    return;
+  }
+
+  const pane = document.getElementById('dbPane');
+  
+  const fields = Object.entries(table.schema?.properties || {}).map(([name, def]) => {
+    const type = def.type || 'any';
+    const desc = def.description || '';
+    const required = table.schema?.required?.includes(name) ? ' <span class="badge badge-info">required</span>' : '';
+    return `<li><code>${name}</code>: ${type}${required}${desc ? ` - ${desc}` : ''}</li>`;
+  }).join('');
+  
+  const rels = table.relationships || {};
+  const relHtml = Object.keys(rels).length > 0
+    ? `<h4>Foreign Key Relationships</h4><ul class="relationship-list">` +
+      Object.entries(rels).map(([field, cfg]) => {
+        const policy = cfg.onDelete || 'restrict';
+        const policyClass = policy === 'cascade' ? 'danger' : policy === 'setNull' ? 'warning' : 'info';
+        return `<li>
+          <code>${field}</code> → <code>${cfg.references}</code> 
+          <span class="badge badge-${policyClass}">onDelete: ${policy}</span>
+        </li>`;
+      }).join('') + `</ul>`
+    : `<p style="color: #64748b; font-size: 0.875rem;">No foreign key relationships defined</p>`;
+  
+  const sourceInfo = table._source ? `
+    <div class="source-info">
+      <strong>Source:</strong> ${table._source.type || 'manual'} 
+      ${table._source.entity ? `(${table._source.entity})` : ''}
+    </div>
+  ` : '';
+
+  pane.innerHTML = `
+    <div class="table-details">
+      <div class="content-actions">
+        <h2 style="margin: 0;">${table.name} - Schema</h2>
+        <button class="btn btn-secondary" onclick="renderTablesView()">Back to Tables</button>
+      </div>
+      
+      <div class="schema-section">
+        <h4>Table Information</h4>
+        <ul class="info-list">
+          <li><strong>ID:</strong> <code>${table.id}</code></li>
+          <li><strong>Folder:</strong> ${folders.find(f => f.id === table.folderId)?.name || 'None'}</li>
+          <li><strong>Created:</strong> ${formatDate(table.createdAt)}</li>
+          <li><strong>Created By:</strong> ${table.createdBy || 'Unknown'}</li>
+          ${table.createdVia ? `<li><strong>Via:</strong> ${table.createdVia}</li>` : ''}
+        </ul>
+        ${sourceInfo}
+      </div>
+      
+      <div class="schema-section">
+        <h4>Columns (${Object.keys(table.schema?.properties || {}).length})</h4>
+        <ul class="field-list">${fields}</ul>
+      </div>
+      
+      <div class="schema-section">
+        ${relHtml}
+      </div>
+    </div>
+  `;
 }
 
 // Open table and show rows
@@ -1065,6 +1137,7 @@ function updateAIFolderContext() {
 
 // Make functions globally available for onclick handlers
 window.openTable = openTable;
+window.showTableSchema = showTableSchema;
 window.showAddTableModal = showAddTableModal;
 window.closeTableModal = closeTableModal;
 window.createTable = createTable;
