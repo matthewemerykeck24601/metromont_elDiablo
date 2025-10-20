@@ -42,3 +42,8 @@
   from = "/api/ai/db"
   to = "/.netlify/functions/ai-db"
   status = 200
+
+[[redirects]]
+  from = "/api/ai"
+  to = "/.netlify/functions/ai-router"
+  status = 200
