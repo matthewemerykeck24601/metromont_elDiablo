@@ -53,6 +53,23 @@ class UserProfile {
                 console.warn('⚠️ No hub data provided');
             }
 
+            // Check if user is allowed (ACL check)
+            const email = this.userInfo.email;
+            if (window.ACL) {
+                const allowed = await window.ACL.isAllowed(email);
+                if (!allowed) {
+                    console.error('❌ User not in allowlist:', email);
+                    alert('Access restricted. Request access from system admin or helpdesk@metromont.com.');
+                    // Nuke tokens and prevent further initialization
+                    sessionStorage.clear();
+                    localStorage.removeItem('forge_token_backup');
+                    throw new Error('User not allowlisted');
+                }
+                console.log('✅ User allowlist check passed:', email);
+            } else {
+                console.warn('⚠️ ACL system not loaded, skipping allowlist check');
+            }
+
             this.isInitialized = true;
             this.render();
             this.persistToStorage();

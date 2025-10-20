@@ -275,6 +275,9 @@ async function completeAuthentication() {
             await window.UserProfile.initialize(forgeAccessToken, globalHubData);
         }
 
+        // Inject Admin card for admin users
+        await injectAdminCardIfAuthorized();
+
         // Small delay to show success message
         await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -849,13 +852,80 @@ function clearStoredToken() {
     console.log('Token and hub data cleared');
 }
 
+// Admin card injection
+async function injectAdminCardIfAuthorized() {
+    try {
+        // Get current user email from profile
+        const profileStore = localStorage.getItem('user_profile_data');
+        const email = profileStore ? (JSON.parse(profileStore).userInfo?.email || '') : '';
+        
+        if (!email || !window.ACL) {
+            console.log('⚠️ Cannot check admin status - no email or ACL');
+            return;
+        }
+        
+        // Check if user is admin
+        const isAdmin = await window.ACL.isAdmin(email);
+        
+        if (isAdmin) {
+            console.log('✅ User is admin - injecting Admin card');
+            
+            // Find the modules grid
+            const grid = document.querySelector('.modules-grid');
+            if (!grid) {
+                console.warn('⚠️ Modules grid not found');
+                return;
+            }
+            
+            // Check if admin card already exists
+            if (document.querySelector('.module-card[data-module="admin"]')) {
+                console.log('Admin card already exists');
+                return;
+            }
+            
+            // Create admin card
+            const adminCard = document.createElement('div');
+            adminCard.className = 'module-card';
+            adminCard.dataset.module = 'admin';
+            adminCard.innerHTML = `
+                <svg class="module-icon" width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                </svg>
+                <h3 class="module-title">Admin</h3>
+                <p class="module-description">Manage user access and module permissions</p>
+            `;
+            adminCard.addEventListener('click', () => navigateToModule('admin'));
+            
+            // Add card to grid
+            grid.appendChild(adminCard);
+            console.log('✅ Admin card injected');
+        } else {
+            console.log('User is not admin - no Admin card');
+        }
+    } catch (error) {
+        console.error('❌ Failed to inject admin card:', error);
+    }
+}
+
 // Navigation functions
-function navigateToModule(module) {
+async function navigateToModule(module) {
     console.log('Navigation attempt:', module, 'isAuthenticated:', isAuthenticated);
 
     if (!isAuthenticated) {
         showNotification('Please wait for authentication to complete');
         return;
+    }
+
+    // Check ACL permissions
+    const stored = localStorage.getItem('user_profile_data');
+    const email = stored ? (JSON.parse(stored).userInfo?.email || '') : '';
+    
+    if (window.ACL && email) {
+        const hasAccess = await window.ACL.canAccess(email, module);
+        if (!hasAccess) {
+            showNotification('You do not have access to this module', 'warning');
+            return;
+        }
     }
 
     switch (module) {
@@ -870,6 +940,9 @@ function navigateToModule(module) {
             break;
         case 'db-manager':
             window.location.href = 'db-manager.html';
+            break;
+        case 'admin':
+            window.location.href = 'admin.html';
             break;
         case 'inventory':
             showNotification('Inventory Tracking coming Q1 2025');

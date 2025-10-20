@@ -1,0 +1,19 @@
+{
+  "users": [
+    {
+      "name": "Matt K",
+      "email": "mkeck@metromont.com",
+      "admin": true,
+      "modules": {
+        "quality": true,
+        "design": true,
+        "production": true,
+        "db-manager": true,
+        "inventory": false,
+        "haul": false,
+        "fab": false
+      }
+    }
+  ]
+}
+
