@@ -19,6 +19,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/db/folders/*"
+  to = "/.netlify/functions/db-folders"
+  status = 200
+
+[[redirects]]
   from = "/api/db/tables"
   to = "/.netlify/functions/db-tables"
   status = 200

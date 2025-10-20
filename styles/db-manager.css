@@ -570,6 +570,142 @@
   background: #0284c7;
 }
 
+/* Panel Sections */
+.panel-section {
+  border-bottom: 1px solid var(--mm-border);
+  padding: 0;
+}
+
+.panel-section:last-child {
+  border-bottom: none;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--mm-border);
+}
+
+.panel-header h3 {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--mm-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.btn-sm {
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-primary.btn-sm {
+  background: var(--mm-primary);
+  color: white;
+}
+
+.btn-primary.btn-sm:hover:not(:disabled) {
+  background: var(--mm-primary-hover);
+}
+
+.btn-secondary.btn-sm {
+  background: #e2e8f0;
+  color: var(--mm-text);
+}
+
+.btn-secondary.btn-sm:hover:not(:disabled) {
+  background: #cbd5e1;
+}
+
+.btn-sm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Folder List */
+.folder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.folder-item {
+  padding: 0.625rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 0.25rem;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.folder-item:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.folder-item.active {
+  background: #e0f2fe;
+  color: #0c4a6e;
+  border-color: #7dd3fc;
+  font-weight: 600;
+}
+
+.folder-item .name {
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+}
+
+.folder-item .meta {
+  font-size: 0.6875rem;
+  color: #64748b;
+}
+
+.folder-item.subfolder {
+  margin-left: 1rem;
+  border-left: 2px solid #cbd5e1;
+}
+
+.folder-item.subfolder .name {
+  font-size: 0.8125rem;
+}
+
+/* OSS Prefix Input */
+.oss-prefix-input {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--mm-border);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-family: 'Consolas', 'Monaco', monospace;
+  flex: 1;
+  max-width: 200px;
+}
+
+.oss-prefix-input:focus {
+  outline: none;
+  border-color: var(--mm-primary);
+}
+
+.tab-spacer {
+  flex: 1;
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
   .db-layout {
@@ -600,6 +736,10 @@
     bottom: 80px;
     width: calc(100% - 24px);
     max-width: 420px;
+  }
+
+  .panel-actions {
+    flex-wrap: wrap;
   }
 }
 

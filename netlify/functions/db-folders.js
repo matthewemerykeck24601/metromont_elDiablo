@@ -2,6 +2,17 @@
 // Manage folder metadata
 import { createOssClient, response, errorResponse, parseUser, requireAdmin, getBucket, buildKey } from './_db-helpers.js';
 
+function normalizeId(s) {
+  return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function extractIdFromPath(path) {
+  // Handles /.netlify/functions/db-folders and redirects mapping from /api/db/folders/:id
+  // After redirect, path usually ends with '/db-folders/:id'
+  const parts = (path || '').split('/');
+  return parts[parts.length - 1] || null;
+}
+
 export async function handler(event) {
   try {
     // Handle preflight
@@ -16,6 +27,7 @@ export async function handler(event) {
 
     const oss = createOssClient(event);
     const bucket = getBucket();
+    const tenantPrefix = `tenants/${user.hubId}`;
 
     // GET - List folders
     if (event.httpMethod === 'GET') {
@@ -38,7 +50,7 @@ export async function handler(event) {
     // POST - Create folder
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
-      const { name, description = '' } = body;
+      const { name, description = '', parentId = null } = body;
 
       if (!name) {
         return errorResponse(400, 'Folder name is required');
@@ -48,7 +60,7 @@ export async function handler(event) {
       await oss.ensureBucket(bucket);
 
       // Generate folder ID from name
-      const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const id = normalizeId(name);
       const key = buildKey(user, 'folders', id, 'meta.json');
 
       // Check if exists
@@ -57,17 +69,54 @@ export async function handler(event) {
         return errorResponse(409, 'Folder already exists');
       }
 
+      const now = new Date().toISOString();
       const folderMeta = {
         id,
         name,
         description,
+        parentId,
         createdBy: user.email,
-        createdAt: new Date().toISOString()
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: user.email
       };
 
       await oss.putJson(bucket, key, folderMeta);
 
       return response(201, folderMeta);
+    }
+
+    // PUT - Rename folder
+    if (event.httpMethod === 'PUT') {
+      const folderId = extractIdFromPath(event.path);
+      if (!folderId) {
+        return errorResponse(400, 'Missing folder id in path');
+      }
+
+      const body = JSON.parse(event.body || '{}');
+      const newName = (body.name || '').trim();
+      if (!newName) {
+        return errorResponse(400, 'Missing new folder name');
+      }
+
+      const base = `${tenantPrefix}/folders/${folderId}`;
+      
+      // Read existing meta
+      let meta;
+      try {
+        const buf = await oss.getObject(bucket, `${base}/meta.json`);
+        meta = JSON.parse(Buffer.from(buf).toString('utf8'));
+      } catch {
+        return errorResponse(404, 'Folder not found');
+      }
+
+      meta.name = newName;
+      meta.updatedAt = new Date().toISOString();
+      meta.updatedBy = user.email;
+
+      await oss.putJson(bucket, `${base}/meta.json`, meta);
+      
+      return response(200, meta);
     }
 
     return errorResponse(405, 'Method not allowed');

@@ -6,6 +6,12 @@ let folders = [];
 let tables = [];
 let currentTable = null;
 let currentRows = [];
+let selectedFolderId = null;
+
+// Store for easy access
+window.__allFolders = [];
+window.__allTables = [];
+window.__currentHubId = 'default-hub';
 
 // Identity Helper - Read from user profile cache
 function getIdentityHeader() {
@@ -168,14 +174,179 @@ async function loadAll() {
 
     folders = foldersData || [];
     tables = tablesData || [];
+    
+    // Store globally for filtering
+    window.__allFolders = folders;
+    window.__allTables = tables;
 
     console.log(`Loaded ${folders.length} folders and ${tables.length} tables`);
 
+    renderFolders(folders);
     renderTree();
     renderTablesView();
 
   } catch (error) {
     console.error('Failed to load data:', error);
+  }
+}
+
+// Render Folders List
+function renderFolders(folderList = []) {
+  const list = document.getElementById('folderList');
+  const renameBtn = document.getElementById('btnRenameFolder');
+  const subfolderBtn = document.getElementById('btnAddSubfolder');
+  
+  if (!list) return;
+
+  list.innerHTML = '';
+  
+  if (folderList.length === 0) {
+    list.innerHTML = '<li style="padding: 1rem; text-align: center; color: #64748b; font-size: 0.8125rem;">No folders yet</li>';
+    if (renameBtn) renameBtn.disabled = true;
+    if (subfolderBtn) subfolderBtn.disabled = true;
+    return;
+  }
+
+  // Organize folders by parent
+  const rootFolders = folderList.filter(f => !f.parentId);
+  const subfolders = folderList.filter(f => f.parentId);
+  
+  // Render root folders first
+  rootFolders.forEach(f => {
+    const li = document.createElement('li');
+    li.className = 'folder-item' + (selectedFolderId === f.id ? ' active' : '');
+    li.dataset.folderId = f.id;
+    li.innerHTML = `
+      <div class="name">${escapeHtml(f.name)}</div>
+      <div class="meta">ID: ${escapeHtml(f.id)}</div>
+    `;
+    li.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectFolder(f.id);
+    });
+    list.appendChild(li);
+    
+    // Render subfolders
+    const children = subfolders.filter(sf => sf.parentId === f.id);
+    children.forEach(sf => {
+      const sli = document.createElement('li');
+      sli.className = 'folder-item subfolder' + (selectedFolderId === sf.id ? ' active' : '');
+      sli.dataset.folderId = sf.id;
+      sli.innerHTML = `
+        <div class="name">↳ ${escapeHtml(sf.name)}</div>
+        <div class="meta">ID: ${escapeHtml(sf.id)}</div>
+      `;
+      sli.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectFolder(sf.id);
+      });
+      list.appendChild(sli);
+    });
+  });
+
+  // Update button states
+  if (renameBtn) renameBtn.disabled = !selectedFolderId;
+  if (subfolderBtn) subfolderBtn.disabled = !selectedFolderId;
+}
+
+// Select Folder
+function selectFolder(folderId) {
+  selectedFolderId = folderId;
+  renderFolders(window.__allFolders);
+  applyFolderScope();
+}
+
+// Apply Folder Scope (filter tables + update OSS prefix)
+function applyFolderScope() {
+  // 1) Filter tables by folderId
+  if (Array.isArray(window.__allTables)) {
+    const filtered = selectedFolderId
+      ? window.__allTables.filter(t => t.folderId === selectedFolderId)
+      : window.__allTables.slice();
+    
+    // Update global tables array
+    tables = filtered;
+    renderTree();
+    
+    // If on tables tab, refresh the view
+    const activeTab = document.querySelector('.tab--active');
+    if (activeTab && activeTab.dataset.tab === 'tables') {
+      renderTablesView();
+    }
+  }
+
+  // 2) Update OSS Objects prefix
+  const prefixInput = document.getElementById('ossPrefix');
+  if (prefixInput) {
+    const hubId = window.__currentHubId || 'default-hub';
+    prefixInput.value = selectedFolderId
+      ? `tenants/${hubId}/folders/${selectedFolderId}/`
+      : `tenants/${hubId}/`;
+  }
+}
+
+// Rename Selected Folder
+async function renameSelectedFolder() {
+  if (!selectedFolderId) return;
+  
+  const currentFolder = window.__allFolders.find(f => f.id === selectedFolderId);
+  const currentName = currentFolder ? currentFolder.name : '';
+  
+  const newName = prompt('New folder name:', currentName);
+  if (!newName || !newName.trim() || newName === currentName) return;
+
+  try {
+    const idHeader = getIdentityHeader ? getIdentityHeader() : null;
+    const res = await fetch(`/api/db/folders/${encodeURIComponent(selectedFolderId)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idHeader ? { 'x-netlify-identity': idHeader } : {})
+      },
+      body: JSON.stringify({ name: newName.trim() })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Rename failed');
+
+    showNotification(`Folder renamed to "${data.name}"`, 'success');
+    
+    // Refresh folders (and keep selection)
+    await loadAll();
+    selectedFolderId = data.id;
+    renderFolders(window.__allFolders);
+    applyFolderScope();
+
+  } catch (err) {
+    showNotification(`Rename failed: ${String(err.message || err)}`, 'error');
+  }
+}
+
+// Add Subfolder
+async function addSubfolder() {
+  if (!selectedFolderId) {
+    showNotification('Please select a parent folder first', 'warning');
+    return;
+  }
+  
+  const name = prompt('Subfolder name:');
+  if (!name || !name.trim()) return;
+
+  try {
+    await api('/folders', {
+      method: 'POST',
+      body: JSON.stringify({ 
+        name: name.trim(), 
+        description: '',
+        parentId: selectedFolderId 
+      })
+    });
+
+    showNotification('Subfolder created successfully', 'success');
+    await loadAll();
+    
+  } catch (error) {
+    console.error('Failed to create subfolder:', error);
+    showNotification('Failed to create subfolder', 'error');
   }
 }
 
@@ -404,15 +575,30 @@ function renderRowsView() {
 async function renderOssView() {
   const pane = document.getElementById('dbPane');
   pane.innerHTML = '<div class="loading">Loading OSS objects...</div>';
+  
+  // Show prefix input when on OSS tab
+  const prefixInput = document.getElementById('ossPrefix');
+  if (prefixInput) {
+    prefixInput.style.display = 'block';
+    
+    // Set initial prefix based on selected folder
+    const hubId = window.__currentHubId || 'default-hub';
+    if (!prefixInput.value) {
+      prefixInput.value = selectedFolderId
+        ? `tenants/${hubId}/folders/${selectedFolderId}/`
+        : `tenants/${hubId}/`;
+    }
+  }
 
   try {
-    const data = await api('/objects?prefix=');
+    const prefix = (prefixInput && prefixInput.value) ? prefixInput.value : '';
+    const data = await api(`/objects?prefix=${encodeURIComponent(prefix)}`);
     
     if (data.objects.length === 0) {
       pane.innerHTML = `
         <div class="empty-state">
           <h3>No Objects</h3>
-          <p>The bucket "${data.bucket}" is empty</p>
+          <p>The bucket "${data.bucket}" is empty at prefix "${prefix}"</p>
         </div>
       `;
       return;
@@ -421,7 +607,7 @@ async function renderOssView() {
     const html = `
       <h2 style="margin-bottom: 1rem; font-size: 1.25rem;">OSS Objects (${data.count})</h2>
       <p style="color: var(--mm-text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
-        Bucket: <code>${data.bucket}</code>
+        Bucket: <code>${data.bucket}</code> | Prefix: <code>${prefix || '(root)'}</code>
       </p>
       <ul class="object-list">
         ${data.objects.map(obj => `
@@ -442,12 +628,23 @@ async function renderOssView() {
   }
 }
 
+// Load OSS objects (helper for reloading)
+async function loadOssObjects() {
+  await renderOssView();
+}
+
 // Tab switching
 function switchTab(tabName) {
   // Update tab buttons
   document.querySelectorAll('.tab').forEach(btn => {
     btn.classList.toggle('tab--active', btn.dataset.tab === tabName);
   });
+  
+  // Hide/show prefix input based on tab
+  const prefixInput = document.getElementById('ossPrefix');
+  if (prefixInput) {
+    prefixInput.style.display = (tabName === 'oss') ? 'block' : 'none';
+  }
 
   // Update content
   if (tabName === 'tables') {
@@ -803,8 +1000,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Buttons
   document.getElementById('btnRefresh').addEventListener('click', loadAll);
-  document.getElementById('btnAddFolder').addEventListener('click', showAddFolderModal);
+  
+  // Folder buttons (might be multiple with same ID - get all)
+  const addFolderBtns = document.querySelectorAll('#btnAddFolder');
+  addFolderBtns.forEach(btn => btn.addEventListener('click', showAddFolderModal));
+  
   document.getElementById('btnAddTable').addEventListener('click', showAddTableModal);
+  
+  const renameFolderBtn = document.getElementById('btnRenameFolder');
+  if (renameFolderBtn) {
+    renameFolderBtn.addEventListener('click', renameSelectedFolder);
+  }
+  
+  const addSubfolderBtn = document.getElementById('btnAddSubfolder');
+  if (addSubfolderBtn) {
+    addSubfolderBtn.addEventListener('click', addSubfolder);
+  }
 
   // Tabs
   document.querySelectorAll('.tab').forEach(tab => {

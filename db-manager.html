@@ -52,12 +52,6 @@
                     </svg>
                     Refresh
                 </button>
-                <button id="btnAddFolder" class="btn btn-primary">
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10zm-8-4h2v2h2v-2h2v-2h-2v-2h-2v2h-2v2z"/>
-                    </svg>
-                    Add Folder
-                </button>
                 <button id="btnAddTable" class="btn btn-primary">
                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
@@ -74,11 +68,27 @@
         <div class="db-layout">
             <!-- Sidebar: Folders & Tables Tree -->
             <aside class="db-sidebar">
-                <div class="db-sidebar-header">
-                    <h3>Database Structure</h3>
+                <!-- Folders Panel -->
+                <div class="panel-section">
+                    <div class="panel-header">
+                        <h3>Folders</h3>
+                        <div class="panel-actions">
+                            <button id="btnRenameFolder" class="btn-secondary btn-sm" disabled>Rename</button>
+                            <button id="btnAddFolder" class="btn-primary btn-sm">Add Folder</button>
+                            <button id="btnAddSubfolder" class="btn-secondary btn-sm" disabled>Add Subfolder</button>
+                        </div>
+                    </div>
+                    <ul id="folderList" class="folder-list"></ul>
                 </div>
-                <div id="dbTree" class="db-tree">
-                    <div class="loading">Loading...</div>
+                
+                <!-- Tables Tree -->
+                <div class="panel-section">
+                    <div class="db-sidebar-header">
+                        <h3>Database Structure</h3>
+                    </div>
+                    <div id="dbTree" class="db-tree">
+                        <div class="loading">Loading...</div>
+                    </div>
                 </div>
             </aside>
 
@@ -104,6 +114,8 @@
                         </svg>
                         OSS Objects
                     </button>
+                    <div class="tab-spacer"></div>
+                    <input type="text" id="ossPrefix" placeholder="Prefix..." class="oss-prefix-input" style="display:none;"/>
                 </div>
 
                 <!-- Content Pane -->

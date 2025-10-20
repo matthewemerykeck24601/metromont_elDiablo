@@ -163,7 +163,29 @@ export async function handler(event) {
         return response(400, { error: "Row limit exceeded (200 max per request)" });
       }
 
-      const tableId = table.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const tableId = normalizeId(table);
+      
+      // Check if table exists, auto-create if it's a known ACC entity
+      const entityGuess = ["assets", "issues", "forms"].includes(table.toLowerCase())
+        ? table.toLowerCase()
+        : null;
+
+      const exists = await tableExists(oss, bucketKey, tenantPrefix, tableId);
+      if (!exists) {
+        if (entityGuess) {
+          // Auto-create canonical table for known ACC entities
+          console.log(`🔧 Auto-creating table "${table}" from ACC entity "${entityGuess}"`);
+          await ensureCanonicalTable(
+            oss, bucketKey, tenantPrefix, entityGuess, table /* keep displayed name */
+          );
+        } else {
+          return response(400, { 
+            error: `Table "${table}" does not exist. Create it first or specify an ACC entity (assets/issues/forms).`,
+            tableId 
+          });
+        }
+      }
+
       const base = `${tenantPrefix}/tables/${tableId}`;
 
       // Write each row
@@ -202,6 +224,102 @@ function cryptoRandom() {
     bytes[i] = Math.floor(Math.random() * 256);
   }
   return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Normalize ID helper
+function normalizeId(s) {
+  return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+// Check if table exists
+async function tableExists(oss, bucketKey, tenantPrefix, tableId) {
+  try {
+    // Will throw if not found
+    await oss.getObject(bucketKey, `${tenantPrefix}/tables/${tableId}/schema.json`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Fetch ACC entity schema (stub - would fetch from Autodesk API in production)
+async function fetchAccEntitySchema(entityName) {
+  // Simplified canonical schemas for known ACC entities
+  const schemas = {
+    assets: {
+      version: "1.0",
+      properties: {
+        id: { type: "string", description: "Asset ID" },
+        name: { type: "string", description: "Asset name" },
+        description: { type: "string", description: "Asset description" },
+        status_id: { type: "integer", description: "Status identifier" },
+        category_id: { type: "integer", description: "Category identifier" },
+        location: { type: "string", description: "Asset location" },
+        barcode: { type: "string", description: "Asset barcode" }
+      },
+      required: ["id", "name"]
+    },
+    issues: {
+      version: "1.0",
+      properties: {
+        id: { type: "string", description: "Issue ID" },
+        title: { type: "string", description: "Issue title" },
+        description: { type: "string", description: "Issue description" },
+        status: { type: "string", description: "Issue status" },
+        priority: { type: "string", description: "Issue priority" },
+        assigned_to: { type: "string", description: "Assigned user" },
+        due_date: { type: "string", description: "Due date" }
+      },
+      required: ["id", "title"]
+    },
+    forms: {
+      version: "1.0",
+      properties: {
+        id: { type: "string", description: "Form ID" },
+        title: { type: "string", description: "Form title" },
+        template_id: { type: "string", description: "Form template ID" },
+        status: { type: "string", description: "Form status" },
+        created_by: { type: "string", description: "Creator" },
+        created_at: { type: "string", description: "Creation date" }
+      },
+      required: ["id", "title"]
+    }
+  };
+  
+  return schemas[entityName] || null;
+}
+
+// Map ACC schema to DB schema
+function mapAccSchemaToDb(tableName, accSchema) {
+  return {
+    tableName,
+    schema: {
+      type: "object",
+      properties: accSchema.properties,
+      required: accSchema.required || []
+    }
+  };
+}
+
+// Ensure canonical table exists (auto-create from ACC entity schema)
+async function ensureCanonicalTable(oss, bucketKey, tenantPrefix, entityName, tableNameOverride) {
+  const accSchema = await fetchAccEntitySchema(entityName);
+  if (!accSchema) throw new Error(`ACC entity '${entityName}' not found in schema docs`);
+  
+  const { tableName, schema } = mapAccSchemaToDb(tableNameOverride || entityName, accSchema);
+  const tableId = normalizeId(tableName);
+  
+  await oss.putJson(bucketKey, `${tenantPrefix}/tables/${tableId}/schema.json`, {
+    id: tableId,
+    name: tableName,
+    folderId: null,
+    schema,
+    createdBy: "system/auto",
+    createdAt: new Date().toISOString(),
+    _source: { type: "acc", entity: entityName, accVersion: accSchema.version || null }
+  });
+  
+  return tableId;
 }
 
 
