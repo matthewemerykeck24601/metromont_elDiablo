@@ -480,7 +480,7 @@ This is normal for a new installation. The bucket is empty until you create fold
 
 2. **Test from Browser Console:**
 ```javascript
-fetch('/api/ai/db', {
+fetch('/api/ai', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',

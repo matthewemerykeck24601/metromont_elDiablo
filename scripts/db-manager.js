@@ -944,7 +944,7 @@ function showNotification(message, type = 'info') {
 
       const idHeader = getIdentityHeader ? getIdentityHeader() : null;
 
-      const res = await fetch('/api/ai/db', {
+      const res = await fetch('/api/ai', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

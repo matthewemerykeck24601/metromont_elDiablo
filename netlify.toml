@@ -39,17 +39,18 @@
   status = 200
 
 [[redirects]]
-  from = "/api/ai/db"
-  to = "/.netlify/functions/ai-db"
-  status = 200
-
-[[redirects]]
   from = "/api/ai/health"
   to = "/.netlify/functions/ai-health"
   status = 200
 
 [[redirects]]
   from = "/api/ai"
+  to = "/.netlify/functions/ai-router"
+  status = 200
+
+# Legacy redirect for backward compatibility (old AI DB endpoint)
+[[redirects]]
+  from = "/api/ai/db"
   to = "/.netlify/functions/ai-router"
   status = 200
 
