@@ -85,12 +85,6 @@
                             </button>
                         </div>
                     </div>
-                    <button class="btn btn-secondary btn-sm" id="btnAddFilter" onclick="addFilterRow()" disabled style="margin-top: 0.5rem;">
-                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                        </svg>
-                        Add Filter
-                    </button>
                     <small>Select element category and property to link activities</small>
                 </div>
 
@@ -250,6 +244,7 @@
                                 <option value="Default">Default (Category → CONTROL_MARK → CONTROL_NUMBER)</option>
                             </select>
                             <button id="btnEditGrouping" class="btn" style="margin-left:.5rem;">Grouping…</button>
+                            <button id="btnAddColumn" class="btn" style="margin-left:.5rem;">+ Column</button>
                             <span id="propGridStatus" class="muted" style="margin-left:1rem;"></span>
                             <div style="margin-left:auto;">
                                 <button id="btnLoadPropGrid" class="btn btn-primary">Load properties table</button>
@@ -282,6 +277,35 @@
     <!-- Notification Toast -->
     <div id="notification" class="notification">
         <div class="notification-content" id="notificationContent"></div>
+    </div>
+
+    <!-- Column Picker Modal -->
+    <div id="columnPickerModal" class="modal" style="display:none;">
+      <div class="modal-content" style="max-width:600px;">
+        <div class="modal-header">
+          <h3>Add Custom Column</h3>
+          <button id="columnPickerClose" class="btn-icon" aria-label="Close">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <p class="muted" style="margin-bottom:1rem;">Select a property from the canonical property map to add as a column:</p>
+          
+          <div style="margin-bottom:1rem;">
+            <input id="columnSearch" type="search" placeholder="Search properties..." style="width:100%; padding:.5rem; border:1px solid #ddd; border-radius:4px;">
+          </div>
+
+          <div style="max-height:400px; overflow-y:auto; border:1px solid #ddd; border-radius:4px;">
+            <ul id="columnPickerList" class="list selectable" style="list-style:none; margin:0; padding:0;">
+              <!-- Dynamically populated -->
+            </ul>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:.5rem;">
+          <button id="columnPickerCancel" class="btn">Cancel</button>
+          <button id="columnPickerAdd" class="btn btn-primary">Add Column</button>
+        </div>
+      </div>
     </div>
 
     <!-- Grouping Modal -->

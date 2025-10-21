@@ -1,6 +1,13 @@
 // Erection Sequence Scheduling Module
 console.log('Erection Sequencing module loaded');
 
+// Import normalization utilities
+import { normalizeElementsPipeline } from './utils/model-normalize.js';
+import { mapExternalIdsToDbIds, getDbIdsByControlNumbers, isolateByControlNumbers } from './utils/viewer-mapping.js';
+import { parseScheduleCSV, joinScheduleToElements, buildTimeline, groupBySequenceDate } from './utils/csv-schedule.js';
+import { fetchElementsByElementGroup } from './aecdm-graphql.js';
+import { PROPERTY_MAP } from './config/property-map.js';
+
 // Global State
 let isAuthenticated = false;
 let globalHubData = null;
@@ -19,6 +26,11 @@ let modelCategories = new Map(); // Map<category, Set<propertyNames>>
 let filterRowCount = 1;
 let propGridRows = []; // array of {dbId, name, family, typeName, level, mapCategory, mapProperty, mapValue, seqNum, seqDate}
 let currentFilter = null; // { category, property }
+
+// New: Normalized element data from property system
+let normalizedElements = []; // Array of normalized elements with CONTROL_NUMBER, etc.
+let scheduleJoinData = null; // { matched, unmatched, orphaned, stats }
+let timelineData = null; // Array of { date, elements, count }
 
 // ---- Grouping state ----
 let currentGrouping = ['Category', 'CONTROL_MARK', 'CONTROL_NUMBER'];
@@ -698,39 +710,11 @@ function onCategoryChange(filterId) {
     propertySelect.disabled = false;
 }
 
-// Add a new filter row
+// Add a new filter row (NO-OP - single filter only)
 function addFilterRow() {
-    const container = document.getElementById('elementFiltersContainer');
-    if (!container) return;
-    
-    const newFilterId = filterRowCount++;
-    const newRow = document.createElement('div');
-    newRow.className = 'filter-row';
-    newRow.setAttribute('data-filter-id', newFilterId);
-    
-    // Get available categories
-    const categories = Array.from(modelCategories.keys()).sort();
-    const categoriesHTML = categories.map(cat => 
-        `<option value="${cat}">${cat}</option>`
-    ).join('');
-    
-    newRow.innerHTML = `
-        <select class="filter-category" id="filterCategory${newFilterId}" aria-label="Element category" onchange="onCategoryChange(${newFilterId})">
-            <option value="">-- Select Category --</option>
-            ${categoriesHTML}
-        </select>
-        <select class="filter-property" id="filterProperty${newFilterId}" aria-label="Element property" disabled>
-            <option value="">Select category first...</option>
-        </select>
-        <button class="btn-icon btn-remove-filter" onclick="removeFilter(${newFilterId})" title="Remove filter" aria-label="Remove filter">
-            ✕
-        </button>
-    `;
-    
-    container.appendChild(newRow);
-    
-    // Show remove buttons on all rows except the first
-    updateRemoveButtons();
+    console.log('⚠️ Add filter disabled - single filter mode only');
+    // No-op: filter is locked to a single row
+    return;
 }
 
 // Remove a filter row
@@ -850,78 +834,83 @@ async function handleCSVUpload(event) {
 }
 
 function parseAndLoadSchedule(csvText) {
-    console.log('📋 Parsing CSV schedule...');
+    console.log('📋 Parsing CSV schedule with CONTROL_NUMBER mapping...');
 
     try {
-        const lines = csvText.trim().split('\n');
-        if (lines.length < 2) {
-            throw new Error('CSV file is empty or invalid');
+        // Check if we have normalized elements loaded
+        if (!normalizedElements || normalizedElements.length === 0) {
+            showNotification(
+                'Load properties first (click "Load properties table") before loading schedule',
+                'warning'
+            );
+            return;
         }
 
-        // Expected columns: ActivityName, StartDate, DurationDays, EndDate, Type, Description, ElementValues
-        const header = lines[0].split(',').map(h => h.trim());
-        console.log('CSV Header:', header);
-
-        const activities = [];
-        const allDays = new Set();
-        activityElementMap.clear();
-        dayActivitiesMap.clear();
-
-        for (let i = 1; i < lines.length; i++) {
-            const row = lines[i].split(',').map(c => c.trim());
-            if (row.length < 6) continue; // Skip invalid rows
-
-            const activity = {
-                name: row[0],
-                startDate: row[1],
-                durationDays: parseInt(row[2]) || 1,
-                endDate: row[3],
-                type: row[4] || 'Construct',
-                description: row[5] || '',
-                elementValues: row[6] ? row[6].split('|').map(v => v.trim()) : []
-            };
-
-            activities.push(activity);
-
-            // Build activity -> element values map
-            if (activity.elementValues.length > 0) {
-                activityElementMap.set(activity.name, new Set(activity.elementValues));
-            }
-
-            // Build day -> activities map
-            const start = new Date(activity.startDate);
-            const end = new Date(activity.endDate);
-
-            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                const dayISO = d.toISOString().split('T')[0];
-                allDays.add(dayISO);
-
-                if (!dayActivitiesMap.has(dayISO)) {
-                    dayActivitiesMap.set(dayISO, new Set());
-                }
-                dayActivitiesMap.get(dayISO).add(activity.name);
-            }
+        // Step 1: Parse CSV with CONTROL_NUMBER column
+        const scheduleRows = parseScheduleCSV(csvText);
+        
+        if (scheduleRows.length === 0) {
+            throw new Error('No valid schedule rows found in CSV');
         }
 
-        // Sort days
-        timelineDays = Array.from(allDays).sort();
+        // Step 2: Join schedule to normalized elements by CONTROL_NUMBER
+        scheduleJoinData = joinScheduleToElements(normalizedElements, scheduleRows);
 
+        console.log('📊 Join Statistics:');
+        console.log('   Schedule rows:', scheduleJoinData.stats.scheduleRows);
+        console.log('   Elements:', scheduleJoinData.stats.elements);
+        console.log('   Matched:', scheduleJoinData.stats.matched);
+        console.log('   Unmatched schedule rows:', scheduleJoinData.stats.unmatched);
+        console.log('   Orphaned elements:', scheduleJoinData.stats.orphaned);
+        console.log('   Hit rate:', scheduleJoinData.stats.hitRate + '%');
+
+        // Step 3: Group by date for timeline
+        const dateMap = groupBySequenceDate(scheduleJoinData.matched);
+        timelineData = buildTimeline(dateMap);
+
+        // Extract unique dates for timeline scrubber
+        timelineDays = timelineData.map(step => step.date);
+
+        // Update legacy data structures for backward compatibility
         scheduleData = {
-            activities,
-            totalActivities: activities.length,
-            dateRange: `${timelineDays[0]} to ${timelineDays[timelineDays.length - 1]}`,
+            activities: scheduleRows.map(row => ({
+                name: row.Activity || row.CONTROL_NUMBER,
+                startDate: row.SEQUENCE_DATE || row.StartDate || '',
+                durationDays: parseInt(row.DurationDays) || 1,
+                endDate: row.EndDate || row.SEQUENCE_DATE || '',
+                type: row.Type || 'Construct',
+                description: row.Description || '',
+                controlNumber: row.CONTROL_NUMBER
+            })),
+            totalActivities: scheduleRows.length,
+            dateRange: timelineDays.length > 0 
+                ? `${timelineDays[0]} to ${timelineDays[timelineDays.length - 1]}`
+                : 'N/A',
             days: timelineDays.length
         };
 
-        console.log(`✅ Parsed ${activities.length} activities across ${timelineDays.length} days`);
+        console.log(`✅ Schedule loaded and joined: ${timelineData.length} timeline steps`);
 
         updateScheduleInfo();
         enablePlaybackControls();
-        showNotification(`Schedule loaded: ${activities.length} activities`, 'success');
+
+        // Show hit rate and warnings to user
+        const hitRate = scheduleJoinData.stats.hitRate.toFixed(1);
+        let message = `Schedule loaded: ${scheduleJoinData.stats.matched}/${scheduleJoinData.stats.scheduleRows} matched (${hitRate}%)`;
+        
+        if (scheduleJoinData.stats.unmatched > 0) {
+            message += `\n⚠️ ${scheduleJoinData.stats.unmatched} schedule rows not matched to elements`;
+        }
+        
+        if (scheduleJoinData.stats.orphaned > 0) {
+            message += `\n⚠️ ${scheduleJoinData.stats.orphaned} elements not in schedule`;
+        }
+
+        showNotification(message, scheduleJoinData.stats.hitRate < 80 ? 'warning' : 'success');
 
     } catch (error) {
-        console.error('Error parsing CSV:', error);
-        showNotification('Failed to parse CSV: ' + error.message, 'error');
+        console.error('❌ Error parsing/joining schedule:', error);
+        showNotification('Failed to load schedule: ' + error.message, 'error');
     }
 }
 
@@ -1075,6 +1064,44 @@ function updateCurrentActivities() {
         return;
     }
 
+    // Use new timeline data if available
+    if (timelineData && timelineData.length > currentDayIndex) {
+        const timelineStep = timelineData[currentDayIndex];
+        const elements = timelineStep.elements || [];
+
+        if (elements.length === 0) {
+            activitiesList.innerHTML = '<p class="empty-message">No activities for this day</p>';
+            return;
+        }
+
+        // Group by activity name if present in schedule
+        const activitiesMap = new Map();
+        elements.forEach(m => {
+            const activityName = m.schedule.Activity || 'Construction';
+            if (!activitiesMap.has(activityName)) {
+                activitiesMap.set(activityName, []);
+            }
+            activitiesMap.get(activityName).push(m);
+        });
+
+        const html = Array.from(activitiesMap.entries()).map(([activityName, items]) => {
+            const typeClass = items[0]?.schedule?.Type?.toLowerCase() || 'construct';
+            const description = items[0]?.schedule?.Description || '';
+            const count = items.length;
+
+            return `
+                <div class="activity-item activity-${typeClass}">
+                    <div class="activity-name">${activityName}</div>
+                    <div class="activity-desc">${description} (${count} elements)</div>
+                </div>
+            `;
+        }).join('');
+
+        activitiesList.innerHTML = html;
+        return;
+    }
+
+    // Fallback to old format
     const activities = dayActivitiesMap.get(currentDay);
     if (!activities || activities.size === 0) {
         activitiesList.innerHTML = '<p class="empty-message">No activities for this day</p>';
@@ -1106,6 +1133,46 @@ async function isolateElementsForCurrentDay() {
     const currentDay = timelineDays[currentDayIndex];
     if (!currentDay) return;
 
+    // Use new timeline data with CONTROL_NUMBER joins
+    if (timelineData && timelineData.length > currentDayIndex && normalizedElements.length > 0) {
+        updateViewerStatus(`Loading elements for ${currentDay}...`);
+
+        try {
+            const timelineStep = timelineData[currentDayIndex];
+            const matched = timelineStep.elements || [];
+
+            if (matched.length === 0) {
+                console.log('⚠️  No scheduled elements for this day');
+                viewer.showAll();
+                updateViewerStatus('No scheduled elements - showing all');
+                return;
+            }
+
+            // Extract CONTROL_NUMBERs for this day
+            const controlNumbers = matched.map(m => String(m.element.controlNumber));
+            console.log(`🔍 Isolating ${controlNumbers.length} elements by CONTROL_NUMBER for ${currentDay}`);
+
+            // Use utility function to isolate by CONTROL_NUMBER
+            const count = isolateByControlNumbers(viewer, normalizedElements, controlNumbers);
+
+            if (count > 0) {
+                updateViewerStatus(`Showing ${count} elements for ${currentDay}`);
+            } else {
+                console.warn('⚠️  No elements matched CONTROL_NUMBERs, showing all');
+                viewer.showAll();
+                updateViewerStatus('No matches - showing all');
+            }
+
+        } catch (error) {
+            console.error('❌ Error isolating elements by CONTROL_NUMBER:', error);
+            showNotification('Failed to isolate elements: ' + error.message, 'error');
+            updateViewerStatus('Error loading elements');
+        }
+
+        return;
+    }
+
+    // Fallback to old property-based isolation (for backward compatibility)
     const activities = dayActivitiesMap.get(currentDay);
     if (!activities || activities.size === 0) {
         viewer.showAll();
@@ -1219,6 +1286,7 @@ function showPropertiesGridPanel(show = true) {
 function bindPropertiesGridUI() {
   const savedSel = document.getElementById('propGridSavedFormat');
   const btnGrouping = document.getElementById('btnEditGrouping');
+  const btnAddColumn = document.getElementById('btnAddColumn');
     const btnLoad = document.getElementById('btnLoadPropGrid');
     const btnExport = document.getElementById('btnExportPropGrid');
   const btnPopOut = document.getElementById('btnPopOutGrid');
@@ -1245,6 +1313,10 @@ function bindPropertiesGridUI() {
 
   if (btnGrouping) {
     btnGrouping.onclick = openGroupingModal;
+  }
+
+  if (btnAddColumn) {
+    btnAddColumn.onclick = openColumnPickerModal;
   }
 
   if (btnLoad) {
@@ -1517,6 +1589,125 @@ window.addEventListener('message', function(event) {
   }
 });
 
+// ---- Column Picker Modal Functions ----
+
+let selectedColumn = null; // Track selected column in modal
+
+function openColumnPickerModal() {
+  const modal = document.getElementById('columnPickerModal');
+  if (!modal) return;
+
+  selectedColumn = null;
+
+  // Populate the list with canonical keys from PROPERTY_MAP
+  const list = document.getElementById('columnPickerList');
+  if (!list) return;
+
+  list.innerHTML = '';
+  const canonicalKeys = Object.keys(PROPERTY_MAP);
+
+  canonicalKeys.forEach(key => {
+    const config = PROPERTY_MAP[key];
+    const li = document.createElement('li');
+    li.style.padding = '0.75rem 1rem';
+    li.style.cursor = 'pointer';
+    li.style.borderBottom = '1px solid #eef2f7';
+    
+    li.innerHTML = `
+      <div style="font-weight:500; margin-bottom:0.25rem;">${key}</div>
+      <div style="font-size:0.875rem; color:#6b7280;">${config.description || ''}</div>
+      <div style="font-size:0.75rem; color:#9ca3af; margin-top:0.25rem;">Candidates: ${config.candidates.join(', ')}</div>
+    `;
+    
+    li.onclick = () => {
+      // Remove previous selection
+      list.querySelectorAll('li').forEach(item => {
+        item.style.backgroundColor = '';
+        item.style.borderLeft = '';
+      });
+      
+      // Highlight this one
+      li.style.backgroundColor = '#eff6ff';
+      li.style.borderLeft = '3px solid #059669';
+      
+      selectedColumn = key;
+    };
+    
+    list.appendChild(li);
+  });
+
+  // Wire up search
+  const searchInput = document.getElementById('columnSearch');
+  if (searchInput) {
+    searchInput.value = '';
+    searchInput.oninput = () => {
+      const query = searchInput.value.toLowerCase();
+      list.querySelectorAll('li').forEach(li => {
+        const text = li.textContent.toLowerCase();
+        li.style.display = text.includes(query) ? 'block' : 'none';
+      });
+    };
+  }
+
+  // Wire up buttons
+  const btnAdd = document.getElementById('columnPickerAdd');
+  const btnCancel = document.getElementById('columnPickerCancel');
+  const btnClose = document.getElementById('columnPickerClose');
+
+  if (btnAdd) {
+    btnAdd.onclick = () => {
+      if (!selectedColumn) {
+        showNotification('Please select a column first', 'warning');
+        return;
+      }
+      addColumnToGrid(selectedColumn);
+      closeColumnPickerModal();
+    };
+  }
+
+  if (btnCancel) btnCancel.onclick = closeColumnPickerModal;
+  if (btnClose) btnClose.onclick = closeColumnPickerModal;
+
+  modal.style.display = 'block';
+}
+
+function closeColumnPickerModal() {
+  const modal = document.getElementById('columnPickerModal');
+  if (modal) modal.style.display = 'none';
+  selectedColumn = null;
+}
+
+function addColumnToGrid(columnKey) {
+  // Check if column already exists in grouping
+  if (currentGrouping.includes(columnKey)) {
+    showNotification(`Column "${columnKey}" is already in the grid`, 'warning');
+    return;
+  }
+
+  // Add to current grouping
+  currentGrouping.push(columnKey);
+
+  console.log(`✅ Added column: ${columnKey}`);
+
+  // Update the saved format to reflect the change
+  const savedSel = document.getElementById('propGridSavedFormat');
+  if (savedSel && savedSel.value === 'Default') {
+    savedFormats['Default'] = [...currentGrouping];
+    savedSel.options[savedSel.selectedIndex].textContent =
+      'Default (' + currentGrouping.join(' → ') + ')';
+  }
+
+  // Re-render grid if data is loaded
+  if (propGridRows && propGridRows.length > 0) {
+    renderPropertiesGrid(propGridRows, currentGrouping);
+    showNotification(`Added column: ${columnKey}`, 'success');
+  } else {
+    showNotification(`Column "${columnKey}" will appear when you load the grid`, 'info');
+  }
+}
+
+// ---- Grouping Modal Functions ----
+
 function openGroupingModal() {
   const modal = document.getElementById('groupingModal');
   if (!modal) return;
@@ -1636,9 +1827,12 @@ function enableSimpleDragSort(listEl) {
 }
 
 function renderPropertiesGrid(rows, groupingOrder) {
-  const tbody = document.querySelector('#propGrid tbody');
+  const table = document.querySelector('#propGrid');
+  const thead = table?.querySelector('thead tr');
+  const tbody = table?.querySelector('tbody');
   const status = document.getElementById('propGridStatus');
-  if (!tbody) return;
+  
+  if (!table || !thead || !tbody) return;
 
   // Defensive copy
   const data = rows.slice();
@@ -1652,20 +1846,56 @@ function renderPropertiesGrid(rows, groupingOrder) {
     });
   });
 
-  // Redraw
+  // Update table headers dynamically based on currentGrouping
+  thead.innerHTML = '';
+  groupingOrder.forEach(col => {
+    const th = document.createElement('th');
+    th.textContent = col;
+    thead.appendChild(th);
+  });
+
+  // Redraw rows with dynamic columns
   tbody.innerHTML = '';
   for (const r of data) {
     const tr = document.createElement('tr');
-    // Display columns for Metromont structural framing scheduling:
-    tr.innerHTML = `
-      <td>${r['Category'] ?? r.category ?? ''}</td>
-      <td>${r['CONTROL_MARK'] ?? r.controlMark ?? ''}</td>
-      <td>${r['CONTROL_NUMBER'] ?? r.controlNumber ?? ''}</td>
-      <td>${r['Family'] ?? r.family ?? ''}</td>
-      <td>${r['Type Name'] ?? r.typeName ?? ''}</td>
-      <td>${r['Element ID'] ?? r.elementId ?? r.dbId ?? ''}</td>
-      <td>${r['Level'] ?? r.level ?? ''}</td>
-    `;
+    
+    groupingOrder.forEach(col => {
+      const td = document.createElement('td');
+      
+      // Try multiple case variations to find the value
+      let value = r[col] 
+        ?? r[col.toLowerCase()] 
+        ?? r[col.toUpperCase()]
+        ?? r[col.replace(/_/g, ' ')] // Try with spaces instead of underscores
+        ?? '';
+      
+      // If we have a normalized element reference, try to get value from it
+      if (!value && r._normalized) {
+        const normalized = r._normalized;
+        // Map canonical key to normalized property
+        const keyMap = {
+          'CATEGORY': normalized.category,
+          'CONTROL_MARK': normalized.controlMark,
+          'CONTROL_NUMBER': normalized.controlNumber,
+          'CONSTRUCTION_PRODUCT': normalized.constructionProduct,
+          'FAMILY': normalized.family,
+          'TYPE_NAME': normalized.typeName,
+          'LEVEL': normalized.level,
+          'ELEMENT_ID': normalized.elementId || normalized.dbId,
+          'EXTERNAL_ID': normalized.externalId,
+          'WARPED_PRODUCT': normalized.warpedProduct ? 'Yes' : 'No',
+          'IDENTITY_DESCRIPTION': normalized.identityDescription,
+          'SEQUENCE_NUMBER': normalized.sequenceNumber,
+          'SEQUENCE_DATE': normalized.sequenceDate
+        };
+        
+        value = keyMap[col] ?? '';
+      }
+      
+      td.textContent = value || '';
+      tr.appendChild(td);
+    });
+    
     tbody.appendChild(tr);
   }
 
@@ -1683,65 +1913,122 @@ async function loadPropGrid(categoryName, propertyName) {
         return;
     }
 
+    if (!selectedElementGroup) {
+        showNotification('No element group selected', 'warning');
+        return;
+    }
+
     // Use the passed parameters if provided, otherwise derive from currentFilter
     if (categoryName && propertyName) {
-    currentFilter = { category: categoryName, property: propertyName };
+        currentFilter = { category: categoryName, property: propertyName };
     }
 
     const status = document.getElementById('propGridStatus');
-    if (status) status.textContent = '(loading properties…)';
+    if (status) status.textContent = '(loading normalized elements…)';
 
-    const model = viewerModel;
+    try {
+        console.log('\n🔄 === LOADING NORMALIZED PROPERTIES ===');
+        
+        // Step 1: Fetch raw elements from AEC-DM with all mapped properties
+        const rawElements = await fetchElementsByElementGroup(
+            selectedProjectId,
+            selectedElementGroup.id,
+            {
+                token: window.forgeAccessToken,
+                region: 'US',
+                limit: 500
+            }
+        );
 
-    // Get all leaf dbIds
-    const dbIds = await new Promise(resolve => {
-        model.getObjectTree(tree => {
-            const leaf = [];
-            tree.enumNodeChildren(tree.getRootId(), child => {
-                if (tree.getChildCount(child) === 0) leaf.push(child);
-            }, true);
-            resolve(leaf);
-        });
-    });
+        if (!rawElements || rawElements.length === 0) {
+            showNotification('No elements found in element group', 'warning');
+            if (status) status.textContent = '(no elements)';
+            return;
+        }
 
-    // Pull Metromont-specific properties for structural framing scheduling
-    const propFilter = [
-        'Category', 'CONTROL_MARK', 'CONTROL_NUMBER', 'Family', 'Type Name', 'Level', 'Name'
-    ];
+        // Step 2: Get externalId -> dbId mapping from viewer
+        const extIdToDbMap = await mapExternalIdsToDbIds(viewer);
 
-    const bulk = await new Promise((resolve, reject) => {
-        model.getBulkProperties(dbIds, { propFilter },
-            res => resolve(res), err => reject(err));
-    });
+        // Step 3: Run normalization pipeline
+        const pipeline = normalizeElementsPipeline(rawElements, extIdToDbMap);
+        normalizedElements = pipeline.elements;
 
-    propGridRows = bulk.map(r => {
-        const get = (n) => {
-            const p = r.properties && r.properties.find(p => p.displayName === n || p.attributeName === n);
-            return p ? (p.displayValue ?? '') : '';
-        };
-        return {
-            'Category': get('Category'),
-            'category': get('Category'),
-            'CONTROL_MARK': get('CONTROL_MARK'),
-            'controlMark': get('CONTROL_MARK'),
-            'CONTROL_NUMBER': get('CONTROL_NUMBER'),
-            'controlNumber': get('CONTROL_NUMBER'),
-            'Family': get('Family'),
-            'family': get('Family'),
-            'Type Name': get('Type Name'),
-            'typeName': get('Type Name'),
-            'Element ID': r.dbId,
-            'elementId': r.dbId,
-            'dbId': r.dbId,
-            'Level': get('Level'),
-            'level': get('Level')
-        };
-    });
+        console.log('📊 Pipeline results:');
+        console.log('   Normalized:', pipeline.stats.normalized);
+        console.log('   Filtered:', pipeline.stats.filtered);
+        console.log('   Winners:', pipeline.stats.winners);
+        console.log('   Mapped to viewer:', pipeline.stats.mapped);
+        console.log('   Validation:', pipeline.validation.valid ? '✅ PASS' : '❌ FAIL');
 
-    // Render with current grouping
-    renderPropertiesGrid(propGridRows, currentGrouping);
-    showPropertiesGridPanel(true);
-    showNotification(`Loaded ${propGridRows.length} elements into property grid`, 'success');
+        // Display warnings/errors to user
+        if (pipeline.validation.warnings.length > 0) {
+            showNotification(
+                `Loaded ${normalizedElements.length} elements with ${pipeline.validation.warnings.length} warnings`,
+                'warning'
+            );
+        }
+
+        if (!pipeline.validation.valid) {
+            showNotification(
+                `Loaded ${normalizedElements.length} elements but validation failed (${pipeline.validation.errors.length} errors)`,
+                'error'
+            );
+        }
+
+        // Step 4: Apply current filter if set
+        let filteredElements = normalizedElements;
+        if (currentFilter && currentFilter.category) {
+            const filterCat = currentFilter.category.toLowerCase();
+            filteredElements = normalizedElements.filter(e => 
+                (e.category || '').toLowerCase().includes(filterCat)
+            );
+            console.log(`🔍 Filtered to ${filteredElements.length} elements matching category: ${currentFilter.category}`);
+        }
+
+        // Step 5: Convert to propGridRows format for backward compatibility
+        propGridRows = filteredElements.map(e => ({
+            'Category': e.category || '',
+            'category': e.category || '',
+            'CONTROL_MARK': e.controlMark || '',
+            'controlMark': e.controlMark || '',
+            'CONTROL_NUMBER': e.controlNumber || '',
+            'controlNumber': e.controlNumber || '',
+            'CONSTRUCTION_PRODUCT': e.constructionProduct || '',
+            'constructionProduct': e.constructionProduct || '',
+            'Family': e.family || '',
+            'family': e.family || '',
+            'Type Name': e.typeName || '',
+            'typeName': e.typeName || '',
+            'Element ID': e.dbId || e.elementId || '',
+            'elementId': e.dbId || e.elementId || '',
+            'dbId': e.dbId || '',
+            'Level': e.level || '',
+            'level': e.level || '',
+            'WARPED_PRODUCT': e.warpedProduct ? 'Yes' : 'No',
+            'warpedProduct': e.warpedProduct ? 'Yes' : 'No',
+            '_normalized': e // Keep reference to full normalized element
+        }));
+
+        // Step 6: Render with current grouping
+        renderPropertiesGrid(propGridRows, currentGrouping);
+        showPropertiesGridPanel(true);
+
+        const hitRate = pipeline.stats.mapped > 0 
+            ? `${((pipeline.stats.mapped / normalizedElements.length) * 100).toFixed(1)}%`
+            : 'N/A';
+
+        showNotification(
+            `✅ Loaded ${propGridRows.length} elements (${normalizedElements.length} total, ${hitRate} viewer hit rate)`,
+            'success'
+        );
+
+        console.log('=== END LOADING NORMALIZED PROPERTIES ===\n');
+
+    } catch (error) {
+        console.error('❌ Error loading normalized properties:', error);
+        showNotification('Failed to load properties: ' + error.message, 'error');
+        if (status) status.textContent = '(error)';
+    }
 }
 
 

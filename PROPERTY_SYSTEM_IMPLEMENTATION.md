@@ -48,47 +48,53 @@ Created a centralized property mapping system that:
 
 ## Next Steps 📋
 
-### Step 4: Update AEC-DM GraphQL Queries
-**File to modify:** `scripts/aecdm-graphql.js`
+### ✅ Step 4: Update AEC-DM GraphQL Queries (COMPLETED)
+**File modified:** `scripts/aecdm-graphql.js`
 
-Tasks:
-- Import `getAllPropertyCandidates()` from property-map
-- Update GraphQL query to request all mapped properties
-- Add `fetchElementsByElementGroup()` function
-- Integrate with normalization pipeline
-- Return normalized elements ready for use
+Completed:
+- ✅ Import `getAllPropertyCandidates()` from property-map
+- ✅ Update GraphQL query to request all mapped properties
+- ✅ Add `fetchElementsByElementGroup()` function
+- ✅ Integrate with normalization pipeline
+- ✅ Return normalized elements ready for use
 
-### Step 5: Integrate into erection-sequencing.js
-**File to modify:** `scripts/erection-sequencing.js`
+### ✅ Step 5: Integrate into erection-sequencing.js (COMPLETED)
+**File modified:** `scripts/erection-sequencing.js`
 
-Tasks:
-- Import normalization utilities
-- Replace current property extraction with normalized pipeline
-- Use `pickWinnersByControlNumber()` for duplicate handling
-- Update `loadPropGrid()` to use normalized elements
-- Update `isolateElementsForCurrentDay()` to use CONTROL_NUMBER
-- Replace Mark-based matching with CONTROL_NUMBER matching
+Completed:
+- ✅ Import normalization utilities
+- ✅ Replace current property extraction with normalized pipeline
+- ✅ Use `pickWinnersByControlNumber()` for duplicate handling
+- ✅ Update `loadPropGrid()` to use normalized elements
+- ✅ Update `isolateElementsForCurrentDay()` to use CONTROL_NUMBER
+- ✅ Replace Mark-based matching with CONTROL_NUMBER matching
 
-### Step 6: Update UI to Use New Fields
-**Files to modify:** 
+### ✅ Step 6: Update UI to Use New Fields (COMPLETED)
+**Files modified:** 
 - `scripts/erection-sequencing.js`
 - `erection-sequencing.html`
 
-Tasks:
-- Update default grouping to use CONSTRUCTION_PRODUCT, CONTROL_MARK, CONTROL_NUMBER
-- Update table headers to show new fields
-- Remove Family/Type Name dependencies
-- Add WARPED_PRODUCT indicator
-- Update filter UI to show CONSTRUCTION_PRODUCT options
+Completed:
+- ✅ Single filter row (removed Add Filter button)
+- ✅ Custom column picker (+ Column button)
+- ✅ Dynamic table rendering based on currentGrouping
+- ✅ Support for all PROPERTY_MAP canonical keys
+- ✅ WARPED_PRODUCT indicator in grid
 
-### Step 7: CSV Schedule Mapping
-**File to modify:** `scripts/erection-sequencing.js`
+### ✅ Step 7: CSV Schedule Mapping (COMPLETED)
+**File modified:** `scripts/erection-sequencing.js`
 
-Tasks:
-- Use `parseScheduleCSV()` for CSV loading
-- Use `joinScheduleToElements()` for matching
-- Use `buildTimeline()` for playback
-- Display hit rates and warnings for unmapped elements
+Completed:
+- ✅ Use `parseScheduleCSV()` for CSV loading
+- ✅ Use `joinScheduleToElements()` for matching
+- ✅ Use `buildTimeline()` for playback
+- ✅ Display hit rates and warnings for unmapped elements
+
+---
+
+## Refactor Complete! 🎉
+
+See [ERECTION_SEQUENCING_REFACTOR_SUMMARY.md](ERECTION_SEQUENCING_REFACTOR_SUMMARY.md) for full details.
 
 ### Step 8: AEC-DM Write-Back (Future Enhancement)
 **New file:** `scripts/utils/aecdm-extensibility.js`

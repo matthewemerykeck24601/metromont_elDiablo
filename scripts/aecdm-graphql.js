@@ -2,6 +2,8 @@
 // Uses Beta API schema: results (not items), pagination { cursor } (no hasMore)
 // Resolves projects by NAME, not ACC ID, to avoid ID malformation errors
 
+import { getAllPropertyCandidates } from './config/property-map.js';
+
 const AEC_GRAPHQL_URL = 'https://developer.api.autodesk.com/aec/graphql';
 
 /**
@@ -365,6 +367,86 @@ async function getElementsByElementGroup({ token, region = 'US', elementGroupId,
     });
 }
 
+/**
+ * Fetch elements by element group ID with ALL mapped properties
+ * Uses property-map to determine which properties to request
+ * Returns raw elements suitable for normalization pipeline
+ * @param {string} projectId - ACC project ID (not used for AEC-DM, but kept for API consistency)
+ * @param {string} elementGroupId - AEC-DM element group ID
+ * @param {object} options - Additional options
+ * @param {string} options.token - APS access token (falls back to window.forgeAccessToken)
+ * @param {string} options.region - Region (default 'US')
+ * @param {string} options.filter - Optional GraphQL filter (default 'true' for all elements)
+ * @param {number} options.limit - Max results per request (default 500)
+ * @returns {Promise<Array>} Raw elements with all mapped properties
+ */
+export async function fetchElementsByElementGroup(projectId, elementGroupId, options = {}) {
+    const {
+        token = window.forgeAccessToken,
+        region = 'US',
+        filter = 'true',
+        limit = 500
+    } = options;
+
+    if (!token) {
+        throw new Error('No access token available');
+    }
+
+    if (!elementGroupId) {
+        throw new Error('Element group ID is required');
+    }
+
+    console.log('📂 Fetching elements with all mapped properties...');
+    console.log('   Element Group:', elementGroupId);
+    console.log('   Region:', region);
+
+    // Get all property names from property-map
+    const propertyNames = getAllPropertyCandidates();
+    console.log(`   Requesting ${propertyNames.length} properties:`, propertyNames.slice(0, 10).join(', '), '...');
+
+    // Build GraphQL query with dynamic property list
+    const propertyNamesJson = JSON.stringify(propertyNames);
+    
+    const query = `
+        query FetchElementsByElementGroup($elementGroupId: ID!, $filter: String!, $propertyNames: [String!]!, $limit: Int) {
+            elementsByElementGroup(
+                elementGroupId: $elementGroupId,
+                filter: { query: $filter },
+                pagination: { limit: $limit }
+            ) {
+                pagination { cursor }
+                results {
+                    id
+                    name
+                    category { name }
+                    properties(filter: { names: $propertyNames }) {
+                        results {
+                            name
+                            value
+                        }
+                    }
+                }
+            }
+        }
+    `;
+
+    const variables = {
+        elementGroupId,
+        filter,
+        propertyNames,
+        limit: Math.min(limit, 500)
+    };
+
+    const data = await aecdmQuery({ token, region, query, variables });
+    const results = data?.elementsByElementGroup?.results || [];
+
+    console.log(`✅ Fetched ${results.length} raw elements with mapped properties`);
+
+    // Return in format expected by normalization pipeline
+    // Keep properties as results array for normalizeElements()
+    return results;
+}
+
 // === GraphQL Introspection Helper (for debugging) ===
 async function introspectSchema({ token, region = 'US' }) {
     const query = `
@@ -388,6 +470,7 @@ window.AECDataModel = {
     query: aecdmQuery,
     getElementGroups: getElementGroupsForProject,
     getElements: getElementsByElementGroup,
+    fetchElementsByElementGroup: fetchElementsByElementGroup, // New: fetch with all mapped properties
     buildFilter: buildElementFilter,
     buildFilterForValues: buildElementFilterForValues,
     introspect: introspectSchema,
