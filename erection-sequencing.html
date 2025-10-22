@@ -307,33 +307,31 @@
         </div>
 
         <div class="modal-body" style="display:flex; gap:1rem;">
-          <!-- Family Category Selection -->
-          <div style="width:100%; margin-bottom:1rem;">
-            <label for="groupingFamilyCategory" style="display:block; margin-bottom:.5rem; font-weight:500;">Family Category:</label>
-            <select id="groupingFamilyCategory" style="width:100%; padding:.5rem; border:1px solid #ddd; border-radius:4px;">
-              <option value="">Select family category...</option>
-            </select>
-          </div>
-          
           <!-- Available properties -->
           <div style="flex:1; min-width:320px;">
             <div class="muted" style="margin-bottom:.25rem;">Add properties</div>
             <input id="groupAvailSearch" type="search" placeholder="Search…" style="width:100%; margin-bottom:.5rem;">
-            <details open>
-              <summary>Common properties</summary>
-              <ul id="groupAvailCommon" class="list selectable"></ul>
-            </details>
-            <details>
-              <summary>Model properties</summary>
-              <ul id="groupAvailModel" class="list selectable"></ul>
-            </details>
+            <div class="accordion">
+              <details open>
+                <summary>Common properties</summary>
+                <ul id="groupingCommonList" class="list selectable"></ul>
+              </details>
+              <details>
+                <summary>Extended properties</summary>
+                <ul id="groupingExtendedList" class="list selectable"></ul>
+              </details>
+              <details>
+                <summary>Model properties</summary>
+                <ul id="groupingModelList" class="list selectable"></ul>
+              </details>
+            </div>
           </div>
 
           <!-- Grouping order -->
           <div style="flex:1; min-width:320px;">
             <div class="muted" style="margin-bottom:.25rem;">Grouping order</div>
             <input id="groupOrderSearch" type="search" placeholder="Search…" style="width:100%; margin-bottom:.5rem;">
-            <ul id="groupOrder" class="list sortable"></ul>
+            <ul id="groupingOrderList" class="list sortable"></ul>
           </div>
         </div>
 

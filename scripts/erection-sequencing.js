@@ -9,6 +9,57 @@ import { fetchElementsByElementGroup } from './aecdm-graphql.js';
 import { PROPERTY_MAP } from './config/property-map.js';
 import { fetchExtendedParameters, normalizeParameterService, dedupeByKey, escapeHtml } from './services/parameter-service.js';
 
+// ---- Grouping Modal Lists (Common / Extended / Model) ----
+
+// Curated "Common" (OOTB Revit) keys you want to promote
+const COMMON_KEYS = [
+  'CATEGORY', 'FAMILY', 'TYPE_NAME', 'LEVEL', 'ELEMENT_ID'
+];
+
+// Normalizer for Extended (Parameters Service)
+function normalizeExtended(list) {
+  // Accept flat or grouped; flatten to [{key,label,group,description}]
+  const out = [];
+  const push = (p, group) => out.push({
+    key: p.key,
+    label: p.label || prettify(p.key),
+    group: group || p.group || 'Extended',
+    description: p.description || ''
+  });
+  if (Array.isArray(list)) {
+    if (list.length && list[0]?.params) {
+      list.forEach(g => g.params.forEach(p => push(p, g.group)));
+    } else {
+      list.forEach(p => push(p));
+    }
+  }
+  return out;
+}
+
+// Build "Model Properties" from the APS Viewer Property DB
+async function buildModelPropertyNames() {
+  return new Promise((resolve, reject) => {
+    if (!viewer || !viewer.model) return resolve([]);
+    viewer.model.getPropertyDb((pdb) => {
+      // Collect all unique property display names across the model
+      const names = new Set();
+      try {
+        pdb.enumAttributes((attrId, attrDef) => {
+          // attrDef.name is the display name shown in properties panel
+          if (attrDef?.name) names.add(attrDef.name);
+        });
+      } catch (e) {
+        console.warn('PDB enumeration failed:', e);
+      }
+      resolve([...names].sort());
+    }, reject);
+  });
+}
+
+function prettify(key) {
+  return key.split('_').map(w => w[0] + w.slice(1).toLowerCase()).join(' ');
+}
+
 // Global State
 let isAuthenticated = false;
 let globalHubData = null;
@@ -628,27 +679,6 @@ function extractModelProperties() {
 
 // Populate all category dropdowns with extracted categories
 function populateCategoryDropdowns() {
-    const categories = Array.from(modelCategories.keys()).sort();
-    
-    // Populate Family Category dropdown in Grouping modal
-    const familyCategorySelect = document.getElementById('groupingFamilyCategory');
-    if (familyCategorySelect) {
-        familyCategorySelect.innerHTML = '<option value="">Select family category...</option>';
-        categories.forEach(category => {
-            const option = document.createElement('option');
-            option.value = category;
-            option.textContent = category;
-            familyCategorySelect.appendChild(option);
-        });
-        
-        // Auto-select Structural Framing if available
-        const structuralFraming = categories.find(c => c.toLowerCase().includes('structural framing'));
-        if (structuralFraming) {
-            familyCategorySelect.value = structuralFraming;
-            populateGroupingModalProperties(structuralFraming);
-        }
-    }
-    
     // Initialize properties grid panel
     showPropertiesGridPanel(true);
     bindPropertiesGridUI();
@@ -656,44 +686,86 @@ function populateCategoryDropdowns() {
     showNotification('Model properties extracted. Use Grouping to configure table columns.', 'success');
 }
 
-// Populate Grouping modal properties based on selected family category
-function populateGroupingModalProperties(selectedCategory) {
-    // Populate Common properties (OOTB Revit)
-    const commonList = document.getElementById('groupAvailCommon');
-    if (commonList) {
-        commonList.innerHTML = '';
-        const commonKeys = ['FAMILY', 'TYPE_NAME', 'LEVEL', 'CATEGORY', 'ELEMENT_ID', 'CONTROL_MARK', 'CONTROL_NUMBER'];
-        commonKeys.forEach(key => {
-            if (PROPERTY_MAP[key]) {
-                const li = document.createElement('li');
-                li.textContent = key;
-                li.dataset.key = key;
-                li.style.cursor = 'pointer';
-                li.style.padding = '0.5rem';
-                li.style.borderBottom = '1px solid #eee';
-                li.addEventListener('click', () => addToGrouping(key));
-                commonList.appendChild(li);
-            }
-        });
+// Populate Grouping modal properties (Common / Extended / Model)
+async function populateGroupingModalProperties() {
+  const commonList = document.querySelector('#groupingCommonList');   // <ul> under "Common properties"
+  const extendedList = document.querySelector('#groupingExtendedList'); // <ul> under "Extended properties"
+  const modelList = document.querySelector('#groupingModelList');     // <ul> under "Model properties"
+  
+  const addBtn = (ul, item) => {
+    const li = document.createElement('li');
+    li.className = 'list-item';
+    li.dataset.key = item.key;
+    li.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;">
+        <div>
+          <div style="font-weight:600">${escapeHtml(item.label || item.key)}</div>
+          <div class="muted" style="font-size:12px">${escapeHtml(item.description || '')}</div>
+        </div>
+        <div class="muted" style="white-space:nowrap;font-size:12px">${escapeHtml(item.group || '')}</div>
+      </div>`;
+    li.addEventListener('click', () => addToGroupingOrder(item.key));
+    ul.appendChild(li);
+  };
+
+  // 1) Common (local whitelist → canonical keys)
+  if (commonList) {
+    commonList.innerHTML = '';
+    COMMON_KEYS.forEach(k => {
+      if (PROPERTY_MAP[k]) addBtn(commonList, { key: k, label: prettify(k), group: 'Common' });
+    });
+  }
+
+  // 2) Extended (Parameters Service)
+  if (extendedList) {
+    extendedList.innerHTML = '';
+    try {
+      const extRaw = await fetchExtendedParameters({ /* no category filter now */ });
+      const ext = normalizeExtended(extRaw);
+      ext.forEach(p => addBtn(extendedList, p));
+    } catch (e) {
+      console.warn('Extended parameters load failed:', e);
     }
-    
-    // Populate Model properties for selected category
-    const modelList = document.getElementById('groupAvailModel');
-    if (modelList && selectedCategory && modelCategories.has(selectedCategory)) {
-        modelList.innerHTML = '';
-        const modelProps = Array.from(modelCategories.get(selectedCategory)).sort();
-        modelProps.forEach(prop => {
-            const li = document.createElement('li');
-            li.textContent = prop;
-            li.dataset.key = prop;
-            li.style.cursor = 'pointer';
-            li.style.padding = '0.5rem';
-            li.style.borderBottom = '1px solid #eee';
-            li.addEventListener('click', () => addToGrouping(prop));
-            modelList.appendChild(li);
-        });
-    }
+  }
+
+  // 3) Model (APS Viewer Property DB)
+  if (modelList) {
+    modelList.innerHTML = '';
+    const props = await buildModelPropertyNames();
+    props.forEach(name => addBtn(modelList, { key: name, label: name, group: 'Model' }));
+  }
+  
+  // Render current grouping order
+  renderGroupingOrderList();
 }
+
+// Global grouping state
+window.currentGrouping = window.currentGrouping || ['ELEMENT_ID','CATEGORY','CONTROL_MARK','CONTROL_NUMBER'];
+
+function addToGroupingOrder(key) {
+  if (key === 'ELEMENT_ID') return; // already pinned
+  const first = 'ELEMENT_ID';
+  const rest = currentGrouping.filter(k => k !== first);
+  if (!rest.includes(key)) currentGrouping = [first, ...rest, key];
+  renderGroupingOrderList();
+}
+
+function renderGroupingOrderList() {
+  const ul = document.getElementById('groupingOrderList'); // <ul> in the right column
+  if (!ul) return;
+  ul.innerHTML = '';
+  currentGrouping.forEach(k => {
+    const li = document.createElement('li');
+    li.className = 'list-item';
+    li.textContent = k;
+    if (k !== 'ELEMENT_ID') {
+      li.draggable = true;
+      // add drag handlers if you want reordering; or simple up/down buttons
+    }
+    ul.appendChild(li);
+  });
+}
+
 
 // Handle category selection change
 function onCategoryChange(filterId) {
@@ -839,12 +911,12 @@ function setupGroupingUI() {
     const close = document.getElementById('groupingClose');
     const cancel = document.getElementById('groupingCancel');
     const apply = document.getElementById('groupingApply');
-    const familyCategory = document.getElementById('groupingFamilyCategory');
-
     if (!btn || !modal) return;
     
-    btn.addEventListener('click', () => { 
+    btn.addEventListener('click', async () => { 
         modal.style.display = 'flex'; 
+        // Populate properties when modal opens
+        await populateGroupingModalProperties();
     });
     
     [close, cancel].forEach(el => {
@@ -860,16 +932,6 @@ function setupGroupingUI() {
         apply.addEventListener('click', async () => {
             await rebuildPropertiesTable();
             modal.style.display = 'none';
-        });
-    }
-    
-    // Family Category change - update available properties
-    if (familyCategory) {
-        familyCategory.addEventListener('change', (e) => {
-            const selectedCategory = e.target.value;
-            if (selectedCategory) {
-                populateGroupingModalProperties(selectedCategory);
-            }
         });
     }
     
