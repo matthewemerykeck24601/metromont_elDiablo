@@ -2578,8 +2578,189 @@ window.addEventListener('DOMContentLoaded', () => {
     };
     window.viewerShowAll = () => { if (viewer) viewer.showAll(); };
     
+    // Pop-out viewer functionality
+    window.popOutViewer = popOutViewer;
+    
     // Note: splitter will be initialized when properties panel is first shown
 });
+
+// Pop-out viewer functionality
+let viewerPopup = null;
+
+function popOutViewer() {
+    if (!viewer) {
+        showNotification('No viewer loaded', 'warning');
+        return;
+    }
+    
+    // Close existing popup if open
+    if (viewerPopup && !viewerPopup.closed) {
+        viewerPopup.close();
+    }
+    
+    // Create popup window
+    const popupFeatures = 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no';
+    viewerPopup = window.open('', 'viewerPopup', popupFeatures);
+    
+    if (!viewerPopup) {
+        showNotification('Popup blocked. Please allow popups for this site.', 'error');
+        return;
+    }
+    
+    // Create popup content
+    viewerPopup.document.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>El Diablo - 3D Viewer</title>
+            <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css">
+            <style>
+                body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+                .viewer-toolbar { 
+                    display: flex; 
+                    align-items: center; 
+                    gap: 8px; 
+                    padding: 8px 12px; 
+                    background: #f8f9fa; 
+                    border-bottom: 1px solid #dee2e6;
+                    flex-wrap: wrap;
+                }
+                .viewer-btn { 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    width: 32px; 
+                    height: 32px; 
+                    border: 1px solid #dee2e6; 
+                    background: white; 
+                    border-radius: 4px; 
+                    cursor: pointer; 
+                    transition: all 0.2s;
+                }
+                .viewer-btn:hover { background: #e9ecef; border-color: #adb5bd; }
+                .viewer-separator { width: 1px; height: 24px; background: #dee2e6; margin: 0 4px; }
+                .viewer-info { margin-left: auto; color: #6c757d; font-size: 14px; }
+                #popupViewer { width: 100%; height: calc(100vh - 60px); }
+                .loading-message { 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    height: 100%; 
+                    color: #6c757d; 
+                    font-size: 16px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="viewer-toolbar">
+                <button class="viewer-btn" onclick="parent.viewerReset()" title="Reset View">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6 0 2.97-2.17 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93 0-4.42-3.58-8-8-8z" />
+                    </svg>
+                </button>
+                <button class="viewer-btn" onclick="parent.viewerFitToView()" title="Fit to View">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 11H7v6h6v-2H9v-4zm-2 8V5h14v14H7z" />
+                    </svg>
+                </button>
+                <div class="viewer-separator"></div>
+                <button class="viewer-btn" onclick="parent.viewerIsolate()" title="Isolate Selection">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                </button>
+                <button class="viewer-btn" onclick="parent.viewerShowAll()" title="Show All">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+                    </svg>
+                </button>
+                <div class="viewer-separator"></div>
+                <button class="viewer-btn" onclick="window.close()" title="Close Popup">
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                    </svg>
+                </button>
+                <div class="viewer-info">
+                    <span>3D Viewer - Pop-out Mode</span>
+                </div>
+            </div>
+            <div id="popupViewer" class="viewer-container">
+                <div class="loading-message">
+                    <p>Loading 3D viewer...</p>
+                </div>
+            </div>
+            
+            <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+            <script>
+                // Initialize popup viewer
+                let popupViewer = null;
+                
+                // Wait for parent viewer to be ready
+                function initPopupViewer() {
+                    if (parent.viewer && parent.viewer.getDocument()) {
+                        const doc = parent.viewer.getDocument();
+                        const viewables = doc.getRoot().getDefaultGeometry();
+                        
+                        if (viewables) {
+                            const options = {
+                                env: 'AutodeskProduction',
+                                getAccessToken: function(onTokenReady) {
+                                    // Get token from parent window
+                                    const token = parent.getStoredToken();
+                                    if (token) {
+                                        onTokenReady(token.access_token, 3600);
+                                    } else {
+                                        console.error('No token available');
+                                    }
+                                }
+                            };
+                            
+                            Autodesk.Viewing.Initializer(options, function() {
+                                popupViewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('popupViewer'));
+                                popupViewer.start();
+                                
+                                // Load the same model as parent
+                                popupViewer.loadDocumentNode(doc, viewables).then(function() {
+                                    console.log('✅ Popup viewer loaded');
+                                    
+                                    // Sync viewer state from parent
+                                    if (parent.window._homeState) {
+                                        popupViewer.restoreState(parent.window._homeState);
+                                    }
+                                    
+                                    // Sync selection from parent
+                                    const parentSelection = parent.viewer.getSelection();
+                                    if (parentSelection && parentSelection.length > 0) {
+                                        popupViewer.select(parentSelection);
+                                    }
+                                });
+                            });
+                        }
+                    } else {
+                        // Retry in 500ms
+                        setTimeout(initPopupViewer, 500);
+                    }
+                }
+                
+                // Start initialization
+                initPopupViewer();
+                
+                // Handle window close
+                window.addEventListener('beforeunload', function() {
+                    if (popupViewer) {
+                        popupViewer.finish();
+                    }
+                });
+            </script>
+        </body>
+        </html>
+    `);
+    
+    viewerPopup.document.close();
+    showNotification('Viewer opened in popup window', 'success');
+}
 
 // Save a "home" state after the model loads (called in onModelLoaded)
 function _saveHomeState() { 
