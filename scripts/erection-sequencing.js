@@ -144,6 +144,9 @@ async function completeAuthentication() {
 
         // Set up event listeners
         setupEventListeners();
+        
+        // Set up grouping UI
+        setupGroupingUI();
 
         console.log('✅ Erection Sequencing ready');
 
@@ -818,6 +821,54 @@ function setupEventListeners() {
     if (scrubber) {
         scrubber.addEventListener('input', onTimelineScrub);
     }
+}
+
+function setupGroupingUI() {
+    const btn = document.getElementById('btnEditGrouping');
+    const modal = document.getElementById('groupingModal');
+    const close = document.getElementById('groupingClose');
+    const cancel = document.getElementById('groupingCancel');
+
+    if (!btn || !modal) return;
+    
+    btn.addEventListener('click', () => { 
+        modal.style.display = 'flex'; 
+    });
+    
+    [close, cancel].forEach(el => {
+        if (el) {
+            el.addEventListener('click', () => { 
+                modal.style.display = 'none'; 
+            });
+        }
+    });
+    
+    // Backdrop click to close
+    modal.addEventListener('click', (e) => { 
+        if (e.target === modal) {
+            modal.style.display = 'none'; 
+        }
+    });
+}
+
+function bindRowIsolation() {
+    const tbody = document.querySelector('#propGrid tbody');
+    if (!tbody) return;
+    
+    tbody.addEventListener('click', (e) => {
+        const tr = e.target.closest('tr');
+        if (!tr || !viewerModel) return;
+        
+        // Get dbId from the row data
+        const dbId = Number(tr.dataset.dbid);
+        if (Number.isFinite(dbId)) {
+            viewer.isolate([dbId]);
+            viewer.fitToView([dbId], viewerModel);
+            console.log(`🎯 Isolated element dbId: ${dbId}`);
+        } else {
+            console.warn('⚠️ No dbId found for row');
+        }
+    });
 }
 
 async function handleCSVUpload(event) {
@@ -1859,6 +1910,12 @@ function renderPropertiesGrid(rows, groupingOrder) {
   for (const r of data) {
     const tr = document.createElement('tr');
     
+    // Add dbId as data attribute for row isolation
+    const dbId = r.dbId || r._normalized?.dbId;
+    if (dbId) {
+      tr.dataset.dbid = dbId;
+    }
+    
     groupingOrder.forEach(col => {
       const td = document.createElement('td');
       
@@ -2012,6 +2069,9 @@ async function loadPropGrid(categoryName, propertyName) {
         // Step 6: Render with current grouping
         renderPropertiesGrid(propGridRows, currentGrouping);
         showPropertiesGridPanel(true);
+        
+        // Step 7: Bind row isolation
+        bindRowIsolation();
 
         const hitRate = pipeline.stats.mapped > 0 
             ? `${((pipeline.stats.mapped / normalizedElements.length) * 100).toFixed(1)}%`
@@ -2341,10 +2401,45 @@ function initVerticalSplitter() {
   console.log('✅ Vertical splitter initialized');
 }
 
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function () {
+// --- Boot the module on page load ---
+window.addEventListener('DOMContentLoaded', () => {
     console.log('Erection Sequencing page loaded');
     initializeErectionSequencing();
+    
+    // Expose viewer toolbar actions for HTML onclicks
+    window.viewerReset = () => { 
+        if (viewer) { 
+            if (window._homeState) {
+                viewer.restoreState(window._homeState);
+            } else {
+                viewer.showAll();
+                viewer.fitToView();
+            }
+        } 
+    };
+    window.viewerFitToView = () => { if (viewer) viewer.fitToView(); };
+    window.viewerIsolate = () => { 
+        if (viewer) {
+            const sel = viewer.getSelection();
+            if (sel && sel.length > 0) {
+                viewer.isolate(sel);
+                viewer.fitToView(sel);
+            }
+        }
+    };
+    window.viewerShowAll = () => { if (viewer) viewer.showAll(); };
+    
     // Note: splitter will be initialized when properties panel is first shown
 });
+
+// Save a "home" state after the model loads (called in onModelLoaded)
+function _saveHomeState() { 
+    if (viewer) {
+        window._homeState = viewer.getState({ 
+            viewport: true, 
+            objectSet: true, 
+            renderOptions: true 
+        });
+    }
+}
 
