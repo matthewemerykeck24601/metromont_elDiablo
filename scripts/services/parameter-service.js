@@ -11,114 +11,37 @@ export async function fetchExtendedParameters({ familyCategory } = {}) {
     console.log('🔧 Fetching extended parameters from Parameter Service...');
     console.log('   Family Category:', familyCategory || 'all');
     
-    // TODO: Replace with your actual Parameter Service API
-    // For now, return mock data that matches your Metromont workflow
-    const mockParameters = [
-        // Logistics & Fabrication
-        { 
-            key: 'FABRICATION_STATUS', 
-            label: 'Fabrication Status', 
-            group: 'Logistics', 
-            description: 'Shop/yard fabrication status (Not Started, In Progress, Complete)' 
-        },
-        { 
-            key: 'TRUCK_LOAD', 
-            label: 'Truck Load', 
-            group: 'Logistics',
-            description: 'Truck load number for shipping'
-        },
-        { 
-            key: 'SHIPPING_DATE', 
-            label: 'Shipping Date', 
-            group: 'Logistics',
-            description: 'Date shipped from fabrication yard'
-        },
+    try {
+        // TODO: Replace with your actual Parameter Service API endpoint
+        // Example: const response = await fetch('/api/parameters', { method: 'GET' });
+        // For now, simulate API call failure to show proper error handling
         
-        // Field Operations
-        { 
-            key: 'ERECTION_CREW', 
-            label: 'Erection Crew', 
-            group: 'Field',
-            description: 'Assigned erection crew identifier'
-        },
-        { 
-            key: 'FIELD_STATUS', 
-            label: 'Field Status', 
-            group: 'Field',
-            description: 'Current field installation status'
-        },
-        { 
-            key: 'ERECTION_DATE', 
-            label: 'Erection Date', 
-            group: 'Field',
-            description: 'Actual erection completion date'
-        },
+        // Simulate API call
+        await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Scheduling & Sequencing
-        { 
-            key: 'SEQUENCE_NUMBER', 
-            label: 'Sequence Number', 
-            group: 'Scheduling',
-            description: 'Erection sequence number (already in PROPERTY_MAP)'
-        },
-        { 
-            key: 'SEQUENCE_DATE', 
-            label: 'Sequence Date', 
-            group: 'Scheduling',
-            description: 'Scheduled erection date (already in PROPERTY_MAP)'
-        },
-        { 
-            key: 'PRIORITY_LEVEL', 
-            label: 'Priority Level', 
-            group: 'Scheduling',
-            description: 'Installation priority (High, Medium, Low)'
-        },
+        // Simulate service unavailable
+        throw new Error('Parameter Service API not implemented - service unavailable');
         
-        // Quality Control
-        { 
-            key: 'QC_STATUS', 
-            label: 'QC Status', 
-            group: 'Quality',
-            description: 'Quality control inspection status'
-        },
-        { 
-            key: 'INSPECTOR', 
-            label: 'Inspector', 
-            group: 'Quality',
-            description: 'Assigned quality control inspector'
-        },
-        { 
-            key: 'QC_DATE', 
-            label: 'QC Date', 
-            group: 'Quality',
-            description: 'Quality control inspection date'
-        },
+        // When implemented, uncomment this:
+        // const response = await fetch('/api/parameters', {
+        //     method: 'GET',
+        //     headers: {
+        //         'Authorization': `Bearer ${getAccessToken()}`,
+        //         'Content-Type': 'application/json'
+        //     }
+        // });
+        // 
+        // if (!response.ok) {
+        //     throw new Error(`Parameter Service API error: ${response.status} ${response.statusText}`);
+        // }
+        // 
+        // const data = await response.json();
+        // return data.parameters || [];
         
-        // Safety
-        { 
-            key: 'SAFETY_REQUIREMENTS', 
-            label: 'Safety Requirements', 
-            group: 'Safety',
-            description: 'Special safety requirements for this element'
-        },
-        { 
-            key: 'SAFETY_CREW', 
-            label: 'Safety Crew', 
-            group: 'Safety',
-            description: 'Assigned safety crew for installation'
-        }
-    ];
-    
-    // Filter by family category if provided
-    let filtered = mockParameters;
-    if (familyCategory) {
-        // In a real implementation, you'd filter based on the service response
-        // For now, we'll return all parameters
-        console.log(`   Filtering by category: ${familyCategory}`);
+    } catch (error) {
+        console.warn('Parameter Service API unavailable:', error.message);
+        throw error; // Re-throw to be handled by calling code
     }
-    
-    console.log(`✅ Fetched ${filtered.length} extended parameters`);
-    return filtered;
 }
 
 /**

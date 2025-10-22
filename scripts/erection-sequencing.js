@@ -10,11 +10,22 @@ import { PROPERTY_MAP } from './config/property-map.js';
 import { fetchExtendedParameters, normalizeParameterService, dedupeByKey, escapeHtml } from './services/parameter-service.js';
 
 // ---- Grouping Modal Lists (Common / Extended / Model) ----
-
-// Curated "Common" (OOTB Revit) keys you want to promote
-const COMMON_KEYS = [
-  'CATEGORY', 'FAMILY', 'TYPE_NAME', 'LEVEL', 'ELEMENT_ID'
-];
+// 
+// PROPERTY SOURCES:
+// 1. Common Properties: OOTB Revit properties from PROPERTY_MAP canonical keys
+//    - Source: PROPERTY_MAP (scripts/config/property-map.js)
+//    - Contains: Standard Revit properties like CATEGORY, FAMILY, TYPE_NAME, LEVEL, ELEMENT_ID
+//    - Filtered: Only shows keys that exist in PROPERTY_MAP
+//
+// 2. Extended Properties: External parameters from Parameter Service API
+//    - Source: fetchExtendedParameters() (scripts/services/parameter-service.js)
+//    - Contains: Metromont-specific workflow parameters (Fabrication, Field, QC, Safety)
+//    - Fallback: If service fails, shows empty list with error message
+//
+// 3. Model Properties: Properties from currently loaded model via APS Viewer
+//    - Source: viewer.model.getPropertyDb() (Autodesk Platform Services)
+//    - Contains: All properties available in the loaded model
+//    - Dynamic: Changes based on which model is loaded
 
 // Normalizer for Extended (Parameters Service)
 function normalizeExtended(list) {
@@ -711,31 +722,82 @@ async function populateGroupingModalProperties() {
     ul.appendChild(li);
   };
 
-  // 1) Common (local whitelist → canonical keys)
+  const addEmptyMessage = (ul, message) => {
+    const li = document.createElement('li');
+    li.className = 'list-item';
+    li.style.color = '#6c757d';
+    li.style.fontStyle = 'italic';
+    li.textContent = message;
+    ul.appendChild(li);
+  };
+
+  // 1) Common Properties: OOTB Revit properties from PROPERTY_MAP
   if (commonList) {
     commonList.innerHTML = '';
-    COMMON_KEYS.forEach(k => {
-      if (PROPERTY_MAP[k]) addBtn(commonList, { key: k, label: prettify(k), group: 'Common' });
-    });
-  }
-
-  // 2) Extended (Parameters Service)
-  if (extendedList) {
-    extendedList.innerHTML = '';
     try {
-      const extRaw = await fetchExtendedParameters({ /* no category filter now */ });
-      const ext = normalizeExtended(extRaw);
-      ext.forEach(p => addBtn(extendedList, p));
+      // Get all canonical keys from PROPERTY_MAP that are Revit OOTB properties
+      const commonProps = Object.keys(PROPERTY_MAP).filter(key => {
+        const prop = PROPERTY_MAP[key];
+        return prop && prop.source === 'REVIT'; // Only Revit OOTB properties
+      });
+      
+      if (commonProps.length > 0) {
+        commonProps.forEach(key => {
+          const prop = PROPERTY_MAP[key];
+          addBtn(commonList, { 
+            key, 
+            label: prop.label || prettify(key), 
+            group: 'Common',
+            description: prop.description || 'Standard Revit property'
+          });
+        });
+      } else {
+        addEmptyMessage(commonList, 'No Revit OOTB properties found in PROPERTY_MAP');
+      }
     } catch (e) {
-      console.warn('Extended parameters load failed:', e);
+      console.warn('Common properties load failed:', e);
+      addEmptyMessage(commonList, 'Failed to load Common properties');
     }
   }
 
-  // 3) Model (APS Viewer Property DB)
+  // 2) Extended Properties: External parameters from Parameter Service
+  if (extendedList) {
+    extendedList.innerHTML = '';
+    try {
+      const extRaw = await fetchExtendedParameters({ /* no category filter */ });
+      const ext = normalizeExtended(extRaw);
+      
+      if (ext && ext.length > 0) {
+        ext.forEach(p => addBtn(extendedList, p));
+      } else {
+        addEmptyMessage(extendedList, 'No extended parameters available from Parameter Service');
+      }
+    } catch (e) {
+      console.warn('Extended parameters load failed:', e);
+      addEmptyMessage(extendedList, 'Parameter Service unavailable - check connection');
+    }
+  }
+
+  // 3) Model Properties: Properties from currently loaded model via APS Viewer
   if (modelList) {
     modelList.innerHTML = '';
-    const props = await buildModelPropertyNames();
-    props.forEach(name => addBtn(modelList, { key: name, label: name, group: 'Model' }));
+    try {
+      const props = await buildModelPropertyNames();
+      
+      if (props && props.length > 0) {
+        props.forEach(name => addBtn(modelList, { 
+          key: name, 
+          label: name, 
+          group: 'Model',
+          description: 'Property from loaded model'
+        }));
+      } else {
+        addEmptyMessage(modelList, 'No model loaded - load a model to see properties');
+      }
+    } catch (e) {
+      console.warn('Model properties load failed:', e);
+      addEmptyMessage(modelList, 'Failed to load model properties - ensure model is loaded');
+    }
   }
   
   // Render current grouping order
@@ -991,17 +1053,22 @@ async function openColumnPickerModal() {
 
     console.log('🔧 Opening column picker modal...');
 
-    // 1) Build **Common** list from PROPERTY_MAP whitelist (Revit OOTB set)
-    const COMMON_KEYS = ['FAMILY', 'TYPE_NAME', 'LEVEL', 'CATEGORY', 'ELEMENT_ID', 'CONTROL_MARK', 'CONTROL_NUMBER'];
-    const common = COMMON_KEYS
-        .filter(k => PROPERTY_MAP[k])
-        .map(k => ({
-            key: k,
-            label: prettifyCanonical(k),
-            source: 'COMMON',
-            group: 'Revit (OOTB)',
-            description: PROPERTY_MAP[k].description || ''
-        }));
+    // 1) Build **Common** list from PROPERTY_MAP (Revit OOTB properties only)
+    const common = Object.keys(PROPERTY_MAP)
+        .filter(k => {
+            const prop = PROPERTY_MAP[k];
+            return prop && prop.source === 'REVIT'; // Only Revit OOTB properties
+        })
+        .map(k => {
+            const prop = PROPERTY_MAP[k];
+            return {
+                key: k,
+                label: prop.label || prettifyCanonical(k),
+                source: 'COMMON',
+                group: 'Revit (OOTB)',
+                description: prop.description || 'Standard Revit property'
+            };
+        });
 
     // 2) Build **Model** list from selected family category (modelCategories Map)
     const selectedCategory = document.getElementById('filterCategory0')?.value || null;
