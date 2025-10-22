@@ -158,6 +158,9 @@ async function completeAuthentication() {
         
         // Set up column picker UI
         bindColumnPickerUI();
+        
+        // Remove legacy Element Filters panel
+        document.querySelector('#esElementFilters, .element-filters, [data-es="element-filters"]')?.remove();
 
         console.log('✅ Erection Sequencing ready');
 
@@ -627,73 +630,69 @@ function extractModelProperties() {
 function populateCategoryDropdowns() {
     const categories = Array.from(modelCategories.keys()).sort();
     
-    // Update all existing filter category dropdowns
-    document.querySelectorAll('.filter-category').forEach(select => {
-        const currentValue = select.value;
-        select.innerHTML = '<option value="">-- Select Category --</option>';
-        
+    // Populate Family Category dropdown in Grouping modal
+    const familyCategorySelect = document.getElementById('groupingFamilyCategory');
+    if (familyCategorySelect) {
+        familyCategorySelect.innerHTML = '<option value="">Select family category...</option>';
         categories.forEach(category => {
             const option = document.createElement('option');
             option.value = category;
             option.textContent = category;
-            if (category === currentValue) {
-                option.selected = true;
-            }
-            select.appendChild(option);
+            familyCategorySelect.appendChild(option);
         });
         
-        select.disabled = false;
-    });
-    
-    // Enable the add filter button
-    const btnAddFilter = document.getElementById('btnAddFilter');
-    if (btnAddFilter) {
-        btnAddFilter.disabled = false;
-    }
-    
-    // ---- DEFAULT FILTER SEED (Metromont Structural Framing) ----
-    try {
-        // Look for "Revit Structural Framing" category and CONTROL_MARK property
-        const defaultCat = Array.from(modelCategories.keys()).find(c => c.toLowerCase().includes('structural framing'))
-                        || Array.from(modelCategories.keys()).find(c => c.toLowerCase().includes('framing'))
-                        || null;
-
-        if (defaultCat) {
-            const props = Array.from(modelCategories.get(defaultCat) || []);
-            const controlMarkProp = props.find(p => p === 'CONTROL_MARK') || null;
-
-            // Point to the first (built-in) row in the HTML: #filterCategory0 / #filterProperty0
-            const catSel = document.getElementById('filterCategory0');
-            const propSel = document.getElementById('filterProperty0');
-            if (catSel && propSel) {
-                // Set category
-                catSel.value = defaultCat;
-                catSel.disabled = false;
-
-                // Populate properties for this category using existing helper
-                onCategoryChange(0); // fills #filterProperty0 for the selected category
-
-                // Set property if "CONTROL_MARK" exists; otherwise leave the list for the user
-                if (controlMarkProp) {
-                    propSel.value = controlMarkProp;
-                    propSel.disabled = false;
-                    console.log('✅ Auto-seeded default filter: ' + defaultCat + ' → ' + controlMarkProp);
-                }
-            }
+        // Auto-select Structural Framing if available
+        const structuralFraming = categories.find(c => c.toLowerCase().includes('structural framing'));
+        if (structuralFraming) {
+            familyCategorySelect.value = structuralFraming;
+            populateGroupingModalProperties(structuralFraming);
         }
-    } catch (e) {
-        console.warn('Default filter seed skipped:', e);
     }
     
     // Initialize properties grid panel
     showPropertiesGridPanel(true);
     bindPropertiesGridUI();
     
-    // Set default filter for element isolation
-    currentFilter = { category: 'Revit Structural Framing', property: 'CONTROL_MARK' };
-    console.log('✅ Default mapping set to Revit Structural Framing → CONTROL_MARK');
+    showNotification('Model properties extracted. Use Grouping to configure table columns.', 'success');
+}
+
+// Populate Grouping modal properties based on selected family category
+function populateGroupingModalProperties(selectedCategory) {
+    // Populate Common properties (OOTB Revit)
+    const commonList = document.getElementById('groupAvailCommon');
+    if (commonList) {
+        commonList.innerHTML = '';
+        const commonKeys = ['FAMILY', 'TYPE_NAME', 'LEVEL', 'CATEGORY', 'ELEMENT_ID', 'CONTROL_MARK', 'CONTROL_NUMBER'];
+        commonKeys.forEach(key => {
+            if (PROPERTY_MAP[key]) {
+                const li = document.createElement('li');
+                li.textContent = key;
+                li.dataset.key = key;
+                li.style.cursor = 'pointer';
+                li.style.padding = '0.5rem';
+                li.style.borderBottom = '1px solid #eee';
+                li.addEventListener('click', () => addToGrouping(key));
+                commonList.appendChild(li);
+            }
+        });
+    }
     
-    showNotification('Model properties extracted. You can now configure filters.', 'success');
+    // Populate Model properties for selected category
+    const modelList = document.getElementById('groupAvailModel');
+    if (modelList && selectedCategory && modelCategories.has(selectedCategory)) {
+        modelList.innerHTML = '';
+        const modelProps = Array.from(modelCategories.get(selectedCategory)).sort();
+        modelProps.forEach(prop => {
+            const li = document.createElement('li');
+            li.textContent = prop;
+            li.dataset.key = prop;
+            li.style.cursor = 'pointer';
+            li.style.padding = '0.5rem';
+            li.style.borderBottom = '1px solid #eee';
+            li.addEventListener('click', () => addToGrouping(prop));
+            modelList.appendChild(li);
+        });
+    }
 }
 
 // Handle category selection change
@@ -839,6 +838,8 @@ function setupGroupingUI() {
     const modal = document.getElementById('groupingModal');
     const close = document.getElementById('groupingClose');
     const cancel = document.getElementById('groupingCancel');
+    const apply = document.getElementById('groupingApply');
+    const familyCategory = document.getElementById('groupingFamilyCategory');
 
     if (!btn || !modal) return;
     
@@ -853,6 +854,24 @@ function setupGroupingUI() {
             });
         }
     });
+    
+    // Apply button - rebuild table with new grouping
+    if (apply) {
+        apply.addEventListener('click', async () => {
+            await rebuildPropertiesTable();
+            modal.style.display = 'none';
+        });
+    }
+    
+    // Family Category change - update available properties
+    if (familyCategory) {
+        familyCategory.addEventListener('change', (e) => {
+            const selectedCategory = e.target.value;
+            if (selectedCategory) {
+                populateGroupingModalProperties(selectedCategory);
+            }
+        });
+    }
     
     // Backdrop click to close
     modal.addEventListener('click', (e) => { 
@@ -1029,8 +1048,14 @@ function onColumnPickerAdd() {
     }
 
     closeColumnPickerModal();
-    renderPropertiesGrid(propGridRows, currentGrouping); // rebuild headers + rows with new columns
-    showNotification(`Added column: ${canonicalOrRaw}`, 'success');
+    
+    // Rebuild the table with new column
+    if (propGridRows && propGridRows.length > 0) {
+        renderPropertiesGrid(propGridRows, currentGrouping);
+        showNotification(`Added column: ${canonicalOrRaw}`, 'success');
+    } else {
+        showNotification('Load properties first, then add columns', 'warning');
+    }
 }
 
 function resolveCanonicalOrRawKey(key) {
@@ -1040,6 +1065,37 @@ function resolveCanonicalOrRawKey(key) {
 
 function prettifyCanonical(key) {
     return key.split('_').map(w => w[0] + w.slice(1).toLowerCase()).join(' ');
+}
+
+// Rebuild properties table based on current grouping and extended columns
+async function rebuildPropertiesTable() {
+    console.log('🔧 Rebuilding properties table...');
+    
+    // Get current grouping order from the modal
+    const groupOrder = document.getElementById('groupOrder');
+    const grouping = [];
+    if (groupOrder) {
+        const items = groupOrder.querySelectorAll('li');
+        items.forEach(item => {
+            if (item.dataset.key) {
+                grouping.push(item.dataset.key);
+            }
+        });
+    }
+    
+    // Ensure ELEMENT_ID is first
+    const finalGrouping = ['ELEMENT_ID', ...grouping.filter(g => g !== 'ELEMENT_ID')];
+    currentGrouping = finalGrouping;
+    
+    console.log('📊 Final grouping:', finalGrouping);
+    
+    // Re-render the properties grid with new grouping
+    if (propGridRows && propGridRows.length > 0) {
+        renderPropertiesGrid(propGridRows, finalGrouping);
+        showNotification(`Table updated with ${finalGrouping.length} columns`, 'success');
+    } else {
+        showNotification('Load properties first, then configure grouping', 'warning');
+    }
 }
 
 async function handleCSVUpload(event) {

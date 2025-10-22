@@ -6,6 +6,7 @@
     <title>Erection Sequence Scheduling - Metromont El Diablo</title>
     <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css">
     <link rel="stylesheet" href="styles/erection-sequencing.css">
+    <link rel="stylesheet" href="styles/calculator.css">
 </head>
 <body class="auth-loading">
     <!-- Auth Processing Overlay -->
@@ -70,23 +71,6 @@
                     </select>
                 </div>
 
-                <div class="control-group">
-                    <label>Element Filters:</label>
-                    <div id="elementFiltersContainer">
-                        <div class="filter-row" data-filter-id="0">
-                            <select class="filter-category" id="filterCategory0" aria-label="Element category" disabled onchange="onCategoryChange(0)">
-                                <option value="">Load a model first...</option>
-                            </select>
-                            <select class="filter-property" id="filterProperty0" aria-label="Element property" disabled>
-                                <option value="">Select category first...</option>
-                            </select>
-                            <button class="btn-icon btn-remove-filter" onclick="removeFilter(0)" style="display: none;" title="Remove filter" aria-label="Remove filter">
-                                ✕
-                            </button>
-                        </div>
-                    </div>
-                    <small>Select element category and property to link activities</small>
-                </div>
 
                 <div class="control-group" style="margin-top: 1rem;">
                     <button class="btn btn-secondary btn-sm" onclick="testAECDataModel()" style="width: 100%;">
@@ -317,6 +301,14 @@
         </div>
 
         <div class="modal-body" style="display:flex; gap:1rem;">
+          <!-- Family Category Selection -->
+          <div style="width:100%; margin-bottom:1rem;">
+            <label for="groupingFamilyCategory" style="display:block; margin-bottom:.5rem; font-weight:500;">Family Category:</label>
+            <select id="groupingFamilyCategory" style="width:100%; padding:.5rem; border:1px solid #ddd; border-radius:4px;">
+              <option value="">Select family category...</option>
+            </select>
+          </div>
+          
           <!-- Available properties -->
           <div style="flex:1; min-width:320px;">
             <div class="muted" style="margin-bottom:.25rem;">Add properties</div>
@@ -324,10 +316,6 @@
             <details open>
               <summary>Common properties</summary>
               <ul id="groupAvailCommon" class="list selectable"></ul>
-            </details>
-            <details>
-              <summary>Extended properties</summary>
-              <ul id="groupAvailExtended" class="list selectable"></ul>
             </details>
             <details>
               <summary>Model properties</summary>
