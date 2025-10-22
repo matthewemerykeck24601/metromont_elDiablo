@@ -1,5 +1,9 @@
 /* Erection Sequencing Styling */
 
+:root { 
+  --header-h: 80px; /* default; JS will set actual size */
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -186,12 +190,13 @@ body.auth-loading {
 /* Container */
 .container {
     display: grid;
-    grid-template-columns: 350px 1fr;
+    grid-template-columns: 360px 1fr;
     gap: 1rem;
     padding: 1rem;
     max-width: 1800px;
     margin: 0 auto;
-    height: calc(100vh - 80px);
+    height: calc(100vh - var(--header-h, 80px));
+    /* overflow: hidden; removed to allow scrolling */
 }
 
 /* Control Panel */
@@ -554,12 +559,7 @@ html, body {
   padding: 0; 
 }
 
-.container { 
-  height: calc(100vh - 72px); /* header height */ 
-  display: grid; 
-  grid-template-columns: 360px 1fr; 
-  overflow: hidden; 
-}
+/* Removed duplicate .container rule - consolidated above */
 
 .viewer-section { 
   overflow: hidden; 

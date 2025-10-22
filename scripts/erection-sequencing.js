@@ -213,6 +213,9 @@ async function completeAuthentication() {
         // Remove legacy Element Filters panel
         document.querySelector('#esElementFilters, .element-filters, [data-es="element-filters"]')?.remove();
 
+        // Update header height and ensure viewer can resize
+        updateHeaderHeightVar();
+        
         console.log('✅ Erection Sequencing ready');
 
     } catch (error) {
@@ -1606,12 +1609,19 @@ function showPropertiesGridPanel(show = true) {
         splitter.style.display = show ? 'block' : 'none';
     }
     
-  // If showing for the first time, ensure splitter is initialized
-  if (show && splitter && !splitter.dataset.initialized) {
-    console.log('🔧 Initializing vertical splitter...');
-    initVerticalSplitter();
-    splitter.dataset.initialized = 'true';
-  }
+    // If showing for the first time, ensure splitter is initialized
+    if (show && splitter && !splitter.dataset.initialized) {
+        console.log('🔧 Initializing vertical splitter...');
+        initVerticalSplitter();
+        splitter.dataset.initialized = 'true';
+    }
+    
+    // Resize viewer when panel visibility changes
+    setTimeout(() => {
+        if (window.viewer && typeof viewer.resize === 'function') {
+            viewer.resize();
+        }
+    }, 100);
 }
 
 function bindPropertiesGridUI() {
@@ -2649,6 +2659,15 @@ window.addEventListener('DOMContentLoaded', () => {
     enableLayoutAndSplitter();
 });
 
+// Update header height CSS custom property
+function updateHeaderHeightVar() {
+  const header = document.querySelector('.header');
+  const h = header ? header.offsetHeight : 80;
+  document.documentElement.style.setProperty('--header-h', `${h}px`);
+  // If viewer exists, force a resize so it uses the new space
+  if (window.viewer && typeof viewer.resize === 'function') viewer.resize();
+}
+
 // Enable layout and splitter functionality
 function enableLayoutAndSplitter() {
   // Show splitter and bottom panel
@@ -2686,6 +2705,7 @@ function enableLayoutAndSplitter() {
   
   // Handle window resize
   window.addEventListener('resize', () => {
+    updateHeaderHeightVar();
     if (window.viewer) window.viewer.resize();
   });
   
