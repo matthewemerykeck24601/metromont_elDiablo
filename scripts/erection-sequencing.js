@@ -1544,11 +1544,12 @@ function showPropertiesGridPanel(show = true) {
         splitter.style.display = show ? 'block' : 'none';
     }
     
-    // If showing for the first time, ensure splitter is initialized
-    if (show && splitter && !splitter.dataset.initialized) {
-        initVerticalSplitter();
-        splitter.dataset.initialized = 'true';
-    }
+  // If showing for the first time, ensure splitter is initialized
+  if (show && splitter && !splitter.dataset.initialized) {
+    console.log('🔧 Initializing vertical splitter...');
+    initVerticalSplitter();
+    splitter.dataset.initialized = 'true';
+  }
 }
 
 function bindPropertiesGridUI() {
@@ -2537,6 +2538,7 @@ function initVerticalSplitter() {
   }
 
   splitter.addEventListener('mousedown', (e) => {
+    console.log('🖱️ Splitter mousedown event');
     dragging = true;
     startY = e.clientY;
     startHeight = viewerPanel.getBoundingClientRect().height;
@@ -2584,8 +2586,10 @@ window.addEventListener('DOMContentLoaded', () => {
     // Note: splitter will be initialized when properties panel is first shown
 });
 
-// Pop-out viewer functionality
+// Pop-out viewer functionality - detach existing viewer
 let viewerPopup = null;
+let originalViewerContainer = null;
+let isViewerDetached = false;
 
 function popOutViewer() {
     if (!viewer) {
@@ -2593,10 +2597,22 @@ function popOutViewer() {
         return;
     }
     
-    // Close existing popup if open
-    if (viewerPopup && !viewerPopup.closed) {
-        viewerPopup.close();
+    if (isViewerDetached) {
+        // Reattach viewer to main window
+        reattachViewer();
+        return;
     }
+    
+    // Detach viewer to popup window
+    detachViewer();
+}
+
+function detachViewer() {
+    if (!viewer) return;
+    
+    // Store original container
+    originalViewerContainer = document.getElementById('esViewer');
+    if (!originalViewerContainer) return;
     
     // Create popup window
     const popupFeatures = 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no';
@@ -2677,90 +2693,89 @@ function popOutViewer() {
                     </svg>
                 </button>
                 <div class="viewer-separator"></div>
-                <button class="viewer-btn" onclick="window.close()" title="Close Popup">
+                <button class="viewer-btn" onclick="parent.reattachViewer()" title="Reattach to Main Window">
                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
                     </svg>
                 </button>
                 <div class="viewer-info">
-                    <span>3D Viewer - Pop-out Mode</span>
+                    <span>3D Viewer - Detached Mode</span>
                 </div>
             </div>
             <div id="popupViewer" class="viewer-container">
                 <div class="loading-message">
-                    <p>Loading 3D viewer...</p>
+                    <p>Moving viewer to popup...</p>
                 </div>
             </div>
-            
-            <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
-            <script>
-                // Initialize popup viewer
-                let popupViewer = null;
-                
-                // Wait for parent viewer to be ready
-                function initPopupViewer() {
-                    if (parent.viewer && parent.viewer.getDocument()) {
-                        const doc = parent.viewer.getDocument();
-                        const viewables = doc.getRoot().getDefaultGeometry();
-                        
-                        if (viewables) {
-                            const options = {
-                                env: 'AutodeskProduction',
-                                getAccessToken: function(onTokenReady) {
-                                    // Get token from parent window
-                                    const token = parent.getStoredToken();
-                                    if (token) {
-                                        onTokenReady(token.access_token, 3600);
-                                    } else {
-                                        console.error('No token available');
-                                    }
-                                }
-                            };
-                            
-                            Autodesk.Viewing.Initializer(options, function() {
-                                popupViewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('popupViewer'));
-                                popupViewer.start();
-                                
-                                // Load the same model as parent
-                                popupViewer.loadDocumentNode(doc, viewables).then(function() {
-                                    console.log('✅ Popup viewer loaded');
-                                    
-                                    // Sync viewer state from parent
-                                    if (parent.window._homeState) {
-                                        popupViewer.restoreState(parent.window._homeState);
-                                    }
-                                    
-                                    // Sync selection from parent
-                                    const parentSelection = parent.viewer.getSelection();
-                                    if (parentSelection && parentSelection.length > 0) {
-                                        popupViewer.select(parentSelection);
-                                    }
-                                });
-                            });
-                        }
-                    } else {
-                        // Retry in 500ms
-                        setTimeout(initPopupViewer, 500);
-                    }
-                }
-                
-                // Start initialization
-                initPopupViewer();
-                
-                // Handle window close
-                window.addEventListener('beforeunload', function() {
-                    if (popupViewer) {
-                        popupViewer.finish();
-                    }
-                });
-            </script>
         </body>
         </html>
     `);
     
     viewerPopup.document.close();
-    showNotification('Viewer opened in popup window', 'success');
+    
+    // Move the actual viewer DOM element to popup
+    const popupViewerContainer = viewerPopup.document.getElementById('popupViewer');
+    if (popupViewerContainer && originalViewerContainer) {
+        // Move the viewer canvas to popup
+        const viewerCanvas = originalViewerContainer.querySelector('.adsk-viewing-viewer');
+        if (viewerCanvas) {
+            popupViewerContainer.appendChild(viewerCanvas);
+            
+            // Resize viewer to fit popup
+            setTimeout(() => {
+                if (viewer && viewer.resize) {
+                    viewer.resize();
+                }
+            }, 100);
+        }
+        
+        // Show placeholder in main window
+        originalViewerContainer.innerHTML = `
+            <div class="loading-message">
+                <p>Viewer detached to popup window</p>
+                <button onclick="reattachViewer()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    Reattach Viewer
+                </button>
+            </div>
+        `;
+        
+        isViewerDetached = true;
+        showNotification('Viewer detached to popup window', 'success');
+    }
 }
+
+function reattachViewer() {
+    if (!isViewerDetached || !viewerPopup || viewerPopup.closed) {
+        showNotification('No detached viewer to reattach', 'warning');
+        return;
+    }
+    
+    // Move viewer back to main window
+    const popupViewerContainer = viewerPopup.document.getElementById('popupViewer');
+    if (popupViewerContainer && originalViewerContainer) {
+        const viewerCanvas = popupViewerContainer.querySelector('.adsk-viewing-viewer');
+        if (viewerCanvas) {
+            originalViewerContainer.appendChild(viewerCanvas);
+            
+            // Resize viewer to fit main window
+            setTimeout(() => {
+                if (viewer && viewer.resize) {
+                    viewer.resize();
+                }
+            }, 100);
+        }
+    }
+    
+    // Close popup
+    viewerPopup.close();
+    viewerPopup = null;
+    isViewerDetached = false;
+    
+    showNotification('Viewer reattached to main window', 'success');
+}
+
+// Expose reattach function globally
+window.reattachViewer = reattachViewer;
 
 // Save a "home" state after the model loads (called in onModelLoaded)
 function _saveHomeState() { 

@@ -551,19 +551,21 @@ body.auth-loading {
 .ess-vertical {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: calc(100vh - 200px); /* Account for header and controls */
   min-height: 600px;
+  overflow: hidden; /* Prevent main container from scrolling */
 }
 
 /* ===== Viewer panel ===== */
 .ess-viewer-panel {
   /* default height; JS will override via inline style or CSS var */
   height: var(--viewer-height, 52vh);
-  min-height: 220px;
+  min-height: 300px; /* Ensure minimum viewer size */
   position: relative;
   background: #f7f9fb;
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* Prevent viewer panel from scrolling */
 }
 
 /* Ensure your actual Viewer canvas fills the viewer panel */
@@ -593,6 +595,7 @@ body.auth-loading {
 .ess-bottom-panel {
   flex: 1;
   min-height: 180px;
+  max-height: 50vh; /* Limit bottom panel height */
   display: flex;
   flex-direction: column;
   overflow: hidden; /* header fixed, table scrolls inside wrapper */
