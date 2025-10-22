@@ -7,6 +7,7 @@ import { mapExternalIdsToDbIds, getDbIdsByControlNumbers, isolateByControlNumber
 import { parseScheduleCSV, joinScheduleToElements, buildTimeline, groupBySequenceDate } from './utils/csv-schedule.js';
 import { fetchElementsByElementGroup } from './aecdm-graphql.js';
 import { PROPERTY_MAP } from './config/property-map.js';
+import { fetchExtendedParameters, normalizeParameterService, dedupeByKey, escapeHtml } from './services/parameter-service.js';
 
 // Global State
 let isAuthenticated = false;
@@ -32,8 +33,15 @@ let normalizedElements = []; // Array of normalized elements with CONTROL_NUMBER
 let scheduleJoinData = null; // { matched, unmatched, orphaned, stats }
 let timelineData = null; // Array of { date, elements, count }
 
+// Column picker state
+let columnPickerState = {
+    all: [],           // normalized: {key,label,source,group,description}
+    filtered: [],
+    selectedKey: null,
+};
+
 // ---- Grouping state ----
-let currentGrouping = ['Category', 'CONTROL_MARK', 'CONTROL_NUMBER'];
+let currentGrouping = ['ELEMENT_ID', 'Category', 'CONTROL_MARK', 'CONTROL_NUMBER'];
 const savedFormats = {
   'Default': ['Category', 'CONTROL_MARK', 'CONTROL_NUMBER']
 };
@@ -147,6 +155,9 @@ async function completeAuthentication() {
         
         // Set up grouping UI
         setupGroupingUI();
+        
+        // Set up column picker UI
+        bindColumnPickerUI();
 
         console.log('✅ Erection Sequencing ready');
 
@@ -869,6 +880,166 @@ function bindRowIsolation() {
             console.warn('⚠️ No dbId found for row');
         }
     });
+}
+
+// ---- Column Picker UI Functions ----
+
+function bindColumnPickerUI() {
+    const btnAdd = document.getElementById('btnAddColumn');
+    const modal = document.getElementById('columnPickerModal');
+    const close = document.getElementById('columnPickerClose');
+    const cancel = document.getElementById('columnPickerCancel');
+    const add = document.getElementById('columnPickerAdd');
+    const search = document.getElementById('columnSearch');
+
+    if (!btnAdd || !modal) return;
+
+    btnAdd.addEventListener('click', openColumnPickerModal);
+    [close, cancel].forEach(b => b && b.addEventListener('click', closeColumnPickerModal));
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeColumnPickerModal(); });
+    if (add) add.addEventListener('click', onColumnPickerAdd);
+    if (search) search.addEventListener('input', onColumnPickerSearch);
+}
+
+async function openColumnPickerModal() {
+    const modal = document.getElementById('columnPickerModal');
+    if (!modal) return;
+
+    console.log('🔧 Opening column picker modal...');
+
+    // 1) Build **Common** list from PROPERTY_MAP whitelist (Revit OOTB set)
+    const COMMON_KEYS = ['FAMILY', 'TYPE_NAME', 'LEVEL', 'CATEGORY', 'ELEMENT_ID', 'CONTROL_MARK', 'CONTROL_NUMBER'];
+    const common = COMMON_KEYS
+        .filter(k => PROPERTY_MAP[k])
+        .map(k => ({
+            key: k,
+            label: prettifyCanonical(k),
+            source: 'COMMON',
+            group: 'Revit (OOTB)',
+            description: PROPERTY_MAP[k].description || ''
+        }));
+
+    // 2) Build **Model** list from selected family category (modelCategories Map)
+    const selectedCategory = document.getElementById('filterCategory0')?.value || null;
+    const modelKeys = [];
+    if (selectedCategory && modelCategories.has(selectedCategory)) {
+        for (const name of Array.from(modelCategories.get(selectedCategory)).sort()) {
+            modelKeys.push({
+                key: name,                 // raw name from model
+                label: name,
+                source: 'MODEL',
+                group: selectedCategory,
+                description: 'From model'
+            });
+        }
+    }
+
+    // 3) Fetch **Extended** list from Parameter Service
+    let extended = [];
+    try {
+        const resp = await fetchExtendedParameters({ familyCategory: selectedCategory });
+        extended = normalizeParameterService(resp);  // -> {key,label,group,description,source:'EXTENDED'}
+    } catch (e) {
+        console.warn('Parameter Service failed:', e);
+        showNotification('Could not load extended parameters. Showing Common/Model only.', 'warning');
+    }
+
+    // 4) Merge + de-dup by key keeping External/Extended preferred display label
+    const merged = dedupeByKey([...extended, ...common, ...modelKeys]);
+
+    columnPickerState.all = merged;
+    columnPickerState.filtered = merged;
+    columnPickerState.selectedKey = null;
+
+    renderColumnPickerList();           // paints #columnPickerList
+    const addBtn = document.getElementById('columnPickerAdd');
+    if (addBtn) addBtn.setAttribute('disabled', 'true');
+
+    modal.style.display = 'flex';
+    console.log(`✅ Loaded ${merged.length} available columns (${extended.length} extended, ${common.length} common, ${modelKeys.length} model)`);
+}
+
+function closeColumnPickerModal() {
+    const modal = document.getElementById('columnPickerModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function onColumnPickerSearch(e) {
+    const q = (e.target.value || '').toLowerCase().trim();
+    columnPickerState.filtered = !q
+        ? columnPickerState.all
+        : columnPickerState.all.filter(p =>
+            (p.label || '').toLowerCase().includes(q) ||
+            (p.key || '').toLowerCase().includes(q) ||
+            (p.group || '').toLowerCase().includes(q));
+    renderColumnPickerList();
+}
+
+function renderColumnPickerList() {
+    const ul = document.getElementById('columnPickerList');
+    if (!ul) return;
+
+    ul.innerHTML = '';
+    columnPickerState.filtered.forEach(p => {
+        const li = document.createElement('li');
+        li.setAttribute('data-key', p.key);
+        li.className = 'list-item';
+        li.style.padding = '.5rem .75rem';
+        li.style.borderBottom = '1px solid #eee';
+        li.style.cursor = 'pointer';
+        li.innerHTML = `
+            <div style="display:flex; justify-content:space-between; gap:.75rem;">
+                <div>
+                    <div style="font-weight:600">${escapeHtml(p.label || p.key)}</div>
+                    <div class="muted" style="font-size:12px">${escapeHtml(p.description || '')}</div>
+                </div>
+                <div class="muted" style="white-space:nowrap; font-size:12px">${escapeHtml(p.source)}${p.group ? ' · ' + escapeHtml(p.group) : ''}</div>
+            </div>
+        `;
+        li.addEventListener('click', () => onColumnPickerSelect(p.key, li));
+        ul.appendChild(li);
+    });
+}
+
+function onColumnPickerSelect(key, li) {
+    columnPickerState.selectedKey = key;
+    // highlight single selection
+    document.querySelectorAll('#columnPickerList .selected').forEach(el => el.classList.remove('selected'));
+    li.classList.add('selected');
+    li.style.backgroundColor = '#eff6ff';
+    li.style.borderLeft = '3px solid #059669';
+    
+    const addBtn = document.getElementById('columnPickerAdd');
+    if (addBtn) addBtn.removeAttribute('disabled');
+}
+
+function onColumnPickerAdd() {
+    const key = columnPickerState.selectedKey;
+    if (!key) return;
+
+    // Normalize: if key is a raw model property name, store as that string;
+    // if it's a canonical PROPERTY_MAP key, keep canonical.
+    const canonicalOrRaw = resolveCanonicalOrRawKey(key);
+
+    // Maintain rule: ELEMENT_ID first, others follow; prevent duplicates
+    const first = 'ELEMENT_ID';
+    const rest = (currentGrouping || []).filter(k => k !== first);
+    if (!rest.includes(canonicalOrRaw) && canonicalOrRaw !== first) {
+        currentGrouping = [first, ...rest, canonicalOrRaw];
+    }
+
+    closeColumnPickerModal();
+    renderPropertiesGrid(propGridRows, currentGrouping); // rebuild headers + rows with new columns
+    showNotification(`Added column: ${canonicalOrRaw}`, 'success');
+}
+
+function resolveCanonicalOrRawKey(key) {
+    // If it exists as a canonical in PROPERTY_MAP, use that symbol; else pass-through.
+    return PROPERTY_MAP[key] ? key : key;
+}
+
+function prettifyCanonical(key) {
+    return key.split('_').map(w => w[0] + w.slice(1).toLowerCase()).join(' ');
 }
 
 async function handleCSVUpload(event) {
@@ -1891,8 +2062,8 @@ function renderPropertiesGrid(rows, groupingOrder) {
   // Sort by grouping order (stable, left→right)
   [...groupingOrder].reverse().forEach(key => {
     data.sort((a, b) => {
-      const av = (a[key] ?? a[key.toLowerCase()] ?? '').toString();
-      const bv = (b[key] ?? b[key.toLowerCase()] ?? '').toString();
+      const av = getValueForColumn(a, key);
+      const bv = getValueForColumn(b, key);
       return av.localeCompare(bv, undefined, {numeric:true, sensitivity:'base'});
     });
   });
@@ -1901,7 +2072,7 @@ function renderPropertiesGrid(rows, groupingOrder) {
   thead.innerHTML = '';
   groupingOrder.forEach(col => {
     const th = document.createElement('th');
-    th.textContent = col;
+    th.textContent = headerLabelFor(col);
     thead.appendChild(th);
   });
 
@@ -1918,38 +2089,7 @@ function renderPropertiesGrid(rows, groupingOrder) {
     
     groupingOrder.forEach(col => {
       const td = document.createElement('td');
-      
-      // Try multiple case variations to find the value
-      let value = r[col] 
-        ?? r[col.toLowerCase()] 
-        ?? r[col.toUpperCase()]
-        ?? r[col.replace(/_/g, ' ')] // Try with spaces instead of underscores
-        ?? '';
-      
-      // If we have a normalized element reference, try to get value from it
-      if (!value && r._normalized) {
-        const normalized = r._normalized;
-        // Map canonical key to normalized property
-        const keyMap = {
-          'CATEGORY': normalized.category,
-          'CONTROL_MARK': normalized.controlMark,
-          'CONTROL_NUMBER': normalized.controlNumber,
-          'CONSTRUCTION_PRODUCT': normalized.constructionProduct,
-          'FAMILY': normalized.family,
-          'TYPE_NAME': normalized.typeName,
-          'LEVEL': normalized.level,
-          'ELEMENT_ID': normalized.elementId || normalized.dbId,
-          'EXTERNAL_ID': normalized.externalId,
-          'WARPED_PRODUCT': normalized.warpedProduct ? 'Yes' : 'No',
-          'IDENTITY_DESCRIPTION': normalized.identityDescription,
-          'SEQUENCE_NUMBER': normalized.sequenceNumber,
-          'SEQUENCE_DATE': normalized.sequenceDate
-        };
-        
-        value = keyMap[col] ?? '';
-      }
-      
-      td.textContent = value || '';
+      td.textContent = getValueForColumn(r, col);
       tr.appendChild(td);
     });
     
@@ -1958,10 +2098,65 @@ function renderPropertiesGrid(rows, groupingOrder) {
 
   if (status) status.textContent = `Grouped by: ${groupingOrder.join(' → ')}  •  ${data.length} rows`;
   
-  // Sync to popup if it's open
-  if (propGridPopup && !propGridPopup.closed) {
-    syncDataToPopup();
+  // Re-bind row isolation after rendering
+  bindRowIsolation();
+}
+
+function headerLabelFor(key) {
+  if (PROPERTY_MAP[key]?.description) return prettifyCanonical(key);
+  // raw model/ext keys: keep name
+  return key;
+}
+
+function getValueForColumn(row, key) {
+  // Canonical lookup via PROPERTY_MAP (normalized schema)
+  if (PROPERTY_MAP[key]) {
+    // Try direct property access first
+    if (row[key] != null) return String(row[key]);
+    
+    // Try normalized element properties
+    if (row._normalized) {
+      const normalized = row._normalized;
+      const keyMap = {
+        'CATEGORY': normalized.category,
+        'CONTROL_MARK': normalized.controlMark,
+        'CONTROL_NUMBER': normalized.controlNumber,
+        'CONSTRUCTION_PRODUCT': normalized.constructionProduct,
+        'FAMILY': normalized.family,
+        'TYPE_NAME': normalized.typeName,
+        'LEVEL': normalized.level,
+        'ELEMENT_ID': normalized.elementId || normalized.dbId,
+        'EXTERNAL_ID': normalized.externalId,
+        'WARPED_PRODUCT': normalized.warpedProduct ? 'Yes' : 'No',
+        'IDENTITY_DESCRIPTION': normalized.identityDescription,
+        'SEQUENCE_NUMBER': normalized.sequenceNumber,
+        'SEQUENCE_DATE': normalized.sequenceDate
+      };
+      
+      const value = keyMap[key];
+      if (value != null) return String(value);
+    }
+    
+    // Try props object if available
+    if (row.props && row.props[key] != null) {
+      return String(row.props[key]);
+    }
   }
+  
+  // Raw property lookup from normalized property bag (case-insensitive fallback)
+  if (row.props) {
+    const hit = Object.keys(row.props).find(k => k.toLowerCase() === key.toLowerCase());
+    if (hit) return String(row.props[hit]);
+  }
+  
+  // Try direct row properties with case variations
+  let value = row[key] 
+    ?? row[key.toLowerCase()] 
+    ?? row[key.toUpperCase()]
+    ?? row[key.replace(/_/g, ' ')] // Try with spaces instead of underscores
+    ?? '';
+    
+  return value ? String(value) : '';
 }
 
 async function loadPropGrid(categoryName, propertyName) {
