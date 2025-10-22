@@ -547,28 +547,49 @@ body.auth-loading {
     line-height: 1;
 }
 
+/* ===== Full height layout ===== */
+html, body { 
+  height: 100%; 
+  margin: 0; 
+  padding: 0; 
+}
+
+.container { 
+  height: calc(100vh - 72px); /* header height */ 
+  display: grid; 
+  grid-template-columns: 360px 1fr; 
+  overflow: hidden; 
+}
+
+.viewer-section { 
+  overflow: hidden; 
+  display: flex; 
+  flex-direction: column; 
+}
+
 /* ===== Vertical layout container (viewer + splitter + bottom panel) ===== */
 .ess-vertical {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 200px); /* Account for header and controls */
-  min-height: 600px;
-  overflow: hidden; /* Prevent main container from scrolling */
 }
 
 /* ===== Viewer panel ===== */
 .ess-viewer-panel {
-  /* default height; JS will override via inline style or CSS var */
-  height: var(--viewer-height, 52vh);
-  min-height: 300px; /* Ensure minimum viewer size */
-  position: relative;
-  background: #f7f9fb;
+  flex: 1;
+  min-height: 240px;
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* Prevent viewer panel from scrolling */
+  background: #f7f9fb;
 }
 
 /* Ensure your actual Viewer canvas fills the viewer panel */
+.viewer-container {
+  flex: 1;
+  min-height: 0;
+}
+
 .ess-viewer-panel #esViewer,
 .ess-viewer-panel .adsk-viewing-viewer {
   flex: 1;
@@ -593,12 +614,10 @@ body.auth-loading {
 
 /* ===== Bottom panel ===== */
 .ess-bottom-panel {
-  flex: 1;
-  min-height: 180px;
-  max-height: 50vh; /* Limit bottom panel height */
+  max-height: 45vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* header fixed, table scrolls inside wrapper */
   background: #fff;
 }
 

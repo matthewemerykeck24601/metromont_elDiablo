@@ -2583,199 +2583,109 @@ window.addEventListener('DOMContentLoaded', () => {
     // Pop-out viewer functionality
     window.popOutViewer = popOutViewer;
     
-    // Note: splitter will be initialized when properties panel is first shown
+    // Enable splitter and bottom panel, add viewer resize handling
+    enableLayoutAndSplitter();
 });
 
-// Pop-out viewer functionality - detach existing viewer
-let viewerPopup = null;
-let originalViewerContainer = null;
-let isViewerDetached = false;
-
-function popOutViewer() {
-    if (!viewer) {
-        showNotification('No viewer loaded', 'warning');
-        return;
-    }
+// Enable layout and splitter functionality
+function enableLayoutAndSplitter() {
+  // Show splitter and bottom panel
+  const splitter = document.getElementById('splitter');
+  const bottom = document.getElementById('bottom-panel');
+  
+  if (splitter) splitter.style.display = '';
+  if (bottom) bottom.style.display = '';
+  
+  // Set up splitter drag functionality
+  if (splitter && bottom) {
+    let startY, startH;
     
-    if (isViewerDetached) {
-        // Reattach viewer to main window
-        reattachViewer();
-        return;
-    }
-    
-    // Detach viewer to popup window
-    detachViewer();
+    splitter.addEventListener('mousedown', (e) => {
+      startY = e.clientY;
+      startH = bottom.getBoundingClientRect().height;
+      
+      const onMove = (ev) => {
+        const dy = startY - ev.clientY;
+        const newH = Math.min(Math.max(startH + dy, 160), window.innerHeight * 0.8);
+        bottom.style.height = newH + 'px';
+        if (window.viewer) window.viewer.resize(); // important for Forge
+      };
+      
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        if (window.viewer) window.viewer.resize();
+      };
+      
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+  }
+  
+  // Handle window resize
+  window.addEventListener('resize', () => {
+    if (window.viewer) window.viewer.resize();
+  });
+  
+  console.log('✅ Layout and splitter enabled');
 }
 
-function detachViewer() {
-    if (!viewer) return;
-    
-    // Store original container
-    originalViewerContainer = document.getElementById('esViewer');
-    if (!originalViewerContainer) return;
-    
-    // Create popup window
-    const popupFeatures = 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no';
-    viewerPopup = window.open('', 'viewerPopup', popupFeatures);
-    
-    if (!viewerPopup) {
-        showNotification('Popup blocked. Please allow popups for this site.', 'error');
-        return;
-    }
-    
-    // Create popup content
-    viewerPopup.document.write(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>El Diablo - 3D Viewer</title>
-            <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css">
-            <style>
-                body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-                .viewer-toolbar { 
-                    display: flex; 
-                    align-items: center; 
-                    gap: 8px; 
-                    padding: 8px 12px; 
-                    background: #f8f9fa; 
-                    border-bottom: 1px solid #dee2e6;
-                    flex-wrap: wrap;
-                }
-                .viewer-btn { 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center; 
-                    width: 32px; 
-                    height: 32px; 
-                    border: 1px solid #dee2e6; 
-                    background: white; 
-                    border-radius: 4px; 
-                    cursor: pointer; 
-                    transition: all 0.2s;
-                }
-                .viewer-btn:hover { background: #e9ecef; border-color: #adb5bd; }
-                .viewer-separator { width: 1px; height: 24px; background: #dee2e6; margin: 0 4px; }
-                .viewer-info { margin-left: auto; color: #6c757d; font-size: 14px; }
-                #popupViewer { width: 100%; height: calc(100vh - 60px); }
-                .loading-message { 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center; 
-                    height: 100%; 
-                    color: #6c757d; 
-                    font-size: 16px;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="viewer-toolbar">
-                <button class="viewer-btn" onclick="parent.viewerReset()" title="Reset View">
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6 0 2.97-2.17 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93 0-4.42-3.58-8-8-8z" />
-                    </svg>
-                </button>
-                <button class="viewer-btn" onclick="parent.viewerFitToView()" title="Fit to View">
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M9 11H7v6h6v-2H9v-4zm-2 8V5h14v14H7z" />
-                    </svg>
-                </button>
-                <div class="viewer-separator"></div>
-                <button class="viewer-btn" onclick="parent.viewerIsolate()" title="Isolate Selection">
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                    </svg>
-                </button>
-                <button class="viewer-btn" onclick="parent.viewerShowAll()" title="Show All">
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-                    </svg>
-                </button>
-                <div class="viewer-separator"></div>
-                <button class="viewer-btn" onclick="parent.reattachViewer()" title="Reattach to Main Window">
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
-                    </svg>
-                </button>
-                <div class="viewer-info">
-                    <span>3D Viewer - Detached Mode</span>
-                </div>
-            </div>
-            <div id="popupViewer" class="viewer-container">
-                <div class="loading-message">
-                    <p>Moving viewer to popup...</p>
-                </div>
-            </div>
-        </body>
-        </html>
-    `);
-    
-    viewerPopup.document.close();
-    
-    // Move the actual viewer DOM element to popup
-    const popupViewerContainer = viewerPopup.document.getElementById('popupViewer');
-    if (popupViewerContainer && originalViewerContainer) {
-        // Move the viewer canvas to popup
-        const viewerCanvas = originalViewerContainer.querySelector('.adsk-viewing-viewer');
-        if (viewerCanvas) {
-            popupViewerContainer.appendChild(viewerCanvas);
-            
-            // Resize viewer to fit popup
-            setTimeout(() => {
-                if (viewer && viewer.resize) {
-                    viewer.resize();
-                }
-            }, 100);
-        }
-        
-        // Show placeholder in main window
-        originalViewerContainer.innerHTML = `
-            <div class="loading-message">
-                <p>Viewer detached to popup window</p>
-                <button onclick="reattachViewer()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    Reattach Viewer
-                </button>
-            </div>
-        `;
-        
-        isViewerDetached = true;
-        showNotification('Viewer detached to popup window', 'success');
-    }
-}
+// Pop out the current viewer to a separate window while preserving state
+async function popOutViewer() {
+  if (!viewer) {
+    showNotification('Viewer not initialized', 'error');
+    return;
+  }
 
-function reattachViewer() {
-    if (!isViewerDetached || !viewerPopup || viewerPopup.closed) {
-        showNotification('No detached viewer to reattach', 'warning');
-        return;
-    }
-    
-    // Move viewer back to main window
-    const popupViewerContainer = viewerPopup.document.getElementById('popupViewer');
-    if (popupViewerContainer && originalViewerContainer) {
-        const viewerCanvas = popupViewerContainer.querySelector('.adsk-viewing-viewer');
-        if (viewerCanvas) {
-            originalViewerContainer.appendChild(viewerCanvas);
-            
-            // Resize viewer to fit main window
-            setTimeout(() => {
-                if (viewer && viewer.resize) {
-                    viewer.resize();
-                }
-            }, 100);
-        }
-    }
-    
-    // Close popup
-    viewerPopup.close();
-    viewerPopup = null;
-    isViewerDetached = false;
-    
-    showNotification('Viewer reattached to main window', 'success');
-}
+  // Capture current viewer state + model URN so we can restore it
+  const state = {};
+  try { viewer.getState(state); } catch {} // defensive: getState can throw mid-load
 
-// Expose reattach function globally
-window.reattachViewer = reattachViewer;
+  const urn = (window.selectedElementGroup && window.selectedElementGroup.urn) || null; // set in onModelChange
+  const token = window.forgeAccessToken;
+
+  // Open lightweight popup shell
+  const popup = window.open('', 'esViewerPopout', 'width=1200,height=800');
+  if (!popup) return;
+
+  // Minimal HTML with a container and the Forge scripts
+  popup.document.write(`
+    <!doctype html><html><head>
+      <title>Viewer</title>
+      <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css">
+      <style>html,body,#popViewer{height:100%;margin:0;}</style>
+    </head>
+    <body><div id="popViewer"></div>
+      <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"><\/script>
+      <script>
+        (function() {
+          const options = { env: 'AutodeskProduction', api: 'derivativeV2' };
+          Autodesk.Viewing.Initializer(options, function() {
+            const viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('popViewer'));
+            viewer.start();
+            // Receive boot payload (token, urn, state) from opener
+            window.addEventListener('message', function(e){
+              const { token, urn, state } = e.data || {};
+              Autodesk.Viewing.endpoint.setToken(() => token);
+              if (!urn) return;
+              const docId = 'urn:' + btoa(urn).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
+              Autodesk.Viewing.Document.load(docId, function(doc){
+                const geom = doc.getRoot().getDefaultGeometry();
+                viewer.loadDocumentNode(doc, geom).then(function(){
+                  if (state) try { viewer.restoreState(state); } catch {}
+                  viewer.fitToView();
+                });
+              }, function(code,msg){ console.error('Doc load failed', code, msg); });
+            }, { once:true });
+          });
+        })();
+      <\/script>
+    </body></html>
+  `);
+
+  // Post boot payload to popup
+  popup.postMessage({ token, urn, state }, '*');
+}
 
 // Save a "home" state after the model loads (called in onModelLoaded)
 function _saveHomeState() { 
