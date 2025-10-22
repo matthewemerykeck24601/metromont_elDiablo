@@ -1621,6 +1621,8 @@ function showPropertiesGridPanel(show = true) {
         if (window.viewer && typeof viewer.resize === 'function') {
             viewer.resize();
         }
+        // Update container height to accommodate new content
+        updateContainerHeight();
     }, 100);
 }
 
@@ -2301,6 +2303,9 @@ async function loadPropGrid(categoryName, propertyName) {
         
         // Step 7: Bind row isolation
         bindRowIsolation();
+        
+        // Step 8: Update container height for new content
+        setTimeout(() => updateContainerHeight(), 200);
 
         const hitRate = pipeline.stats.mapped > 0 
             ? `${((pipeline.stats.mapped / normalizedElements.length) * 100).toFixed(1)}%`
@@ -2668,6 +2673,26 @@ function updateHeaderHeightVar() {
   if (window.viewer && typeof viewer.resize === 'function') viewer.resize();
 }
 
+// Update container height dynamically based on content
+function updateContainerHeight() {
+  const container = document.querySelector('.container');
+  if (!container) return;
+  
+  // Calculate the actual content height
+  const contentHeight = container.scrollHeight;
+  const viewportHeight = window.innerHeight;
+  const headerHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--header-h')) || 80;
+  
+  // If content is taller than viewport, allow container to grow
+  if (contentHeight > (viewportHeight - headerHeight)) {
+    container.style.height = 'auto';
+    container.style.minHeight = `calc(100vh - ${headerHeight}px)`;
+  } else {
+    container.style.height = `calc(100vh - ${headerHeight}px)`;
+    container.style.minHeight = `calc(100vh - ${headerHeight}px)`;
+  }
+}
+
 // Enable layout and splitter functionality
 function enableLayoutAndSplitter() {
   // Show splitter and bottom panel
@@ -2707,6 +2732,7 @@ function enableLayoutAndSplitter() {
   window.addEventListener('resize', () => {
     updateHeaderHeightVar();
     if (window.viewer) window.viewer.resize();
+    updateContainerHeight();
   });
   
   console.log('✅ Layout and splitter enabled');
