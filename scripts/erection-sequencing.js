@@ -1464,16 +1464,6 @@ function normalizeValueList(values) {
     return String(values).split(',').map(v => v.trim()).filter(Boolean);
 }
 
-// HTML escape utility
-function escapeHtml(s) {
-    return String(s ?? '').replace(/[&<>"']/g, m => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-    }[m]));
-}
 
 // CSV field formatter
 function csv(s) {
@@ -1813,91 +1803,6 @@ window.addEventListener('message', function(event) {
 
 // ---- Column Picker Modal Functions ----
 
-let selectedColumn = null; // Track selected column in modal
-
-function openColumnPickerModal() {
-  const modal = document.getElementById('columnPickerModal');
-  if (!modal) return;
-
-  selectedColumn = null;
-
-  // Populate the list with canonical keys from PROPERTY_MAP
-  const list = document.getElementById('columnPickerList');
-  if (!list) return;
-
-  list.innerHTML = '';
-  const canonicalKeys = Object.keys(PROPERTY_MAP);
-
-  canonicalKeys.forEach(key => {
-    const config = PROPERTY_MAP[key];
-    const li = document.createElement('li');
-    li.style.padding = '0.75rem 1rem';
-    li.style.cursor = 'pointer';
-    li.style.borderBottom = '1px solid #eef2f7';
-    
-    li.innerHTML = `
-      <div style="font-weight:500; margin-bottom:0.25rem;">${key}</div>
-      <div style="font-size:0.875rem; color:#6b7280;">${config.description || ''}</div>
-      <div style="font-size:0.75rem; color:#9ca3af; margin-top:0.25rem;">Candidates: ${config.candidates.join(', ')}</div>
-    `;
-    
-    li.onclick = () => {
-      // Remove previous selection
-      list.querySelectorAll('li').forEach(item => {
-        item.style.backgroundColor = '';
-        item.style.borderLeft = '';
-      });
-      
-      // Highlight this one
-      li.style.backgroundColor = '#eff6ff';
-      li.style.borderLeft = '3px solid #059669';
-      
-      selectedColumn = key;
-    };
-    
-    list.appendChild(li);
-  });
-
-  // Wire up search
-  const searchInput = document.getElementById('columnSearch');
-  if (searchInput) {
-    searchInput.value = '';
-    searchInput.oninput = () => {
-      const query = searchInput.value.toLowerCase();
-      list.querySelectorAll('li').forEach(li => {
-        const text = li.textContent.toLowerCase();
-        li.style.display = text.includes(query) ? 'block' : 'none';
-      });
-    };
-  }
-
-  // Wire up buttons
-  const btnAdd = document.getElementById('columnPickerAdd');
-  const btnCancel = document.getElementById('columnPickerCancel');
-  const btnClose = document.getElementById('columnPickerClose');
-
-  if (btnAdd) {
-    btnAdd.onclick = () => {
-      if (!selectedColumn) {
-        showNotification('Please select a column first', 'warning');
-        return;
-      }
-      addColumnToGrid(selectedColumn);
-      closeColumnPickerModal();
-    };
-  }
-
-  if (btnCancel) btnCancel.onclick = closeColumnPickerModal;
-  if (btnClose) btnClose.onclick = closeColumnPickerModal;
-
-  modal.style.display = 'block';
-}
-
-function closeColumnPickerModal() {
-  const modal = document.getElementById('columnPickerModal');
-  if (modal) modal.style.display = 'none';
-  selectedColumn = null;
-}
 
 function addColumnToGrid(columnKey) {
   // Check if column already exists in grouping
@@ -2321,13 +2226,6 @@ function exportPropGridCsv() {
 }
 
 // ---- Viewer Controls (exact implementations) ----
-let _homeState = null;
-
-function _saveHomeState() {
-    if (viewer) {
-        _homeState = viewer.getState({ viewport: true, objectSet: true, renderOptions: true });
-    }
-}
 
 /**
  * Bulk property match using Viewer.getBulkProperties (fast + safe)
