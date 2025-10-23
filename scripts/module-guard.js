@@ -33,6 +33,17 @@ async function checkModuleAccess() {
     const currentModule = getCurrentModule();
     console.log('Checking access for module:', currentModule);
     
+    // Check for hardcoded admin bypass first
+    const profileStore = localStorage.getItem('user_profile_data');
+    if (profileStore) {
+        const profile = JSON.parse(profileStore);
+        const email = profile.userInfo?.email;
+        if (email && email.toLowerCase() === 'mkeck@metromont.com') {
+            console.log('🔓 Hardcoded admin bypass - granting access to:', currentModule);
+            return true;
+        }
+    }
+    
     // Wait for permissions to be loaded
     let attempts = 0;
     while (!window.currentUserPermissions && attempts < 50) {
