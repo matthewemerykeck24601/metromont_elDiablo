@@ -70,17 +70,27 @@ class UserProfile {
                 
                 // Store user permissions in memory for route guards
                 const isAdmin = await window.ACL.isAdmin(email);
-                window.currentUserPermissions = {
-                    admin: isAdmin,
-                    modules: new Set() // Will be populated by individual module checks
-                };
                 
-                // Populate modules for non-admin users
-                if (!isAdmin) {
-                    for (const module of window.ACL.MODULES) {
-                        const hasAccess = await window.ACL.canAccess(email, module);
-                        if (hasAccess) {
-                            window.currentUserPermissions.modules.add(module);
+                // Hardcoded admin bypass for Matt Keck
+                if (email && email.toLowerCase() === 'mkeck@metromont.com') {
+                    window.currentUserPermissions = {
+                        admin: true,
+                        modules: new Set(['admin', 'db-manager', 'erection', 'qc', 'quality', 'design', 'production', 'inventory', 'haul', 'fab'])
+                    };
+                    console.log('🔓 Hardcoded admin permissions set for:', email);
+                } else {
+                    window.currentUserPermissions = {
+                        admin: isAdmin,
+                        modules: new Set() // Will be populated by individual module checks
+                    };
+                    
+                    // Populate modules for non-admin users
+                    if (!isAdmin) {
+                        for (const module of window.ACL.MODULES) {
+                            const hasAccess = await window.ACL.canAccess(email, module);
+                            if (hasAccess) {
+                                window.currentUserPermissions.modules.add(module);
+                            }
                         }
                     }
                 }

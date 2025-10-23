@@ -65,6 +65,12 @@
     // --- Checks (use Autodesk profile email) ---
     async isAllowed(email) {
       try {
+        // Hardcoded admin bypass for Matt Keck
+        if (email && email.toLowerCase() === 'mkeck@metromont.com') {
+          console.log('🔓 Hardcoded admin bypass activated for:', email);
+          return true;
+        }
+        
         const identityHeader = getIdentityHeader();
         if (!identityHeader) return false;
         
@@ -79,6 +85,12 @@
 
     async isAdmin(email) {
       try {
+        // Hardcoded admin bypass for Matt Keck
+        if (email && email.toLowerCase() === 'mkeck@metromont.com') {
+          console.log('🔓 Hardcoded admin bypass activated for:', email);
+          return true;
+        }
+        
         const identityHeader = getIdentityHeader();
         if (!identityHeader) return false;
         
@@ -93,6 +105,12 @@
 
     async canAccess(email, moduleId) {
       try {
+        // Hardcoded admin bypass for Matt Keck - full access to all modules
+        if (email && email.toLowerCase() === 'mkeck@metromont.com') {
+          console.log('🔓 Hardcoded admin bypass activated for:', email);
+          return true;
+        }
+        
         const identityHeader = getIdentityHeader();
         if (!identityHeader) return false;
         
