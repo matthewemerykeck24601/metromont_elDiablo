@@ -3,8 +3,7 @@
 
 console.log('Admin module loaded');
 
-// Import DB client functions
-import { dbListUsers, dbGetUserById, dbUpsertUser, dbDeleteUserByEmail, getIdentityHeader } from './db-client.js';
+// DB client functions will be loaded dynamically
 
 let currentUserEmail = null;
 let table, tbody, checkAll, removeBtn, addBtn, nameInput, emailInput;
@@ -72,9 +71,24 @@ async function initAdmin() {
   }
 }
 
+// Load DB client functions dynamically
+let dbListUsers, dbGetUserById, dbUpsertUser, dbDeleteUserByEmail, getIdentityHeader;
+
+async function loadDBClient() {
+  if (!dbListUsers) {
+    const dbClient = await import('./db-client.js');
+    dbListUsers = dbClient.dbListUsers;
+    dbGetUserById = dbClient.dbGetUserById;
+    dbUpsertUser = dbClient.dbUpsertUser;
+    dbDeleteUserByEmail = dbClient.dbDeleteUserByEmail;
+    getIdentityHeader = dbClient.getIdentityHeader;
+  }
+}
+
 // DB helper functions
 async function checkUserIsAdmin(email) {
   try {
+    await loadDBClient();
     const rowId = normalizeId(email);
     const user = await dbGetUserById(rowId, identityHeader);
     return user?.admin || false;
@@ -86,6 +100,7 @@ async function checkUserIsAdmin(email) {
 
 async function loadUsersForGrid() {
   try {
+    await loadDBClient();
     const rows = await dbListUsers(identityHeader);
     return rows.map(row => ({
       email: row.email,
@@ -102,6 +117,7 @@ async function loadUsersForGrid() {
 
 async function saveUserFromGrid(user) {
   try {
+    await loadDBClient();
     return await dbUpsertUser({
       ...user,
       hub_id: identityHeader?.user_metadata?.hubId || null,
@@ -116,6 +132,7 @@ async function saveUserFromGrid(user) {
 
 async function deleteUsersFromGrid(emails) {
   try {
+    await loadDBClient();
     for (const email of emails) {
       await dbDeleteUserByEmail(email, identityHeader);
     }
@@ -131,6 +148,7 @@ function normalizeId(s) {
 
 async function ensureMattIsAdmin() {
   try {
+    await loadDBClient();
     const mattEmail = 'mkeck@metromont.com';
     const rowId = normalizeId(mattEmail);
     const matt = await dbGetUserById(rowId, identityHeader);
