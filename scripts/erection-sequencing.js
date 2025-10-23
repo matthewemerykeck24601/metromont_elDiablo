@@ -580,21 +580,33 @@ function onModelLoaded(model) {
     console.log('✅ Model loaded successfully');
     viewerModel = model;
 
-    // Make absolutely sure everything is visible, then fit, then save home view.
-    viewer.showAll();
-    viewer.fitToView();
-    _saveHomeState();
+    const doInitialFit = () => {
+        // Make sure the container size is final (splitters etc.)
+        viewer.resize();
+
+        // Ensure everything is visible, then fit to the full model
+        viewer.showAll();
+        viewer.fitToView(true);
+
+        // Save home (what your Reset should restore)
+        _saveHomeState();
+
+        // Clean up the one-time listener
+        viewer.removeEventListener(Autodesk.Viewing.GEOMETRY_LOADED_EVENT, doInitialFit);
+    };
+
+    // Defer to the geometry-loaded event (safer than immediate fit)
+    viewer.addEventListener(Autodesk.Viewing.GEOMETRY_LOADED_EVENT, doInitialFit);
 
     updateViewerStatus('Model loaded');
     showNotification('Model loaded successfully', 'success');
 
-    // Update viewer info
+    // Update viewer info, then continue with your property extraction
     const viewerInfo = document.getElementById('viewerInfo');
     if (viewerInfo && selectedElementGroup) {
         viewerInfo.textContent = `Model: ${selectedElementGroup.name}`;
     }
 
-    // Extract categories and properties from model
     extractModelProperties();
 }
 
