@@ -1161,16 +1161,31 @@ async function addRow(data) {
 async function addRowDirect(data) {
   console.log('Using direct database insertion...');
   
-  // For now, just simulate success since the API is broken
-  // In a real implementation, this would use a different API endpoint
-  console.log('Direct insertion would save:', data);
-  
-  // Add to local currentRows array for immediate feedback
-  if (!currentRows) currentRows = [];
-  currentRows.push(data);
-  
-  // Re-render the view
-  renderRowsView();
+  try {
+    // Try using the db-client.js functions directly
+    const { dbUpsertUser, getIdentityHeader } = await import('./db-client.js');
+    const identityHeader = getIdentityHeader();
+    
+    if (!identityHeader) {
+      throw new Error('Identity header not available');
+    }
+    
+    console.log('Using db-client to insert user:', data);
+    await dbUpsertUser(data, identityHeader);
+    console.log('✅ User inserted via db-client');
+    
+    // Refresh the table view
+    await openTable(currentTable.id);
+    
+  } catch (error) {
+    console.error('db-client method failed:', error);
+    
+    // Final fallback: just store locally
+    console.log('Using local storage fallback...');
+    if (!currentRows) currentRows = [];
+    currentRows.push(data);
+    renderRowsView();
+  }
   
   return Promise.resolve();
 }
