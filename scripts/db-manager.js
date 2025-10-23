@@ -598,6 +598,15 @@ async function openTable(tableId) {
 
   console.log('Opening table:', tableId);
 
+  // Add visual feedback for selected table
+  document.querySelectorAll('[data-table]').forEach(el => {
+    el.classList.remove('selected');
+  });
+  const selectedElement = document.querySelector(`[data-table="${tableId}"]`);
+  if (selectedElement) {
+    selectedElement.classList.add('selected');
+  }
+
   // Switch to Rows tab
   switchTab('rows');
 
@@ -848,6 +857,13 @@ async function createTable() {
 function showAddRowModal() {
   if (!currentTable) return;
 
+  // Check if this is the users table and show user-friendly form
+  if (currentTable.id === 'users' || currentTable.name === 'users') {
+    showUserForm();
+    return;
+  }
+
+  // For other tables, use the JSON input
   const data = prompt('Enter row data as JSON:');
   if (!data) return;
 
@@ -856,6 +872,247 @@ function showAddRowModal() {
     addRow(parsed);
   } catch (e) {
     showNotification('Invalid JSON', 'error');
+  }
+}
+
+// User-friendly form for adding users
+function showUserForm() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3>Add New User</h3>
+        <button class="modal-close" onclick="closeUserForm()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="userForm">
+          <div class="form-group">
+            <label for="userEmail">Email Address *</label>
+            <input type="email" id="userEmail" required placeholder="user@example.com">
+            <small>This will be used as the user's unique ID</small>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="userFirstName">First Name</label>
+              <input type="text" id="userFirstName" placeholder="John">
+            </div>
+            <div class="form-group">
+              <label for="userLastName">Last Name</label>
+              <input type="text" id="userLastName" placeholder="Doe">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="userAdmin"> 
+              Admin User
+            </label>
+            <small>Admin users have access to all modules</small>
+          </div>
+          
+          <div class="form-group">
+            <label>Module Access</label>
+            <div class="checkbox-grid">
+              <label><input type="checkbox" name="modules" value="quality"> Quality Control</label>
+              <label><input type="checkbox" name="modules" value="design"> Design Development</label>
+              <label><input type="checkbox" name="modules" value="production"> Production Scheduling</label>
+              <label><input type="checkbox" name="modules" value="db-manager"> Database Manager</label>
+              <label><input type="checkbox" name="modules" value="erection"> Erection Sequencing</label>
+              <label><input type="checkbox" name="modules" value="qc"> Quality Control (QC)</label>
+              <label><input type="checkbox" name="modules" value="inventory"> Inventory Tracking</label>
+              <label><input type="checkbox" name="modules" value="haul"> Haul Management</label>
+              <label><input type="checkbox" name="modules" value="fab"> Fab Shop</label>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="userStatus">Status</label>
+            <select id="userStatus">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeUserForm()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveUser()">Add User</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Add styles for the form
+  const style = document.createElement('style');
+  style.textContent = `
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .modal-header h3 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: #6b7280;
+    }
+    .modal-body {
+      padding: 1.5rem;
+    }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #e5e7eb;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+      color: #374151;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 0.875rem;
+    }
+    .form-group small {
+      display: block;
+      margin-top: 0.25rem;
+      color: #6b7280;
+      font-size: 0.75rem;
+    }
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .checkbox-grid label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: normal;
+      margin-bottom: 0;
+    }
+    .checkbox-grid input[type="checkbox"] {
+      width: auto;
+    }
+    
+    /* Table selection styles */
+    [data-table].selected {
+      background-color: #3b82f6 !important;
+      color: white !important;
+    }
+    [data-table].selected svg {
+      color: white !important;
+    }
+    [data-table]:hover {
+      background-color: #f3f4f6;
+    }
+    [data-table].selected:hover {
+      background-color: #2563eb !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function closeUserForm() {
+  const modal = document.querySelector('.modal-overlay');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+async function saveUser() {
+  const email = document.getElementById('userEmail').value;
+  const firstName = document.getElementById('userFirstName').value;
+  const lastName = document.getElementById('userLastName').value;
+  const isAdmin = document.getElementById('userAdmin').checked;
+  const status = document.getElementById('userStatus').value;
+  
+  if (!email) {
+    showNotification('Email is required', 'error');
+    return;
+  }
+  
+  // Get selected modules
+  const moduleCheckboxes = document.querySelectorAll('input[name="modules"]:checked');
+  const modules = {};
+  moduleCheckboxes.forEach(cb => {
+    modules[cb.value] = true;
+  });
+  
+  // If admin, enable all modules
+  if (isAdmin) {
+    const allModules = ['quality', 'design', 'production', 'db-manager', 'erection', 'qc', 'inventory', 'haul', 'fab'];
+    allModules.forEach(module => {
+      modules[module] = true;
+    });
+  }
+  
+  const userData = {
+    id: email.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+    email: email.toLowerCase(),
+    full_name: `${firstName} ${lastName}`.trim() || email,
+    admin: isAdmin,
+    modules: modules,
+    status: status,
+    hub_id: 'b.f61b9f7b-5481-4d25-a552-365ba99077b8',
+    createdAt: new Date().toISOString(),
+    createdBy: 'mkeck@metromont.com'
+  };
+  
+  try {
+    await addRow(userData);
+    closeUserForm();
+    showNotification('User added successfully!', 'success');
+  } catch (error) {
+    console.error('Failed to add user:', error);
+    showNotification('Failed to add user: ' + error.message, 'error');
   }
 }
 
@@ -1171,6 +1428,9 @@ window.createTable = createTable;
 window.closeFolderModal = closeFolderModal;
 window.createFolder = createFolder;
 window.showAddRowModal = showAddRowModal;
+window.showUserForm = showUserForm;
+window.closeUserForm = closeUserForm;
+window.saveUser = saveUser;
 window.editRow = editRow;
 window.deleteRow = deleteRow;
 window.exportTableCsv = exportTableCsv;
