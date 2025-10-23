@@ -590,11 +590,14 @@ function showTableSchema(tableId) {
 
 // Open table and show rows
 async function openTable(tableId) {
-  currentTable = tables.find(t => t.id === tableId);
+  currentTable = allTables.find(t => t.id === tableId);
   if (!currentTable) {
     showNotification('Table not found', 'error');
     return;
   }
+  
+  console.log('Setting currentTable to:', currentTable);
+  console.log('Table ID:', tableId);
 
   console.log('Opening table:', tableId);
 
