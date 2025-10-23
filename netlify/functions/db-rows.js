@@ -127,14 +127,27 @@ export async function handler(event) {
     const oss = createOssClient(event);
     const bucket = getBucket();
 
-    // Extract tableId from path
-    const pathMatch = event.path.match(/\/db-rows\/([^\/]+)(?:\/([^\/]+))?/);
-    if (!pathMatch) {
+    // Extract tableId / rowId from either pretty URL (/api/db/rows/:tableId/:rowId)
+    // or legacy function URL (/.netlify/functions/db-rows/:tableId/:rowId)
+    let tableId, rowId;
+    try {
+      const url = new URL(event.rawUrl || `http://internal${event.path || ''}`);
+      const parts = url.pathname.split('/').filter(Boolean);
+      // .../api/db/rows/:tableId/[:rowId]
+      const rowsIdx = parts.indexOf('rows');
+      if (rowsIdx !== -1) {
+        tableId = parts[rowsIdx + 1];
+        rowId = parts[rowsIdx + 2];
+      }
+    } catch (_) {}
+    if (!tableId) {
+      // Fallback: legacy function path
+      const m = (event.path || '').match(/\/db-rows\/([^\/]+)(?:\/([^\/]+))?/);
+      if (m) { tableId = m[1]; rowId = m[2]; }
+    }
+    if (!tableId) {
       return errorResponse(400, 'Invalid path - tableId required');
     }
-
-    const tableId = pathMatch[1];
-    const rowId = pathMatch[2]; // May be undefined for GET all / POST
 
     // GET - List all rows in table
     if (event.httpMethod === 'GET' && !rowId) {
