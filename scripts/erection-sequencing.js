@@ -2725,13 +2725,19 @@ function initVerticalSplitter() {
     const dy = e.clientY - startY;
     const newHeight = Math.max(minViewer, startHeight + dy);
 
-    // prevent bottom panel collapsing
-    const mainVertical = document.getElementById('main-vertical');
-    if (!mainVertical) return;
+    // Allow viewer to grow beyond container - don't constrain by main-vertical height
+    // The viewer should be able to expand and make the whole page taller
+    viewerPanel.style.height = newHeight + 'px';
     
-    const available = mainVertical.clientHeight - splitter.offsetHeight;
-    const maxViewer = available - minBottom;
-    viewerPanel.style.height = Math.min(newHeight, maxViewer) + 'px';
+    // Update the main-vertical container height to accommodate the larger viewer
+    const mainVertical = document.getElementById('main-vertical');
+    if (mainVertical) {
+      const viewerHeight = viewerPanel.getBoundingClientRect().height;
+      const splitterHeight = splitter.offsetHeight;
+      const bottomHeight = bottomPanel.getBoundingClientRect().height;
+      const totalHeight = viewerHeight + splitterHeight + bottomHeight;
+      mainVertical.style.height = totalHeight + 'px';
+    }
   }
 
   function stopDragging() {

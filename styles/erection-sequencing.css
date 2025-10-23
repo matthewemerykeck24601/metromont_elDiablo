@@ -402,6 +402,7 @@ body.auth-loading {
     overflow: hidden;
     flex: 1;
     min-height: 0;
+    height: auto; /* Allow dynamic height growth */
 }
 
 .viewer-toolbar {
@@ -597,6 +598,7 @@ html, body {
   display: flex;
   flex-direction: column;
   min-height: 600px; /* Ensure minimum height */
+  height: auto; /* Allow dynamic height growth */
 }
 
 /* ===== Viewer panel ===== */
@@ -606,6 +608,7 @@ html, body {
   display: flex;
   flex-direction: column;
   background: #f7f9fb;
+  height: auto; /* Allow dynamic height growth */
 }
 
 /* Ensure your actual Viewer canvas fills the viewer panel */
