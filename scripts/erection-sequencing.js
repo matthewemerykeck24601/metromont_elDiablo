@@ -2632,6 +2632,69 @@ function showNotification(message, type = 'info') {
     }
 }
 
+// Initialize horizontal splitter for control panel/viewer resize
+function initHorizontalSplitter() {
+  const splitter = document.getElementById('horizontal-splitter');
+  const controlPanel = document.getElementById('control-panel');
+  const viewerSection = document.getElementById('viewer-section');
+  const ROOT_KEY = 'ess_control_panel_width_px';
+
+  if (!splitter || !controlPanel || !viewerSection) {
+    console.warn('Horizontal splitter elements not found, skipping splitter init');
+    return;
+  }
+
+  // Restore saved width
+  const savedPx = localStorage.getItem(ROOT_KEY);
+  if (savedPx) {
+    controlPanel.style.width = savedPx + 'px';
+  }
+
+  let dragging = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  const minControl = 280; // px
+  const minViewer = 400; // px
+
+  function onMouseMove(e) {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const newWidth = Math.max(minControl, startWidth + dx);
+
+    const container = document.querySelector('.container');
+    if (!container) return;
+    
+    const available = container.clientWidth - splitter.offsetWidth;
+    const maxControl = available - minViewer;
+    controlPanel.style.width = Math.min(newWidth, maxControl) + 'px';
+  }
+
+  function onMouseUp() {
+    if (!dragging) return;
+    dragging = false;
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+
+    // persist
+    const w = controlPanel.getBoundingClientRect().width;
+    localStorage.setItem(ROOT_KEY, String(w));
+  }
+
+  splitter.addEventListener('mousedown', (e) => {
+    dragging = true;
+    startX = e.clientX;
+    startWidth = controlPanel.getBoundingClientRect().width;
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+
+  // defensive: stop drag if window loses focus
+  window.addEventListener('blur', onMouseUp);
+  
+  console.log('✅ Horizontal splitter initialized');
+}
+
 // Initialize vertical splitter for viewer/properties resize
 function initVerticalSplitter() {
   const splitter = document.getElementById('splitter');
@@ -2700,6 +2763,9 @@ function initVerticalSplitter() {
 window.addEventListener('DOMContentLoaded', () => {
     console.log('Erection Sequencing page loaded');
     initializeErectionSequencing();
+    
+    // Initialize horizontal splitter for control panel/viewer resize
+    initHorizontalSplitter();
     
     // Expose viewer toolbar actions for HTML onclicks
     window.viewerReset = () => { 

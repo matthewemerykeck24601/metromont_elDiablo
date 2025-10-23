@@ -53,7 +53,7 @@
 
     <div class="container">
         <!-- Control Panel -->
-        <div class="control-panel">
+        <div class="control-panel" id="control-panel">
             <div class="control-section">
                 <h3>Project & Model Selection</h3>
                 
@@ -160,8 +160,11 @@
             </div>
         </div>
 
+        <!-- HORIZONTAL SPLITTER BETWEEN CONTROL PANEL AND VIEWER -->
+        <div id="horizontal-splitter" class="ess-horizontal-splitter" aria-label="Resize control panel" title="Drag to resize control panel"></div>
+
         <!-- Viewer Section with Resizable Splitter -->
-        <div class="viewer-section">
+        <div class="viewer-section" id="viewer-section">
             <!-- MAIN VERTICAL LAYOUT -->
             <div id="main-vertical" class="ess-vertical">
                 <!-- VIEWER PANEL -->
