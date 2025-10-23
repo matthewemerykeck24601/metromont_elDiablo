@@ -29,6 +29,12 @@
   status = 200
 
 [[redirects]]
+  from = "/api/db/rows/*"
+  to = "/.netlify/functions/db-rows"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/db/rows/:tableId/:rowId"
   to = "/.netlify/functions/db-rows"
   status = 200
