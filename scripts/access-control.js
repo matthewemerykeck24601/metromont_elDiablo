@@ -1,121 +1,114 @@
 // scripts/access-control.js
 // Client-side Access Control List (ACL) Manager
-// v1: localStorage-based, simple allowlist + per-module toggles
+// v2: Database-based, replaces localStorage with DB calls
 
 (() => {
-  const STORAGE_KEY = 'castlink_users_v1';
-  const SEED_URL = 'data/users.seed.json'; // optional, first-run
-
   const MODULES = ['quality', 'design', 'production', 'db-manager', 'inventory', 'haul', 'fab'];
 
-  function _loadFromStorage() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return null;
+  function normalizeId(s) {
+    return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   }
 
-  async function _seedIfEmpty() {
-    const existing = _loadFromStorage();
-    if (existing) return existing;
+  function getIdentityHeader() {
+    // Get user profile data from localStorage
+    const profileStore = localStorage.getItem('user_profile_data');
+    if (!profileStore) return null;
     
-    try {
-      const res = await fetch(SEED_URL);
-      if (res.ok) {
-        const seeded = await res.json();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-        console.log('✅ ACL seeded from', SEED_URL);
-        return seeded;
+    const profile = JSON.parse(profileStore);
+    const userInfo = profile.userInfo;
+    const selectedHub = profile.selectedHub;
+    
+    if (!userInfo?.email) return null;
+    
+    // Create identity header similar to what Netlify Identity would provide
+    return JSON.stringify({
+      email: userInfo.email,
+      user_metadata: {
+        hubId: selectedHub?.id || null,
+        full_name: userInfo.name || userInfo.email
       }
-    } catch (e) {
-      console.warn('⚠️ Could not load seed file:', e);
-    }
-    
-    // fallback: seed Matt as admin
-    const seeded = {
-      users: [{
-        name: 'Matt K',
-        email: 'mkeck@metromont.com',
-        admin: true,
-        modules: Object.fromEntries(MODULES.map(m => [m, true]))
-      }]
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-    console.log('✅ ACL seeded with default admin');
-    return seeded;
+    });
   }
 
-  async function loadUsers() {
-    return _loadFromStorage() || (await _seedIfEmpty());
-  }
-
-  function saveUsers(db) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-  }
-
-  function findUser(db, email) {
-    if (!db?.users) return null;
-    return db.users.find(u => (u.email || '').toLowerCase() === (email || '').toLowerCase());
-  }
-
-  function ensureUserShape(u) {
-    u.modules = u.modules || {};
-    return u;
+  async function dbGetUserById(rowId, identityHeader) {
+    const r = await fetch(`/api/db/rows/users/${rowId}`, {
+      headers: { 'x-netlify-identity': identityHeader }
+    });
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error('Failed to get user');
+    return r.json();
   }
 
   const ACL = {
     MODULES,
 
     async getDb() { 
-      return await loadUsers(); 
+      // Legacy method - return empty object for compatibility
+      return { users: [] }; 
     },
 
     async list() {
-      const db = await loadUsers();
-      return db.users.map(ensureUserShape);
+      // Legacy method - not used in DB version
+      return [];
     },
 
     async upsert(user) {
-      const db = await loadUsers();
-      const existing = findUser(db, user.email);
-      if (existing) {
-        Object.assign(existing, ensureUserShape(user));
-      } else {
-        db.users.push(ensureUserShape(user));
-      }
-      saveUsers(db);
+      // Legacy method - not used in DB version
+      console.warn('ACL.upsert is deprecated, use DB client directly');
     },
 
     async removeMany(emails) {
-      const db = await loadUsers();
-      const lowercaseEmails = emails.map(e => (e || '').toLowerCase());
-      db.users = db.users.filter(u => !lowercaseEmails.includes((u.email || '').toLowerCase()));
-      saveUsers(db);
+      // Legacy method - not used in DB version
+      console.warn('ACL.removeMany is deprecated, use DB client directly');
     },
 
     // --- Checks (use Autodesk profile email) ---
     async isAllowed(email) {
-      const db = await loadUsers();
-      return !!findUser(db, email);
+      try {
+        const identityHeader = getIdentityHeader();
+        if (!identityHeader) return false;
+        
+        const rowId = normalizeId(email);
+        const user = await dbGetUserById(rowId, identityHeader);
+        return !!user && user.status !== 'blocked';
+      } catch (error) {
+        console.error('Failed to check if user is allowed:', error);
+        return false;
+      }
     },
 
     async isAdmin(email) {
-      const db = await loadUsers();
-      const u = findUser(db, email);
-      return !!u?.admin;
+      try {
+        const identityHeader = getIdentityHeader();
+        if (!identityHeader) return false;
+        
+        const rowId = normalizeId(email);
+        const user = await dbGetUserById(rowId, identityHeader);
+        return !!user?.admin;
+      } catch (error) {
+        console.error('Failed to check admin status:', error);
+        return false;
+      }
     },
 
     async canAccess(email, moduleId) {
-      const db = await loadUsers();
-      const u = findUser(db, email);
-      if (!u) return false;
-      if (u.admin) return true; // admins have access to all modules
-      return !!u.modules?.[moduleId];
+      try {
+        const identityHeader = getIdentityHeader();
+        if (!identityHeader) return false;
+        
+        const rowId = normalizeId(email);
+        const user = await dbGetUserById(rowId, identityHeader);
+        if (!user) return false;
+        if (user.admin) return true; // admins have access to all modules
+        return !!user.modules?.[moduleId];
+      } catch (error) {
+        console.error('Failed to check module access:', error);
+        return false;
+      }
     }
   };
 
   window.ACL = ACL;
-  console.log('✅ ACL system loaded');
+  console.log('✅ ACL system loaded (DB-backed)');
 })();
 

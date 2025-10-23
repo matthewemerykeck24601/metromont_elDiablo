@@ -3,8 +3,12 @@
 
 console.log('Admin module loaded');
 
+// Import DB client functions
+import { dbListUsers, dbGetUserById, dbUpsertUser, dbDeleteUserByEmail, getIdentityHeader } from './db-client.js';
+
 let currentUserEmail = null;
 let table, tbody, checkAll, removeBtn, addBtn, nameInput, emailInput;
+let identityHeader = null;
 
 async function initAdmin() {
   console.log('Initializing Admin panel...');
@@ -18,13 +22,6 @@ async function initAdmin() {
   emailInput = document.getElementById('newUserEmail');
 
   try {
-    // Wait for ACL to be available
-    if (!window.ACL) {
-      console.error('❌ ACL not loaded');
-      showError('Access control system not loaded');
-      return;
-    }
-
     // Get current user from localStorage (set by user-profile.js)
     const profileStore = localStorage.getItem('user_profile_data');
     const profile = profileStore ? JSON.parse(profileStore) : null;
@@ -38,8 +35,15 @@ async function initAdmin() {
       return;
     }
 
-    // Enforce: Only admins can access this page
-    const isAdmin = await ACL.isAdmin(currentUserEmail);
+    // Get identity header for DB calls
+    identityHeader = getIdentityHeader();
+    if (!identityHeader) {
+      showError('Unable to get identity information. Please refresh and try again.');
+      return;
+    }
+
+    // Check if current user is admin using DB
+    const isAdmin = await checkUserIsAdmin(currentUserEmail);
     console.log('Is admin:', isAdmin);
     
     if (!isAdmin) {
@@ -68,24 +72,90 @@ async function initAdmin() {
   }
 }
 
+// DB helper functions
+async function checkUserIsAdmin(email) {
+  try {
+    const rowId = normalizeId(email);
+    const user = await dbGetUserById(rowId, identityHeader);
+    return user?.admin || false;
+  } catch (error) {
+    console.error('Failed to check admin status:', error);
+    return false;
+  }
+}
+
+async function loadUsersForGrid() {
+  try {
+    const rows = await dbListUsers(identityHeader);
+    return rows.map(row => ({
+      email: row.email,
+      name: row.full_name || row.name || row.email,
+      admin: row.admin || false,
+      modules: row.modules || {},
+      status: row.status || 'active'
+    }));
+  } catch (error) {
+    console.error('Failed to load users:', error);
+    return [];
+  }
+}
+
+async function saveUserFromGrid(user) {
+  try {
+    return await dbUpsertUser({
+      ...user,
+      hub_id: identityHeader?.user_metadata?.hubId || null,
+      updatedAt: new Date().toISOString(),
+      updatedBy: identityHeader?.email
+    }, identityHeader);
+  } catch (error) {
+    console.error('Failed to save user:', error);
+    throw error;
+  }
+}
+
+async function deleteUsersFromGrid(emails) {
+  try {
+    for (const email of emails) {
+      await dbDeleteUserByEmail(email, identityHeader);
+    }
+  } catch (error) {
+    console.error('Failed to delete users:', error);
+    throw error;
+  }
+}
+
+function normalizeId(s) {
+  return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
 async function ensureMattIsAdmin() {
-  const db = await ACL.getDb();
-  const matt = db.users.find(u => (u.email || '').toLowerCase() === 'mkeck@metromont.com');
-  
-  if (!matt) {
-    // Create Matt as admin if doesn't exist
-    await ACL.upsert({
-      name: 'Matt K',
-      email: 'mkeck@metromont.com',
-      admin: true,
-      modules: Object.fromEntries(ACL.MODULES.map(m => [m, true]))
-    });
-    console.log('✅ Created Matt K as admin');
-  } else if (!matt.admin) {
-    // Ensure Matt is always admin
-    matt.admin = true;
-    await ACL.upsert(matt);
-    console.log('✅ Restored Matt K admin status');
+  try {
+    const mattEmail = 'mkeck@metromont.com';
+    const rowId = normalizeId(mattEmail);
+    const matt = await dbGetUserById(rowId, identityHeader);
+    
+    if (!matt) {
+      // Create Matt as admin if doesn't exist
+      await dbUpsertUser({
+        email: mattEmail,
+        full_name: 'Matt K',
+        admin: true,
+        modules: ['admin', 'db-manager', 'erection', 'qc', 'quality', 'design', 'production', 'inventory', 'haul', 'fab'],
+        status: 'active',
+        hub_id: identityHeader?.user_metadata?.hubId || null,
+        createdAt: new Date().toISOString(),
+        createdBy: 'system'
+      }, identityHeader);
+      console.log('✅ Created Matt K as admin');
+    } else if (!matt.admin) {
+      // Ensure Matt is always admin
+      matt.admin = true;
+      await dbUpsertUser(matt, identityHeader);
+      console.log('✅ Restored Matt K admin status');
+    }
+  } catch (error) {
+    console.error('Failed to ensure Matt is admin:', error);
   }
 }
 
@@ -115,7 +185,7 @@ function wireEvents() {
     
     if (!confirm(`Remove ${filtered.length} user(s)?`)) return;
     
-    await ACL.removeMany(filtered);
+    await deleteUsersFromGrid(filtered);
     showNotification(`Removed ${filtered.length} user(s)`, 'success');
     await renderTable();
     checkAll.checked = false;
@@ -142,19 +212,20 @@ async function onAddUser() {
   }
   
   // Check if user already exists
-  const db = await ACL.getDb();
-  const existing = db.users.find(u => (u.email || '').toLowerCase() === email);
+  const rowId = normalizeId(email);
+  const existing = await dbGetUserById(rowId, identityHeader);
   
   if (existing) {
     showNotification('User already exists', 'warning');
     return;
   }
   
-  await ACL.upsert({
-    name: name || email,
+  await saveUserFromGrid({
     email,
+    full_name: name || email,
     admin: false,
-    modules: Object.fromEntries(ACL.MODULES.map(m => [m, false]))
+    modules: {},
+    status: 'active'
   });
   
   showNotification(`User ${name || email} added`, 'success');
@@ -169,13 +240,15 @@ function toggleRemoveState() {
 }
 
 async function renderTable() {
-  const users = await ACL.list();
+  const users = await loadUsersForGrid();
   tbody.innerHTML = '';
 
   if (users.length === 0) {
     tbody.innerHTML = '<tr><td colspan="11" class="empty-row">No users yet</td></tr>';
     return;
   }
+
+  const MODULES = ['quality', 'design', 'production', 'db-manager', 'inventory', 'haul', 'fab'];
 
   users.forEach(u => {
     const tr = document.createElement('tr');
@@ -189,7 +262,7 @@ async function renderTable() {
       : `<input type="checkbox" class="row-check" disabled title="System administrator cannot be removed"/>`;
     
     // Module toggles
-    const modulesHtml = ACL.MODULES.map(m => {
+    const modulesHtml = MODULES.map(m => {
       const checked = u.admin || u.modules?.[m];
       const disabled = u.admin;
       return `
@@ -237,37 +310,49 @@ async function renderTable() {
     cb.addEventListener('change', async (e) => {
       const email = e.target.dataset.email;
       const mod = e.target.dataset.module;
-      const db = await ACL.getDb();
-      const u = db.users.find(x => (x.email || '').toLowerCase() === email.toLowerCase());
-      if (!u) return;
       
-      u.modules = u.modules || {};
-      u.modules[mod] = !!e.target.checked;
-      await ACL.upsert(u);
-      
-      console.log(`Updated ${email} - ${mod}: ${u.modules[mod]}`);
+      try {
+        const rowId = normalizeId(email);
+        const user = await dbGetUserById(rowId, identityHeader);
+        if (!user) return;
+        
+        user.modules = user.modules || {};
+        user.modules[mod] = !!e.target.checked;
+        await saveUserFromGrid(user);
+        
+        console.log(`Updated ${email} - ${mod}: ${user.modules[mod]}`);
+      } catch (error) {
+        console.error('Failed to update module access:', error);
+        showNotification('Failed to update module access', 'error');
+      }
     });
   });
 
   tbody.querySelectorAll('input.admin-toggle').forEach(cb => {
     cb.addEventListener('change', async (e) => {
       const email = e.target.dataset.email;
-      const db = await ACL.getDb();
-      const u = db.users.find(x => (x.email || '').toLowerCase() === email.toLowerCase());
-      if (!u) return;
       
-      u.admin = !!e.target.checked;
-      
-      // If admin → enable all modules
-      if (u.admin) {
-        u.modules = Object.fromEntries(ACL.MODULES.map(m => [m, true]));
+      try {
+        const rowId = normalizeId(email);
+        const user = await dbGetUserById(rowId, identityHeader);
+        if (!user) return;
+        
+        user.admin = !!e.target.checked;
+        
+        // If admin → enable all modules
+        if (user.admin) {
+          user.modules = Object.fromEntries(MODULES.map(m => [m, true]));
+        }
+        
+        await saveUserFromGrid(user);
+        console.log(`Updated ${email} - admin: ${user.admin}`);
+        
+        // Re-render to lock module toggles when admin
+        await renderTable();
+      } catch (error) {
+        console.error('Failed to update admin status:', error);
+        showNotification('Failed to update admin status', 'error');
       }
-      
-      await ACL.upsert(u);
-      console.log(`Updated ${email} - admin: ${u.admin}`);
-      
-      // Re-render to lock module toggles when admin
-      await renderTable();
     });
   });
 }

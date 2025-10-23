@@ -852,23 +852,18 @@ function clearStoredToken() {
     console.log('Token and hub data cleared');
 }
 
+// Permission helper function
+function canAccess(moduleId) {
+    const p = window.currentUserPermissions;
+    return p?.admin || (p?.modules?.has?.(moduleId) ?? false);
+}
+
 // Admin card injection
 async function injectAdminCardIfAuthorized() {
     try {
-        // Get current user email from profile
-        const profileStore = localStorage.getItem('user_profile_data');
-        const email = profileStore ? (JSON.parse(profileStore).userInfo?.email || '') : '';
-        
-        if (!email || !window.ACL) {
-            console.log('⚠️ Cannot check admin status - no email or ACL');
-            return;
-        }
-        
-        // Check if user is admin
-        const isAdmin = await window.ACL.isAdmin(email);
-        
-        if (isAdmin) {
-            console.log('✅ User is admin - injecting Admin card');
+        // Check if user has admin access using the new permission system
+        if (canAccess('admin')) {
+            console.log('✅ User has admin access - injecting Admin card');
             
             // Find the modules grid
             const grid = document.querySelector('.modules-grid');
@@ -900,7 +895,7 @@ async function injectAdminCardIfAuthorized() {
             grid.appendChild(adminCard);
             console.log('✅ Admin card injected');
         } else {
-            console.log('User is not admin - no Admin card');
+            console.log('User does not have admin access - no Admin card');
         }
     } catch (error) {
         console.error('❌ Failed to inject admin card:', error);
@@ -916,16 +911,10 @@ async function navigateToModule(module) {
         return;
     }
 
-    // Check ACL permissions
-    const stored = localStorage.getItem('user_profile_data');
-    const email = stored ? (JSON.parse(stored).userInfo?.email || '') : '';
-    
-    if (window.ACL && email) {
-        const hasAccess = await window.ACL.canAccess(email, module);
-        if (!hasAccess) {
-            showNotification('You do not have access to this module', 'warning');
-            return;
-        }
+    // Check permissions using the new system
+    if (!canAccess(module)) {
+        showNotification('You do not have access to this module', 'warning');
+        return;
     }
 
     switch (module) {

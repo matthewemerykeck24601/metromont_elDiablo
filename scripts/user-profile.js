@@ -53,21 +53,41 @@ class UserProfile {
                 console.warn('⚠️ No hub data provided');
             }
 
-            // Check if user is allowed (ACL check)
+            // Check if user is allowed (DB-based ACL check)
             const email = this.userInfo.email;
             if (window.ACL) {
                 const allowed = await window.ACL.isAllowed(email);
                 if (!allowed) {
-                    console.error('❌ User not in allowlist:', email);
-                    alert('Access restricted. Request access from system admin or helpdesk@metromont.com.');
+                    console.error('❌ User not in database or blocked:', email);
+                    alert('Access denied. Please contact an administrator to be added to the system.');
                     // Nuke tokens and prevent further initialization
                     sessionStorage.clear();
                     localStorage.removeItem('forge_token_backup');
-                    throw new Error('User not allowlisted');
+                    localStorage.removeItem('user_profile_data');
+                    throw new Error('User not in database or blocked');
                 }
-                console.log('✅ User allowlist check passed:', email);
+                console.log('✅ User database check passed:', email);
+                
+                // Store user permissions in memory for route guards
+                const isAdmin = await window.ACL.isAdmin(email);
+                window.currentUserPermissions = {
+                    admin: isAdmin,
+                    modules: new Set() // Will be populated by individual module checks
+                };
+                
+                // Populate modules for non-admin users
+                if (!isAdmin) {
+                    for (const module of window.ACL.MODULES) {
+                        const hasAccess = await window.ACL.canAccess(email, module);
+                        if (hasAccess) {
+                            window.currentUserPermissions.modules.add(module);
+                        }
+                    }
+                }
+                
+                console.log('✅ User permissions loaded:', window.currentUserPermissions);
             } else {
-                console.warn('⚠️ ACL system not loaded, skipping allowlist check');
+                console.warn('⚠️ ACL system not loaded, skipping database check');
             }
 
             this.isInitialized = true;
