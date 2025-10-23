@@ -590,7 +590,9 @@ function showTableSchema(tableId) {
 
 // Open table and show rows
 async function openTable(tableId) {
-  currentTable = allTables.find(t => t.id === tableId);
+  // Use the currently scoped table list; fall back to the full global list
+  const source = Array.isArray(tables) && tables.length ? tables : window.__allTables;
+  currentTable = source.find(t => t.id === tableId);
   if (!currentTable) {
     showNotification('Table not found', 'error');
     return;
