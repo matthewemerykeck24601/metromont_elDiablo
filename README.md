@@ -224,4 +224,13 @@ ADMIN_EMAILS=mkeck@metromont.com
 
 ---
 
+## 📍 **MILESTONE: Rollback Point**
+**Commit: `68f887d` - "fix: Add dual-path parser for db-rows function"**
+- Database-backed ACL system fully functional
+- User management working in DB Manager  
+- API endpoints fixed and operational
+- **ROLL BACK TO HERE IF NEXT REFACTOR FAILS**
+
+---
+
 **El Diablo MES** - *Connecting manufacturing excellence with project success through integrated technology solutions.*
