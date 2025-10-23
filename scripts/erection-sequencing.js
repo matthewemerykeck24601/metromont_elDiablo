@@ -2637,37 +2637,37 @@ function initHorizontalSplitter() {
   const splitter = document.getElementById('horizontal-splitter');
   const controlPanel = document.getElementById('control-panel');
   const viewerSection = document.getElementById('viewer-section');
-  const ROOT_KEY = 'ess_control_panel_width_px';
+  const ROOT_KEY = 'ess_control_panel_height_px';
 
   if (!splitter || !controlPanel || !viewerSection) {
     console.warn('Horizontal splitter elements not found, skipping splitter init');
     return;
   }
 
-  // Restore saved width
+  // Restore saved height
   const savedPx = localStorage.getItem(ROOT_KEY);
   if (savedPx) {
-    controlPanel.style.width = savedPx + 'px';
+    controlPanel.style.height = savedPx + 'px';
   }
 
   let dragging = false;
-  let startX = 0;
-  let startWidth = 0;
+  let startY = 0;
+  let startHeight = 0;
 
-  const minControl = 280; // px
-  const minViewer = 400; // px
+  const minControl = 200; // px
+  const minViewer = 300; // px
 
   function onMouseMove(e) {
     if (!dragging) return;
-    const dx = e.clientX - startX;
-    const newWidth = Math.max(minControl, startWidth + dx);
+    const dy = e.clientY - startY;
+    const newHeight = Math.max(minControl, startHeight + dy);
 
     const container = document.querySelector('.container');
     if (!container) return;
     
-    const available = container.clientWidth - splitter.offsetWidth;
+    const available = container.clientHeight - splitter.offsetHeight;
     const maxControl = available - minViewer;
-    controlPanel.style.width = Math.min(newWidth, maxControl) + 'px';
+    controlPanel.style.height = Math.min(newHeight, maxControl) + 'px';
   }
 
   function onMouseUp() {
@@ -2677,14 +2677,14 @@ function initHorizontalSplitter() {
     document.removeEventListener('mouseup', onMouseUp);
 
     // persist
-    const w = controlPanel.getBoundingClientRect().width;
-    localStorage.setItem(ROOT_KEY, String(w));
+    const h = controlPanel.getBoundingClientRect().height;
+    localStorage.setItem(ROOT_KEY, String(h));
   }
 
   splitter.addEventListener('mousedown', (e) => {
     dragging = true;
-    startX = e.clientX;
-    startWidth = controlPanel.getBoundingClientRect().width;
+    startY = e.clientY;
+    startHeight = controlPanel.getBoundingClientRect().height;
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   });
