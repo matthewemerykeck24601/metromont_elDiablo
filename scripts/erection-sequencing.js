@@ -447,6 +447,10 @@ function initializeViewer() {
         // Load Document Browser extension for view selector
         viewer.loadExtension('Autodesk.DocumentBrowser');
         
+        // Show bottom panel and setup splitters once viewer is ready
+        showBottomPanelAndSplitter();
+        setupSplitterResize();
+        
         updateViewerStatus('Viewer ready');
     });
 }
@@ -1676,12 +1680,7 @@ function showPropertiesGridPanel(show = true) {
         splitter.style.display = show ? 'block' : 'none';
     }
     
-    // If showing for the first time, ensure splitter is initialized
-    if (show && splitter && !splitter.dataset.initialized) {
-        console.log('🔧 Initializing vertical splitter...');
-        initVerticalSplitter();
-        splitter.dataset.initialized = 'true';
-    }
+    // Splitter is now initialized automatically when viewer is ready
     
     // Resize viewer when panel visibility changes
     setTimeout(() => {
@@ -2632,146 +2631,126 @@ function showNotification(message, type = 'info') {
     }
 }
 
-// Initialize horizontal splitter for control panel/viewer resize
-function initHorizontalSplitter() {
-  const splitter = document.getElementById('horizontal-splitter');
-  const controlPanel = document.getElementById('control-panel');
-  const viewerSection = document.getElementById('viewer-section');
-  const ROOT_KEY = 'ess_control_panel_height_px';
+// Show bottom panel and splitter once model UI is ready
+function showBottomPanelAndSplitter() {
+  const splitter = document.getElementById('splitter');
+  const bottomPanel = document.getElementById('bottom-panel');
 
-  if (!splitter || !controlPanel || !viewerSection) {
-    console.warn('Horizontal splitter elements not found, skipping splitter init');
-    return;
-  }
-
-  // Restore saved height
-  const savedPx = localStorage.getItem(ROOT_KEY);
-  if (savedPx) {
-    controlPanel.style.height = savedPx + 'px';
-  }
-
-  let dragging = false;
-  let startY = 0;
-  let startHeight = 0;
-
-  const minControl = 200; // px
-  const minViewer = 300; // px
-
-  function onMouseMove(e) {
-    if (!dragging) return;
-    const dy = e.clientY - startY;
-    const newHeight = Math.max(minControl, startHeight + dy);
-
-    const container = document.querySelector('.container');
-    if (!container) return;
-    
-    const available = container.clientHeight - splitter.offsetHeight;
-    const maxControl = available - minViewer;
-    controlPanel.style.height = Math.min(newHeight, maxControl) + 'px';
-  }
-
-  function onMouseUp() {
-    if (!dragging) return;
-    dragging = false;
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-
-    // persist
-    const h = controlPanel.getBoundingClientRect().height;
-    localStorage.setItem(ROOT_KEY, String(h));
-  }
-
-  splitter.addEventListener('mousedown', (e) => {
-    dragging = true;
-    startY = e.clientY;
-    startHeight = controlPanel.getBoundingClientRect().height;
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  });
-
-  // defensive: stop drag if window loses focus
-  window.addEventListener('blur', onMouseUp);
+  if (splitter) splitter.style.display = 'block';
+  if (bottomPanel) bottomPanel.style.display = 'flex'; // allow its flex children to lay out
   
-  console.log('✅ Horizontal splitter initialized');
+  console.log('✅ Bottom panel and splitter shown');
 }
 
-// Initialize vertical splitter for viewer/properties resize
-function initVerticalSplitter() {
-  const splitter = document.getElementById('splitter');
+// Setup splitter resize for bottom panel
+function setupSplitterResize() {
+  const main = document.getElementById('main-vertical');
   const viewerPanel = document.getElementById('viewer-panel');
   const bottomPanel = document.getElementById('bottom-panel');
-  const ROOT_KEY = 'ess_viewer_height_px';
+  const splitter = document.getElementById('splitter');
+  if (!main || !viewerPanel || !bottomPanel || !splitter) return;
 
-  if (!splitter || !viewerPanel || !bottomPanel) {
-    console.warn('Splitter elements not found, skipping splitter init');
-    return;
-  }
-
-  // 1) Restore height from localStorage (if present)
-  const savedPx = parseInt(localStorage.getItem(ROOT_KEY), 10);
-  if (!isNaN(savedPx) && savedPx > 180) {
-    viewerPanel.style.height = savedPx + 'px';
-  }
-
-  let dragging = false;
+  let isDragging = false;
   let startY = 0;
-  let startHeight = 0;
+  let startViewerH = 0;
+  let startBottomH = 0;
 
-  const minViewer = 200; // px
-  const minBottom = 160; // px
+  const MIN_VIEWER = 240; // sync with CSS
+  const MIN_BOTTOM = 180; // sync with CSS
 
-  function onMouseMove(e) {
-    if (!dragging) return;
+  const onMouseMove = (e) => {
+    if (!isDragging) return;
     const dy = e.clientY - startY;
-    const newHeight = Math.max(minViewer, startHeight + dy);
 
-    // Allow viewer to grow beyond container - don't constrain by main-vertical height
-    // The viewer should be able to expand and make the whole page taller
-    viewerPanel.style.height = newHeight + 'px';
-    
-    // Update the main-vertical container height to accommodate the larger viewer
-    const mainVertical = document.getElementById('main-vertical');
-    if (mainVertical) {
-      const viewerHeight = viewerPanel.getBoundingClientRect().height;
-      const splitterHeight = splitter.offsetHeight;
-      const bottomHeight = bottomPanel.getBoundingClientRect().height;
-      const totalHeight = viewerHeight + splitterHeight + bottomHeight;
-      mainVertical.style.height = totalHeight + 'px';
+    // grow viewer when dragging splitter downward; shrink bottom panel
+    let newViewer = Math.max(MIN_VIEWER, startViewerH + dy);
+    let newBottom = Math.max(MIN_BOTTOM, startBottomH - dy);
+
+    // If we hit a min-height, adjust the counterpart so totals remain sensible
+    const total = newViewer + newBottom;
+    // optionally clamp by container height if desired
+
+    viewerPanel.style.flex = '0 0 ' + newViewer + 'px';
+    bottomPanel.style.flex = '0 0 ' + newBottom + 'px';
+
+    // Nudge the APS viewer so it repaints to the new size
+    if (window.viewer && typeof window.viewer.resize === 'function') {
+      window.viewer.resize();
     }
-  }
+  };
 
-  function stopDragging() {
-    if (!dragging) return;
-    dragging = false;
+  const endDrag = () => {
+    if (!isDragging) return;
+    isDragging = false;
     document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', stopDragging);
-    // persist
-    const h = viewerPanel.getBoundingClientRect().height | 0;
-    localStorage.setItem(ROOT_KEY, String(h));
-  }
+    document.removeEventListener('mouseup', endDrag);
+  };
 
   splitter.addEventListener('mousedown', (e) => {
-    console.log('🖱️ Splitter mousedown event');
-    dragging = true;
+    e.preventDefault();
+    isDragging = true;
+    const vpRect = viewerPanel.getBoundingClientRect();
+    const bpRect = bottomPanel.getBoundingClientRect();
     startY = e.clientY;
-    startHeight = viewerPanel.getBoundingClientRect().height;
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', stopDragging);
-  });
+    startViewerH = vpRect.height;
+    startBottomH = bpRect.height;
 
-  // defensive: stop drag if window loses focus
-  window.addEventListener('blur', stopDragging);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', endDrag);
+  });
   
-  console.log('✅ Vertical splitter initialized');
+  console.log('✅ Bottom splitter resize setup');
 }
+
+// Setup top splitter resize for control panel vs viewer
+function setupTopSplitterResize() {
+  const splitter = document.getElementById('horizontal-splitter');
+  const control = document.getElementById('control-panel');
+  const viewerSection = document.getElementById('viewer-section');
+  if (!splitter || !control || !viewerSection) return;
+
+  let isDragging = false;
+  let startY = 0;
+  let startControlH = 0;
+
+  const MIN_CONTROL = 160; // pick a reasonable min
+  const MIN_VIEWER = 320;  // ensure viewer remains usable
+
+  const onMove = (e) => {
+    if (!isDragging) return;
+    const dy = e.clientY - startY;
+    let newH = Math.max(MIN_CONTROL, startControlH + dy);
+    control.style.height = newH + 'px';
+    // viewer-section uses flex and will take remaining height
+    if (window.viewer?.resize) window.viewer.resize();
+  };
+
+  const end = () => {
+    isDragging = false;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', end);
+  };
+
+  splitter.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    isDragging = true;
+    startY = e.clientY;
+    startControlH = control.getBoundingClientRect().height;
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', end);
+  });
+  
+  console.log('✅ Top splitter resize setup');
+}
+
 
 // --- Boot the module on page load ---
 window.addEventListener('DOMContentLoaded', () => {
     console.log('Erection Sequencing page loaded');
     initializeErectionSequencing();
     
-    // Initialize horizontal splitter for control panel/viewer resize
-    initHorizontalSplitter();
+    // Setup top splitter for control panel vs viewer
+    setupTopSplitterResize();
     
     // Expose viewer toolbar actions for HTML onclicks
     window.viewerReset = () => { 
