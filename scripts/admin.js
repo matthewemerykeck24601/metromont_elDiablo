@@ -34,7 +34,8 @@ async function initAdmin() {
       return;
     }
 
-    // Get identity header for DB calls
+    // Load DB client and get identity header
+    await loadDBClient();
     identityHeader = getIdentityHeader();
     if (!identityHeader) {
       showError('Unable to get identity information. Please refresh and try again.');
