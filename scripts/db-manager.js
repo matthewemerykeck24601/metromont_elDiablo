@@ -618,6 +618,11 @@ async function openTable(tableId) {
   } catch (error) {
     console.error('Failed to load rows:', error);
     showNotification('Failed to load rows', 'error');
+    
+    // Still render the view even if loading rows failed
+    // This allows the user to add rows to empty tables
+    currentRows = [];
+    renderRowsView();
   }
 }
 
@@ -1117,7 +1122,14 @@ async function saveUser() {
 }
 
 async function addRow(data) {
-  if (!currentTable) return;
+  if (!currentTable) {
+    console.error('No current table selected');
+    showNotification('No table selected', 'error');
+    return;
+  }
+
+  console.log('Adding row to table:', currentTable.id);
+  console.log('Row data:', data);
 
   try {
     await api(`/rows/${currentTable.id}`, {
@@ -1129,6 +1141,7 @@ async function addRow(data) {
     await openTable(currentTable.id);
   } catch (error) {
     console.error('Failed to add row:', error);
+    showNotification('Failed to add row: ' + error.message, 'error');
   }
 }
 
