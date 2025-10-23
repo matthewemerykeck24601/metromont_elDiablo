@@ -1161,31 +1161,20 @@ async function addRow(data) {
 async function addRowDirect(data) {
   console.log('Using direct database insertion...');
   
-  try {
-    // Try using the db-client.js functions directly
-    const { dbUpsertUser, getIdentityHeader } = await import('./db-client.js');
-    const identityHeader = getIdentityHeader();
-    
-    if (!identityHeader) {
-      throw new Error('Identity header not available');
-    }
-    
-    console.log('Using db-client to insert user:', data);
-    await dbUpsertUser(data, identityHeader);
-    console.log('✅ User inserted via db-client');
-    
-    // Refresh the table view
-    await openTable(currentTable.id);
-    
-  } catch (error) {
-    console.error('db-client method failed:', error);
-    
-    // Final fallback: just store locally
-    console.log('Using local storage fallback...');
-    if (!currentRows) currentRows = [];
-    currentRows.push(data);
-    renderRowsView();
+  // Use the db-client.js functions directly
+  const { dbUpsertUser, getIdentityHeader } = await import('./db-client.js');
+  const identityHeader = getIdentityHeader();
+  
+  if (!identityHeader) {
+    throw new Error('Identity header not available');
   }
+  
+  console.log('Using db-client to insert user:', data);
+  await dbUpsertUser(data, identityHeader);
+  console.log('✅ User inserted via db-client');
+  
+  // Refresh the table view
+  await openTable(currentTable.id);
   
   return Promise.resolve();
 }
