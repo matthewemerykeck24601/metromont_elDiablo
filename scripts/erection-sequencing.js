@@ -285,6 +285,9 @@ async function onProjectChange() {
     const accProjectId = projectObj.id;            // ACC project ID (b.****)
     
     selectedProjectId = accProjectId;
+    // Make project available to services that need it (Parameters API, etc.)
+    window.selectedProjectId = accProjectId;
+    window.selectedProjectName = projectName;
     
     console.log('✅ Project selected:', accProjectId);
     console.log('📂 Project name:', projectName);
@@ -723,6 +726,7 @@ async function populateGroupingModalProperties() {
   const modelList = document.querySelector('#groupingModelList');     // <ul> under "Model properties"
   
   const addBtn = (ul, item) => {
+    if (!ul) { console.warn('Grouping UL missing for', item); return; }
     const li = document.createElement('li');
     li.className = 'list-item';
     li.dataset.key = item.key;
@@ -739,6 +743,7 @@ async function populateGroupingModalProperties() {
   };
 
   const addEmptyMessage = (ul, message) => {
+    if (!ul) { console.warn('Grouping UL missing for empty message'); return; }
     const li = document.createElement('li');
     li.className = 'list-item';
     li.style.color = '#6c757d';
@@ -1862,9 +1867,7 @@ function bindPropertiesGridUI() {
     };
   }
 
-  if (btnGrouping) {
-    btnGrouping.onclick = openGroupingModal;
-  }
+  // Grouping button is now handled by setupGroupingUI() - no inline onclick needed
 
   if (btnAddColumn) {
     btnAddColumn.onclick = openColumnPickerModal;
@@ -2174,54 +2177,7 @@ function addColumnToGrid(columnKey) {
 
 // ---- Grouping Modal Functions ----
 
-function openGroupingModal() {
-  const modal = document.getElementById('groupingModal');
-  if (!modal) return;
-
-  // Fill "available" lists. We derive buckets:
-  // Common = a small curated set; Extended = everything except Common; Model = __document__/__name__/etc.
-  const commonSet = new Set(['Category','Family','Type Name','CONTROL_MARK','CONTROL_NUMBER','Level']);
-  const modelBucket = ['__document__','__name__','__category__','__categoryId__','__instanceof__','__viewable_in__','__revit__'];
-
-  const availCommon = document.getElementById('groupAvailCommon');
-  const availExtended = document.getElementById('groupAvailExtended');
-  const availModel = document.getElementById('groupAvailModel');
-  [availCommon, availExtended, availModel].forEach(ul => ul && (ul.innerHTML = ''));
-
-  // Build a flat list of property display names from extracted categories
-  const allPropNames = new Set();
-  modelCategories.forEach((props, cat) => props.forEach(p => allPropNames.add(p)));
-
-  allPropNames.forEach(p => {
-    const li = document.createElement('li');
-    li.textContent = p;
-    li.tabIndex = 0;
-    li.onclick = () => addToGrouping(p);
-
-    if (modelBucket.includes(p)) {
-      availModel.appendChild(li.cloneNode(true)).onclick = () => addToGrouping(p);
-    } else if (commonSet.has(p)) {
-      availCommon.appendChild(li.cloneNode(true)).onclick = () => addToGrouping(p);
-    } else {
-      availExtended.appendChild(li.cloneNode(true)).onclick = () => addToGrouping(p);
-    }
-  });
-
-  // Fill current order
-  const orderUl = document.getElementById('groupOrder');
-  orderUl.innerHTML = '';
-  currentGrouping.forEach(p => appendGroupingItem(p));
-
-  // Wire modal controls
-  document.getElementById('groupingApply').onclick = applyGrouping;
-  document.getElementById('groupingCancel').onclick = closeGroupingModal;
-  document.getElementById('groupingClose').onclick = closeGroupingModal;
-
-  // (Simple drag-sort: mouse-based re-order)
-  enableSimpleDragSort(orderUl);
-
-  modal.style.display = 'block';
-}
+// Legacy openGroupingModal function removed - now handled by setupGroupingUI()
 
 function closeGroupingModal() {
   const modal = document.getElementById('groupingModal');
