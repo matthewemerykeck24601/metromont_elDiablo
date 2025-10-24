@@ -1081,77 +1081,166 @@ function setupEventListeners() {
     }
 }
 
-// ---- Grouping UI wiring (open modal first, then async-populate) ----
-function setupGroupingUI() {
-  const btn = document.getElementById('btnEditGrouping');
-  const modal = document.getElementById('groupingModal');
-  const btnClose = document.getElementById('groupingClose');
-  const btnCancel = document.getElementById('groupingCancel');
-  const btnApply = document.getElementById('groupingApply');
+// ---- Extended Params & Grouping wiring ----
 
-  if (!btn || !modal) {
-    console.warn('Grouping controls not found in DOM');
+// Store anything the user picked so it can populate the Grouping "Extended" list
+let selectedExtendedParams = []; // [{key,label,group,description}]
+
+// Open the Grouping modal immediately, then populate lists (non-blocking)
+function openGroupingModal() {
+  const modal = document.getElementById('groupingModal');
+  if (!modal) return;
+  modal.style.display = 'block';
+
+  // Render current order immediately
+  if (typeof renderGroupingOrderList === 'function') {
+    renderGroupingOrderList();
+  }
+
+  // Populate lists without blocking the open
+  Promise.resolve().then(async () => {
+    // First render the Common/Model lists
+    await populateGroupingModalProperties();
+
+    // If user previously selected Extended params in the picker, inject them now
+    if (selectedExtendedParams.length) {
+      const extendedList = document.getElementById('groupingExtendedList');
+      if (extendedList) {
+        // Clear and re-add from selection (use the same card template used inside populateGroupingModalProperties)
+        extendedList.innerHTML = '';
+        selectedExtendedParams.forEach(p => {
+          const li = document.createElement('li');
+          li.className = 'list-item';
+          li.dataset.key = p.key;
+          li.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:.75rem;">
+              <div>
+                <div style="font-weight:600">${escapeHtml(p.label || p.key)}</div>
+                <div class="muted" style="font-size:12px">${escapeHtml(p.description || '')}</div>
+              </div>
+              <div class="muted" style="white-space:nowrap;font-size:12px">${escapeHtml(p.group || 'Extended')}</div>
+            </div>`;
+          li.addEventListener('click', () => addToGroupingOrder(p.key));
+          extendedList.appendChild(li);
+        });
+      }
+    }
+  });
+}
+
+function closeGroupingModal() {
+  const modal = document.getElementById('groupingModal');
+  if (modal) modal.style.display = 'none';
+}
+
+// Open Extended Params picker (from toolbar OR from inside Grouping)
+function openExtendedParamsPicker() {
+  const picker = document.getElementById('extendedParamsModal');
+  if (!picker) return;
+  picker.style.display = 'block';
+
+  // Load/refresh list from Parameter Service
+  loadExtendedParamsIntoPicker().catch(err => {
+    console.warn('Param picker load failed:', err);
+    const list = document.getElementById('extParamsList');
+    if (list) {
+      list.innerHTML = `<div class="muted" style="font-style:italic;">Parameter Service unavailable - check connection</div>`;
+    }
+  });
+}
+
+function closeExtendedParamsPicker() {
+  const picker = document.getElementById('extendedParamsModal');
+  if (picker) picker.style.display = 'none';
+}
+
+// Fetch from Parameter Service and render checkboxes in the picker
+async function loadExtendedParamsIntoPicker() {
+  const list = document.getElementById('extParamsList');
+  if (!list) return;
+  list.innerHTML = 'Loading…';
+
+  // Reuse the same fetch you already use for Grouping (with selected category if present)
+  const selectedCategory = (document.getElementById('esCategorySelect')?.value || '').trim();
+  const raw = await fetchExtendedParameters({ familyCategory: selectedCategory || undefined });
+  const params = normalizeParameterService(raw) || []; // you already import these helpers
+
+  // Render as checkbox list
+  if (!params.length) {
+    list.innerHTML = `<div class="muted" style="font-style:italic;">No extended parameters available</div>`;
     return;
   }
 
-  let inFlight = null; // track a single async populate at a time
+  const makeRow = (p) => `
+    <label style="display:flex;align-items:flex-start;gap:.5rem;padding:.25rem 0;border-bottom:1px solid #eee;">
+      <input type="checkbox" class="ext-param-cb" value="${p.key}">
+      <div>
+        <div style="font-weight:600">${escapeHtml(p.label || p.key)}</div>
+        <div class="muted" style="font-size:12px">${escapeHtml(p.description || '')}</div>
+        <div class="muted" style="font-size:12px">${escapeHtml(p.group || 'Extended')}</div>
+      </div>
+    </label>
+  `;
 
-  const openModal = () => {
-    // Open immediately so the user sees the UI, even if parameters fail
-    modal.style.display = 'block';
+  list.innerHTML = params.map(makeRow).join('');
 
-    // Kick off async populate on the next frame so layout is settled
-    // and we don't race any param calls before the UI exists.
-    if (!inFlight) {
-      inFlight = (async () => {
-        try {
-          await populateGroupingModalProperties();
-        } catch (e) {
-          console.warn('Grouping populate failed:', e);
-          // The population helper already renders a friendly empty-state on failures.
-        } finally {
-          inFlight = null;
-        }
-      })();
-    }
-  };
+  // Simple search filter inside the picker
+  const search = document.getElementById('extParamsSearch');
+  if (search) {
+    search.oninput = () => {
+      const q = search.value.trim().toLowerCase();
+      const rows = list.querySelectorAll('label');
+      rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+      });
+    };
+  }
 
-  const closeModal = () => {
-    modal.style.display = 'none';
-  };
+  // Keep the fetched params in memory so we can map keys back to meta when user clicks Add
+  loadExtendedParamsIntoPicker._cache = params;
+}
 
-  const applyAndClose = async () => {
-    try {
-      await applyGroupingToGrid(); // rebuilds the grid from currentGrouping
-    } catch (e) {
-      console.warn('Apply grouping failed:', e);
-    } finally {
-      closeModal();
-    }
-  };
+// Apply chosen params to the Grouping "Extended properties" list
+function applySelectedExtendedParams() {
+  const list = document.getElementById('extParamsList');
+  if (!list) return;
 
-  // Primary open entry
-  btn.addEventListener('click', openModal);
+  const checked = [...list.querySelectorAll('input.ext-param-cb:checked')].map(cb => cb.value);
+  const cache = loadExtendedParamsIntoPicker._cache || [];
+  selectedExtendedParams = cache.filter(p => checked.includes(p.key));
 
-  // Close routes
-  btnClose?.addEventListener('click', closeModal);
-  btnCancel?.addEventListener('click', closeModal);
+  closeExtendedParamsPicker();
 
-  // Apply route
-  btnApply?.addEventListener('click', applyAndClose);
+  // If Grouping modal is open, reflect immediately
+  const groupingOpen = document.getElementById('groupingModal')?.style.display === 'block';
+  if (groupingOpen) {
+    openGroupingModal(); // re-open logic will re-render with selection
+  }
+}
 
-  // Click-outside-to-close (backdrop)
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal();
+// Hook everything up once
+function setupGroupingUI() {
+  // Open Grouping (don't await parameter load)
+  document.getElementById('btnEditGrouping')?.addEventListener('click', openGroupingModal);
+
+  // Grouping modal close/apply
+  document.getElementById('groupingClose')?.addEventListener('click', closeGroupingModal);
+  document.getElementById('groupingCancel')?.addEventListener('click', closeGroupingModal);
+  document.getElementById('groupingApply')?.addEventListener('click', () => {
+    saveGrouping?.();
+    closeGroupingModal();
+    showNotification?.('Grouping updated', 'success');
   });
 
-  // Optional: Esc to close
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modal.style.display === 'block') closeModal();
-  });
+  // Open Extended Params picker from either place
+  document.getElementById('btnAddExtendedParams')?.addEventListener('click', openExtendedParamsPicker);
+  document.getElementById('btnAddExtendedParamsToolbar')?.addEventListener('click', openExtendedParamsPicker);
 
-  // Ensure saved grouping is loaded before first open
-  try { loadSavedGrouping?.(); } catch {}
+  // Picker buttons
+  document.getElementById('extParamsClose')?.addEventListener('click', closeExtendedParamsPicker);
+  document.getElementById('extParamsCancel')?.addEventListener('click', closeExtendedParamsPicker);
+  document.getElementById('extParamsAdd')?.addEventListener('click', applySelectedExtendedParams);
 }
 
 function bindRowIsolation() {
