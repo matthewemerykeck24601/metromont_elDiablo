@@ -823,6 +823,35 @@ async function populateGroupingModalProperties() {
 // Global grouping state
 window.currentGrouping = window.currentGrouping || ['ELEMENT_ID','CATEGORY','CONTROL_MARK','CONTROL_NUMBER'];
 
+// Helper function for HTML escaping
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Simple persistence helpers (per-element-group)
+function _groupingStorageKey() {
+  const eg = (window.selectedElementGroup && window.selectedElementGroup.id) || 'global';
+  return `es_grouping_${eg}`;
+}
+function loadSavedGrouping() {
+  try {
+    const raw = localStorage.getItem(_groupingStorageKey());
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) currentGrouping = ['ELEMENT_ID', ...parsed.filter(k => k !== 'ELEMENT_ID')];
+    }
+  } catch {}
+}
+function saveGrouping() {
+  try {
+    // never store the pinned ELEMENT_ID
+    const toSave = currentGrouping.filter(k => k !== 'ELEMENT_ID');
+    localStorage.setItem(_groupingStorageKey(), JSON.stringify(toSave));
+  } catch {}
+}
+
 function addToGroupingOrder(key) {
   if (key === 'ELEMENT_ID') return; // already pinned
   const first = 'ELEMENT_ID';
@@ -841,12 +870,71 @@ function renderGroupingOrderList() {
     li.textContent = k;
     if (k !== 'ELEMENT_ID') {
       li.draggable = true;
-      // add drag handlers if you want reordering; or simple up/down buttons
+      // drag handlers for reordering
+      li.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', k);
+        e.dropEffect = 'move';
+      });
+      li.addEventListener('dragover', (e) => e.preventDefault());
+      li.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const movedKey = e.dataTransfer.getData('text/plain');
+        const first = 'ELEMENT_ID';
+        const rest = currentGrouping.filter(x => x !== first);
+        const from = rest.indexOf(movedKey);
+        const to = rest.indexOf(k);
+        if (from > -1 && to > -1 && from !== to) {
+          rest.splice(to, 0, rest.splice(from, 1)[0]);
+          currentGrouping = [first, ...rest];
+          renderGroupingOrderList();
+        }
+      });
     }
     ul.appendChild(li);
   });
 }
 
+// Build table columns/rows from currentGrouping
+async function applyGroupingToGrid() {
+  const table = document.getElementById('propGrid');
+  if (!table) return;
+  const thead = table.querySelector('thead > tr');
+  const tbody = table.querySelector('tbody');
+  if (!thead || !tbody) return;
+
+  // Rebuild header from grouping (leave ELEMENT_ID friendly label)
+  thead.innerHTML = '';
+  currentGrouping.forEach((k) => {
+    const th = document.createElement('th');
+    th.textContent = (k === 'ELEMENT_ID') ? 'Element ID' : k;
+    thead.appendChild(th);
+  });
+
+  // Rebuild body from normalizedElements if available, else empty
+  // normalizedElements should contain at least ELEMENT_ID and whatever we can find
+  tbody.innerHTML = '';
+  const rows = (Array.isArray(normalizedElements) ? normalizedElements : []);
+
+  // Simple grouping: just map properties into the new column order
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    currentGrouping.forEach(k => {
+      const td = document.createElement('td');
+      // prefer canonical keys in PROPERTY_MAP; fall back to raw Model props
+      let val = row[k];
+      if (val === undefined && row.properties && typeof row.properties === 'object') {
+        val = row.properties[k];
+      }
+      td.textContent = (val !== undefined && val !== null) ? String(val) : '';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  // Persist selection locally (and optionally to server)
+  saveGrouping();
+  document.getElementById('propGridStatus')?.replaceChildren(document.createTextNode(`Columns: ${currentGrouping.join(' → ')}`));
+}
 
 // Handle category selection change
 function onCategoryChange(filterId) {
@@ -986,35 +1074,84 @@ function setupEventListeners() {
     }
 }
 
+// Wire modal open/close + Apply
 function setupGroupingUI() {
-    const btn = document.getElementById('btnEditGrouping');
-    const modal = document.getElementById('groupingModal');
-    const close = document.getElementById('groupingClose');
-    const cancel = document.getElementById('groupingCancel');
-    const apply = document.getElementById('groupingApply');
-    if (!btn || !modal) return;
-    
-    btn.addEventListener('click', async () => { 
-        modal.style.display = 'flex'; 
-        // Populate properties when modal opens
-        await populateGroupingModalProperties();
-    });
-    
-    [close, cancel].forEach(el => {
-        if (el) {
-            el.addEventListener('click', () => { 
-                modal.style.display = 'none'; 
-            });
-        }
-    });
-    
-    // Apply button - rebuild table with new grouping
-    if (apply) {
-        apply.addEventListener('click', async () => {
-            await rebuildPropertiesTable();
-            modal.style.display = 'none';
-        });
+  const openBtn  = document.getElementById('btnEditGrouping');
+  const modal    = document.getElementById('groupingModal');
+  const closeBtn = document.getElementById('groupingClose');
+  const cancel   = document.getElementById('groupingCancel');
+  const applyBtn = document.getElementById('groupingApply');
+
+  if (!modal) return;
+  const show = async () => {
+    loadSavedGrouping();
+    await populateGroupingModalProperties(); // builds the 3 lists + current order
+    modal.style.display = 'block';
+  };
+  const hide = () => { modal.style.display = 'none'; };
+
+  openBtn?.addEventListener('click', show);
+  closeBtn?.addEventListener('click', hide);
+  cancel?.addEventListener('click', hide);
+  applyBtn?.addEventListener('click', async () => {
+    await applyGroupingToGrid();
+    hide();
+  });
+
+  // ---- Extended Parameters Modal ----
+  const extModal  = document.getElementById('extendedParamsModal');
+  const extOpen   = document.getElementById('btnAddExtendedParams');
+  const extClose  = document.getElementById('extParamsClose');
+  const extCancel = document.getElementById('extParamsCancel');
+  const extAdd    = document.getElementById('extParamsAdd');
+  const extList   = document.getElementById('extParamsList');
+  const extSearch = document.getElementById('extParamsSearch');
+
+  let extItems = [];
+  let extSelected = new Set();
+
+  const renderExtList = (filter = '') => {
+    const f = filter.trim().toLowerCase();
+    extList.innerHTML = '';
+    extItems
+      .filter(i => !f || (i.label?.toLowerCase().includes(f) || i.key.toLowerCase().includes(f)))
+      .forEach(i => {
+        const id = `ext_${i.key}`;
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex;gap:.5rem;align-items:center;padding:.25rem 0;border-bottom:1px solid #f1f1f1';
+        div.innerHTML = `<input type="checkbox" id="${id}"><label for="${id}" style="flex:1;"><strong>${escapeHtml(i.label||i.key)}</strong><div class="muted" style="font-size:12px">${escapeHtml(i.description||'')}</div></label>`;
+        const cb = div.querySelector('input');
+        cb.checked = extSelected.has(i.key);
+        cb.addEventListener('change', () => cb.checked ? extSelected.add(i.key) : extSelected.delete(i.key));
+        extList.appendChild(div);
+      });
+  };
+  const showExt = async () => {
+    try {
+      // Placeholder for extended parameters - will be implemented when Parameter Service is available
+      extItems = [
+        { key: 'CUSTOM_PROPERTY_1', label: 'Custom Property 1', description: 'Example custom property' },
+        { key: 'CUSTOM_PROPERTY_2', label: 'Custom Property 2', description: 'Another example property' }
+      ];
+    } catch {
+      extItems = [];
     }
+    extSelected.clear();
+    renderExtList();
+    extModal.style.display = 'block';
+  };
+  const hideExt = () => extModal.style.display = 'none';
+
+  extOpen?.addEventListener('click', showExt);
+  extClose?.addEventListener('click', hideExt);
+  extCancel?.addEventListener('click', hideExt);
+  extSearch?.addEventListener('input', () => renderExtList(extSearch.value));
+  extAdd?.addEventListener('click', () => {
+    // Add chosen parameters to the right-hand "Grouping order" list
+    [...extSelected].forEach(k => addToGroupingOrder(k));
+    hideExt();
+  });
+}
     
     // Backdrop click to close
     modal.addEventListener('click', (e) => { 

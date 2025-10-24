@@ -321,6 +321,9 @@
               </details>
               <details>
                 <summary>Extended properties</summary>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin:.25rem 0 .5rem 0;">
+                  <button id="btnAddExtendedParams" class="btn btn-sm">Add properties…</button>
+                </div>
                 <ul id="groupingExtendedList" class="list selectable"></ul>
               </details>
               <details>
@@ -341,6 +344,24 @@
         <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:.5rem;">
           <button id="groupingCancel" class="btn">Cancel</button>
           <button id="groupingApply" class="btn btn-primary">Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Extended Parameters Picker Modal -->
+    <div id="extendedParamsModal" class="modal" style="display:none;">
+      <div class="modal-content" style="max-width:720px;">
+        <div class="modal-header">
+          <h3>Add properties from Parameter Service</h3>
+          <button id="extParamsClose" class="btn-icon" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <input id="extParamsSearch" type="search" placeholder="Search parameters…" style="width:100%;margin-bottom:.5rem;">
+          <div id="extParamsList" style="max-height:420px;overflow:auto;border:1px solid #ddd;border-radius:4px;padding:.5rem;"></div>
+        </div>
+        <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:.5rem;">
+          <button id="extParamsCancel" class="btn">Cancel</button>
+          <button id="extParamsAdd" class="btn btn-primary">Add Selected</button>
         </div>
       </div>
     </div>
