@@ -64,3 +64,9 @@
   from = "/api/admin/roles"
   to = "/.netlify/functions/admin-roles"
   status = 200
+
+# Autodesk Parameters proxy
+[[redirects]]
+  from = "/api/parameters"
+  to = "/.netlify/functions/parameter-service"
+  status = 200

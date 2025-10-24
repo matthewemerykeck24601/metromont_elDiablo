@@ -780,8 +780,9 @@ async function populateGroupingModalProperties() {
   if (extendedList) {
     extendedList.innerHTML = '';
     try {
-      const extRaw = await fetchExtendedParameters({ /* no category filter */ });
-      const ext = normalizeExtended(extRaw);
+      const selectedCategory = (document.getElementById('esCategorySelect')?.value || '').trim();
+      const extRaw = await fetchExtendedParameters({ familyCategory: selectedCategory || undefined });
+      const ext = normalizeParameterService(extRaw);
       
       if (ext && ext.length > 0) {
         ext.forEach(p => addBtn(extendedList, p));
@@ -1078,6 +1079,12 @@ function setupGroupingUI() {
 
   if (!modal) return;
   const show = async () => {
+    // Guard: ensure project is selected for Extended parameters
+    if (!window.selectedProjectId) {
+      showNotification('Select a project first to load Extended parameters.', 'warning');
+      return;
+    }
+
     loadSavedGrouping();
     await populateGroupingModalProperties(); // builds the 3 lists + current order
     modal.style.display = 'block';
