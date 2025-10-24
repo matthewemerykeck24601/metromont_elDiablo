@@ -1146,14 +1146,6 @@ function setupGroupingUI() {
     hideExt();
   });
 }
-    
-    // Backdrop click to close
-    modal.addEventListener('click', (e) => { 
-        if (e.target === modal) {
-            modal.style.display = 'none'; 
-        }
-    });
-}
 
 function bindRowIsolation() {
     const tbody = document.querySelector('#propGrid tbody');
