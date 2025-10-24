@@ -2262,11 +2262,7 @@ function addColumnToGrid(columnKey) {
 // ---- Grouping Modal Functions ----
 
 // Legacy openGroupingModal function removed - now handled by setupGroupingUI()
-
-function closeGroupingModal() {
-  const modal = document.getElementById('groupingModal');
-  if (modal) modal.style.display = 'none';
-}
+// Legacy closeGroupingModal function removed - now handled by setupGroupingUI()
 
 function addToGrouping(propName) {
   const orderUl = document.getElementById('groupOrder');
