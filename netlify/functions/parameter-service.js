@@ -28,6 +28,8 @@ export async function handler(event) {
   try {
     const url = new URL(event.rawUrl);
     const projectId = url.searchParams.get('projectId');
+    const accountId = url.searchParams.get('accountId') || '';
+    const projectGuid = url.searchParams.get('projectGuid') || projectId;
     const familyCategory = url.searchParams.get('familyCategory') || '';
     const search = url.searchParams.get('search') || '';
 
@@ -54,8 +56,15 @@ export async function handler(event) {
     }
 
     // Build Autodesk Parameters API request:
-    // Common pattern: GET /projects/{projectId}/parameters?[familyCategory=&search=]
-    const apiUrl = new URL(`${PARAMS_BASE}/projects/${encodeURIComponent(projectId)}/parameters`);
+    // Try account-scoped route first, fallback to project-scoped
+    let apiUrl;
+    if (accountId && projectGuid) {
+      // Account-scoped route: /accounts/{accountId}/projects/{projectGuid}/parameters
+      apiUrl = new URL(`${PARAMS_BASE}/accounts/${encodeURIComponent(accountId)}/projects/${encodeURIComponent(projectGuid)}/parameters`);
+    } else {
+      // Fallback to project-scoped route: /projects/{projectId}/parameters
+      apiUrl = new URL(`${PARAMS_BASE}/projects/${encodeURIComponent(projectId)}/parameters`);
+    }
     if (familyCategory) apiUrl.searchParams.set('familyCategory', familyCategory);
     if (search) apiUrl.searchParams.set('search', search);
 

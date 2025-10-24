@@ -288,6 +288,9 @@ async function onProjectChange() {
     // Make project available to services that need it (Parameters API, etc.)
     window.selectedProjectId = accProjectId;
     window.selectedProjectName = projectName;
+    // Also pass account info for Parameters API (account-scoped route)
+    window.selectedAccountId = globalHubData?.accountInfo?.id || '';
+    window.selectedProjectGuid = projectObj.guid || projectObj.id; // Use GUID if available, fallback to b.****
     
     console.log('✅ Project selected:', accProjectId);
     console.log('📂 Project name:', projectName);
@@ -1082,8 +1085,22 @@ function setupGroupingUI() {
   const cancel   = document.getElementById('groupingCancel');
   const applyBtn = document.getElementById('groupingApply');
 
-  if (!modal) return;
+  console.log('🔧 Setting up Grouping UI...');
+  console.log('   Open button:', openBtn);
+  console.log('   Modal:', modal);
+  console.log('   Close button:', closeBtn);
+  console.log('   Cancel button:', cancel);
+  console.log('   Apply button:', applyBtn);
+
+  if (!openBtn || !modal) {
+    console.warn('Grouping UI elements missing - button:', !!openBtn, 'modal:', !!modal);
+    return;
+  }
   const show = async () => {
+    console.log('🔧 Opening Grouping modal...');
+    console.log('   Selected project:', window.selectedProjectId);
+    console.log('   Selected account:', window.selectedAccountId);
+    
     // Guard: ensure project is selected for Extended parameters
     if (!window.selectedProjectId) {
       showNotification('Select a project first to load Extended parameters.', 'warning');
@@ -1093,6 +1110,7 @@ function setupGroupingUI() {
     loadSavedGrouping();
     await populateGroupingModalProperties(); // builds the 3 lists + current order
     modal.style.display = 'block';
+    console.log('✅ Grouping modal opened');
   };
   const hide = () => { modal.style.display = 'none'; };
 

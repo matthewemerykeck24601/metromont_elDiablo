@@ -11,12 +11,17 @@ export async function fetchExtendedParameters({ familyCategory, search } = {}) {
   console.log('   Family Category:', familyCategory || 'all');
 
   const projectId = window.selectedProjectId || '';
+  const accountId = window.selectedAccountId || '';
+  const projectGuid = window.selectedProjectGuid || projectId;
+  
   if (!projectId) {
     throw new Error('No ACC project selected (selectedProjectId missing).');
   }
 
   const params = new URLSearchParams();
   params.set('projectId', projectId);
+  params.set('accountId', accountId);
+  params.set('projectGuid', projectGuid);
   if (familyCategory) params.set('familyCategory', familyCategory);
   if (search) params.set('search', search);
 
@@ -33,6 +38,7 @@ export async function fetchExtendedParameters({ familyCategory, search } = {}) {
 
   if (!resp.ok) {
     // Surface upstream error (401/403 often means token expired or scopes)
+    console.warn('Parameter proxy URL:', url);
     throw new Error(`Parameters API ${resp.status}: ${text}`);
   }
 
