@@ -1081,104 +1081,77 @@ function setupEventListeners() {
     }
 }
 
-// Wire modal open/close + Apply
+// ---- Grouping UI wiring (open modal first, then async-populate) ----
 function setupGroupingUI() {
-  const openBtn  = document.getElementById('btnEditGrouping');
-  const modal    = document.getElementById('groupingModal');
-  const closeBtn = document.getElementById('groupingClose');
-  const cancel   = document.getElementById('groupingCancel');
-  const applyBtn = document.getElementById('groupingApply');
+  const btn = document.getElementById('btnEditGrouping');
+  const modal = document.getElementById('groupingModal');
+  const btnClose = document.getElementById('groupingClose');
+  const btnCancel = document.getElementById('groupingCancel');
+  const btnApply = document.getElementById('groupingApply');
 
-  console.log('🔧 Setting up Grouping UI...');
-  console.log('   Open button:', openBtn);
-  console.log('   Modal:', modal);
-  console.log('   Close button:', closeBtn);
-  console.log('   Cancel button:', cancel);
-  console.log('   Apply button:', applyBtn);
-
-  if (!openBtn || !modal) {
-    console.warn('Grouping UI elements missing - button:', !!openBtn, 'modal:', !!modal);
+  if (!btn || !modal) {
+    console.warn('Grouping controls not found in DOM');
     return;
   }
-  const show = async () => {
-    console.log('🔧 Opening Grouping modal...');
-    console.log('   Selected project:', window.selectedProjectId);
-    console.log('   Selected account:', window.selectedAccountId);
-    
-    // Guard: ensure project is selected for Extended parameters
-    if (!window.selectedProjectId) {
-      showNotification('Select a project first to load Extended parameters.', 'warning');
-      return;
-    }
 
-    loadSavedGrouping();
-    await populateGroupingModalProperties(); // builds the 3 lists + current order
+  let inFlight = null; // track a single async populate at a time
+
+  const openModal = () => {
+    // Open immediately so the user sees the UI, even if parameters fail
     modal.style.display = 'block';
-    console.log('✅ Grouping modal opened');
-  };
-  const hide = () => { modal.style.display = 'none'; };
 
-  openBtn?.addEventListener('click', show);
-  closeBtn?.addEventListener('click', hide);
-  cancel?.addEventListener('click', hide);
-  applyBtn?.addEventListener('click', async () => {
-    await applyGroupingToGrid();
-    hide();
-  });
-
-  // ---- Extended Parameters Modal ----
-  const extModal  = document.getElementById('extendedParamsModal');
-  const extOpen   = document.getElementById('btnAddExtendedParams');
-  const extClose  = document.getElementById('extParamsClose');
-  const extCancel = document.getElementById('extParamsCancel');
-  const extAdd    = document.getElementById('extParamsAdd');
-  const extList   = document.getElementById('extParamsList');
-  const extSearch = document.getElementById('extParamsSearch');
-
-  let extItems = [];
-  let extSelected = new Set();
-
-  const renderExtList = (filter = '') => {
-    const f = filter.trim().toLowerCase();
-    extList.innerHTML = '';
-    extItems
-      .filter(i => !f || (i.label?.toLowerCase().includes(f) || i.key.toLowerCase().includes(f)))
-      .forEach(i => {
-        const id = `ext_${i.key}`;
-        const div = document.createElement('div');
-        div.style.cssText = 'display:flex;gap:.5rem;align-items:center;padding:.25rem 0;border-bottom:1px solid #f1f1f1';
-        div.innerHTML = `<input type="checkbox" id="${id}"><label for="${id}" style="flex:1;"><strong>${escapeHtml(i.label||i.key)}</strong><div class="muted" style="font-size:12px">${escapeHtml(i.description||'')}</div></label>`;
-        const cb = div.querySelector('input');
-        cb.checked = extSelected.has(i.key);
-        cb.addEventListener('change', () => cb.checked ? extSelected.add(i.key) : extSelected.delete(i.key));
-        extList.appendChild(div);
-      });
-  };
-  const showExt = async () => {
-    try {
-      // Placeholder for extended parameters - will be implemented when Parameter Service is available
-      extItems = [
-        { key: 'CUSTOM_PROPERTY_1', label: 'Custom Property 1', description: 'Example custom property' },
-        { key: 'CUSTOM_PROPERTY_2', label: 'Custom Property 2', description: 'Another example property' }
-      ];
-    } catch {
-      extItems = [];
+    // Kick off async populate on the next frame so layout is settled
+    // and we don't race any param calls before the UI exists.
+    if (!inFlight) {
+      inFlight = (async () => {
+        try {
+          await populateGroupingModalProperties();
+        } catch (e) {
+          console.warn('Grouping populate failed:', e);
+          // The population helper already renders a friendly empty-state on failures.
+        } finally {
+          inFlight = null;
+        }
+      })();
     }
-    extSelected.clear();
-    renderExtList();
-    extModal.style.display = 'block';
   };
-  const hideExt = () => extModal.style.display = 'none';
 
-  extOpen?.addEventListener('click', showExt);
-  extClose?.addEventListener('click', hideExt);
-  extCancel?.addEventListener('click', hideExt);
-  extSearch?.addEventListener('input', () => renderExtList(extSearch.value));
-  extAdd?.addEventListener('click', () => {
-    // Add chosen parameters to the right-hand "Grouping order" list
-    [...extSelected].forEach(k => addToGroupingOrder(k));
-    hideExt();
+  const closeModal = () => {
+    modal.style.display = 'none';
+  };
+
+  const applyAndClose = async () => {
+    try {
+      await applyGroupingToGrid(); // rebuilds the grid from currentGrouping
+    } catch (e) {
+      console.warn('Apply grouping failed:', e);
+    } finally {
+      closeModal();
+    }
+  };
+
+  // Primary open entry
+  btn.addEventListener('click', openModal);
+
+  // Close routes
+  btnClose?.addEventListener('click', closeModal);
+  btnCancel?.addEventListener('click', closeModal);
+
+  // Apply route
+  btnApply?.addEventListener('click', applyAndClose);
+
+  // Click-outside-to-close (backdrop)
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
   });
+
+  // Optional: Esc to close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.style.display === 'block') closeModal();
+  });
+
+  // Ensure saved grouping is loaded before first open
+  try { loadSavedGrouping?.(); } catch {}
 }
 
 function bindRowIsolation() {
