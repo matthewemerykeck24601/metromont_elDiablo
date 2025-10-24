@@ -290,11 +290,15 @@ async function onProjectChange() {
     window.selectedProjectName = projectName;
     // Also pass account info for Parameters API (account-scoped route)
     window.selectedAccountId = globalHubData?.accountInfo?.id || '';
-    window.selectedProjectGuid = projectObj.guid || projectObj.id; // Use GUID if available, fallback to b.****
+    const rawGuid = projectObj.guid || projectObj.id || '';
+    // ACC projects commonly use "b.<GUID>" shape; Parameters API needs the bare GUID
+    window.selectedProjectGuid = rawGuid.replace(/^b\./, '');
     
     console.log('✅ Project selected:', accProjectId);
     console.log('📂 Project name:', projectName);
     console.log('🔢 Project number:', projectObj.number || 'N/A');
+    console.log('🆔 Account ID:', window.selectedAccountId);
+    console.log('🆔 Project GUID (normalized):', window.selectedProjectGuid);
 
     // Reset model selection
     modelSelect.innerHTML = '<option value="">Loading designs from AEC Data Model...</option>';

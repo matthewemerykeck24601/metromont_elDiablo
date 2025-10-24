@@ -29,9 +29,14 @@ export async function handler(event) {
     const url = new URL(event.rawUrl);
     const projectId = url.searchParams.get('projectId');
     const accountId = url.searchParams.get('accountId') || '';
-    const projectGuid = url.searchParams.get('projectGuid') || projectId;
+    let projectGuid = url.searchParams.get('projectGuid') || projectId;
     const familyCategory = url.searchParams.get('familyCategory') || '';
     const search = url.searchParams.get('search') || '';
+
+    // Defensively normalize GUID - strip b. prefix if present
+    if (typeof projectGuid === 'string' && projectGuid.startsWith('b.')) {
+      projectGuid = projectGuid.slice(2);
+    }
 
     if (!projectId) {
       return {
