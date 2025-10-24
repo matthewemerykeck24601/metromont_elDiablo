@@ -823,12 +823,6 @@ async function populateGroupingModalProperties() {
 // Global grouping state
 window.currentGrouping = window.currentGrouping || ['ELEMENT_ID','CATEGORY','CONTROL_MARK','CONTROL_NUMBER'];
 
-// Helper function for HTML escaping
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
 
 // Simple persistence helpers (per-element-group)
 function _groupingStorageKey() {
