@@ -889,7 +889,13 @@ async function injectAdminCardIfAuthorized() {
                 <h3 class="module-title">Admin</h3>
                 <p class="module-description">Manage user access and module permissions</p>
             `;
-            adminCard.addEventListener('click', () => navigateToModule('admin'));
+            adminCard.addEventListener('click', (e) => {
+                e.preventDefault();
+                const chooser = document.getElementById('adminChooser');
+                if (chooser) {
+                    chooser.classList.add('show');
+                }
+            });
             
             // Add card to grid
             grid.appendChild(adminCard);

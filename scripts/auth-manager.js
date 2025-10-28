@@ -201,3 +201,6 @@ const authManager = new AuthManager();
 window.authManager = authManager;
 
 console.log('✅ Auth Manager initialized');
+
+// Export default for ES6 modules
+export default AuthManager;

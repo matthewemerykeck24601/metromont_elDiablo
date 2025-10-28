@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ACC Admin</title>
+  <link rel="stylesheet" href="styles/index.css" />
+  <link rel="stylesheet" href="styles/admin.css" />
+</head>
+<body class="auth-loading">
+  <header class="header">
+    <div class="header-content">
+      <div class="logo-section">
+        <img src="assets/images/metromont-logo.png" alt="Metromont Logo" class="logo" />
+        <div class="brand-text">
+          <h1>ACC Admin</h1>
+          <p>Autodesk Construction Cloud User Management</p>
+        </div>
+      </div>
+      <div class="header-buttons">
+        <button class="btn btn-back" onclick="location.href='index.html'">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+          </svg>
+          Back to Dashboard
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Top button bar -->
+  <section class="toolbar">
+    <button id="btnAddUsersToProjects" class="btn btn-primary">Add Users to Projects</button>
+    <button class="btn btn-secondary" disabled>Placeholder Action 1</button>
+    <button class="btn btn-secondary" disabled>Placeholder Action 2</button>
+  </section>
+
+  <!-- Two-pane workspace -->
+  <main class="pane-grid">
+    <section class="pane" id="paneLeft">
+      <h3>Account Members</h3>
+      <div class="search-row">
+        <input id="memberSearch" placeholder="Search members..." class="input-field" />
+      </div>
+      <div class="list" id="memberList"></div>
+    </section>
+
+    <section class="pane" id="paneRight">
+      <h3>Projects & Role</h3>
+      <div class="controls">
+        <div>
+          <label for="roleSelect">Role:</label>
+          <select id="roleSelect" class="input-field" title="Select user role"></select>
+        </div>
+        <div>
+          <label for="accessLevel">Access:</label>
+          <select id="accessLevel" class="input-field" title="Select access level">
+            <option value="project_user">Project User</option>
+            <option value="project_admin">Project Admin</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="list" id="projectList"></div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="assignBtn">Add to Selected Projects</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Auth Processing Overlay -->
+  <div class="auth-processing active" id="authProcessing">
+    <div class="auth-processing-content">
+      <div class="loading"></div>
+      <h3 id="authTitle">Connecting to Autodesk Construction Cloud</h3>
+      <p id="authMessage">Checking your authentication status...</p>
+    </div>
+  </div>
+
+  <div id="notification" class="notification">
+    <div class="notification-content" id="notificationContent"></div>
+  </div>
+
+  <script src="scripts/env.js"></script>
+  <script type="module" src="scripts/fetch-helpers.js"></script>
+  <script src="scripts/access-control.js"></script>
+  <script src="scripts/user-profile.js"></script>
+  <script type="module" src="scripts/auth-manager.js"></script>
+  <script type="module" src="scripts/acc-admin.js"></script>
+</body>
+</html>
