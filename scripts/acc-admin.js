@@ -10,6 +10,7 @@ let state = {
   members: [],       // { id, name, email }
   projects: [],      // { id, name, number }
   roles: [],         // { id, name }
+  projectSearchTerm: '',
 };
 
 function notify(msg, type='info') {
@@ -120,7 +121,14 @@ function renderProjects() {
   const container = document.getElementById('projectList');
   if (!container) return;
 
-  const rows = state.projects.map(p => {
+  const q = state.projectSearchTerm.toLowerCase().trim();
+  const filtered = state.projects.filter(p => {
+    const name = (p.name || '').toLowerCase();
+    const number = (p.number || '').toLowerCase();
+    return !q || name.includes(q) || number.includes(q);
+  });
+
+  const rows = filtered.map(p => {
     const checked = state.selectedProjectIds.has(p.id) ? 'checked' : '';
     return `
       <tr>
@@ -135,6 +143,11 @@ function renderProjects() {
 
   container.innerHTML = `
     <table class="table projects-table">
+      <colgroup>
+        <col class="w-check"/>
+        <col class="w-name"/>
+        <col class="w-number"/>
+      </colgroup>
       <thead>
         <tr>
           <th class="col-check"></th>
@@ -146,31 +159,17 @@ function renderProjects() {
     </table>
   `;
 
-  // Wire individual checkboxes
+  // wire checkboxes
   container.querySelectorAll('.project-cb').forEach(cb => {
     cb.addEventListener('change', (e) => {
       const id = e.currentTarget.getAttribute('data-id');
       if (e.currentTarget.checked) state.selectedProjectIds.add(id);
       else state.selectedProjectIds.delete(id);
       enableAssignButtonIfReady();
-      // Keep Select All in sync
       syncSelectAllCheckbox();
     });
   });
 
-  // Wire Select All
-  const selectAll = document.getElementById('selectAllProjects');
-  if (selectAll) {
-    selectAll.onchange = () => {
-      if (selectAll.checked) {
-        state.selectedProjectIds = new Set(state.projects.map(p => p.id));
-      } else {
-        state.selectedProjectIds.clear();
-      }
-      renderProjects(); // re-render to reflect all checks
-      enableAssignButtonIfReady();
-    };
-  }
   syncSelectAllCheckbox();
 }
 
@@ -226,15 +225,38 @@ async function loadProjects() {
   const res = await fetch(`/.netlify/functions/acc-admin?mode=listProjects&accountId=${encodeURIComponent(state.accountId)}`, {
     headers: { 'authorization': `Bearer ${token}` }
   });
-  if (!res.ok) throw new Error(`listProjects failed: ${res.status}`);
-  const data = await res.json();
 
-  // Normalize to { id, name, number }
-  state.projects = (data.projects || []).map(p => ({
+  let data = { projects: [] };
+  if (res.ok) {
+    data = await res.json();
+  } else {
+    console.warn('listProjects failed from ACC Admin function:', res.status);
+  }
+
+  // Normalize from API, if present
+  let projects = (data.projects || []).map(p => ({
     id: p.id || p.projectId || p.guid,
     name: p.name || p.projectName || p.title || '',
     number: p.number || p.projectNumber || p.code || ''
   })).filter(p => p.id);
+
+  // Fallback: use dashboard's normalized cache if API returned none
+  if (projects.length === 0) {
+    try {
+      const cached = JSON.parse(sessionStorage.getItem('castlink_hub_data') || '{}');
+      const cachedProjects = cached?.projects || [];
+      if (cachedProjects.length) {
+        console.log(`ℹ️ Using cached hub projects (${cachedProjects.length}) from dashboard`);
+        projects = cachedProjects.map(p => ({
+          id: p.id,
+          name: p.name || p.displayName || p.fullProjectName || '',
+          number: p.number || p.projectNumber || ''
+        })).filter(p => p.id);
+      }
+    } catch {}
+  }
+
+  state.projects = projects;
   renderProjects();
 }
 
@@ -316,6 +338,14 @@ async function init() {
       clearTimeout(window._memberSearchT);
       window._memberSearchT = setTimeout(renderMemberSelector, 100);
     });
+
+    const projSearch = document.getElementById('projectSearch');
+    if (projSearch) {
+      projSearch.addEventListener('input', () => {
+        state.projectSearchTerm = projSearch.value || '';
+        renderProjects();
+      });
+    }
 
     document.getElementById('assignBtn')?.addEventListener('click', assignUsersToProjects);
     document.getElementById('btnAddUsersToProjects')?.addEventListener('click', () => notify('Add Users to Projects ready.', 'success'));

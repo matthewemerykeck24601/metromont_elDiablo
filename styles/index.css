@@ -654,6 +654,23 @@ body {
 /* Muted helper */
 .muted { color:#9ca3af; font-style:italic; }
 
+/* Narrow leading checkbox column; keep name/number sensible */
+.table.projects-table { table-layout: fixed; width: 100%; }
+.table.projects-table col.w-check  { width: 44px; }
+.table.projects-table col.w-name   { width: 60%; }
+.table.projects-table col.w-number { width: 40%; }
+
+/* Make the projects header search not wrap */
+.project-search { max-width: 420px; }
+
+/* Prevent long names from pushing layout */
+.table.projects-table td.col-name,
+.table.projects-table td.col-number {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Responsive design for ACC Admin */
 @media (max-width: 768px) {
     .acc-admin .pane-grid {
