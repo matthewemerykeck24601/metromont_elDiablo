@@ -671,6 +671,29 @@ body {
   white-space: nowrap;
 }
 
+/* Spacing */
+.pane-grid { gap: 16px; }
+.pane { margin: 8px; padding: 12px; }
+
+/* Projects table layout stays fixed widths (already added), keep search visible */
+.table.projects-table { table-layout: fixed; width: 100%; }
+.table.projects-table col.w-check  { width: 44px; }
+.table.projects-table col.w-name   { width: 60%; }
+.table.projects-table col.w-number { width: 40%; }
+.table.projects-table td.col-name,
+.table.projects-table td.col-number { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-search { max-width: 420px; }
+
+/* Mini account members pane */
+.mini-members { border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 10px; background: #fff; }
+.mini-members-head { display: flex; align-items: center; gap: 10px; padding: 8px; border-bottom: 1px solid #f3f4f6; }
+.mini-search { flex: 1; }
+.mini-members-list { max-height: 180px; overflow: auto; padding: 6px 8px; }
+.mini-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid #f8fafc; }
+.mini-row:last-child { border-bottom: none; }
+.mini-name { font-weight: 500; }
+.mini-email { margin-left: auto; font-size: 12px; color: #6b7280; }
+
 /* Responsive design for ACC Admin */
 @media (max-width: 768px) {
     .acc-admin .pane-grid {

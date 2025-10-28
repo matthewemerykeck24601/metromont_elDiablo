@@ -115,6 +115,44 @@ function renderSelectedMembers() {
   });
 }
 
+// ---------- Mini Account Members pane (right side) ----------
+function renderMemberMini() {
+  const box = document.getElementById('memberMiniList');
+  if (!box) return;
+  const q = (document.getElementById('memberMiniSearch')?.value || '').toLowerCase();
+
+  const filtered = state.members.filter(m =>
+    !q || (m.name && m.name.toLowerCase().includes(q)) || (m.email && m.email.toLowerCase().includes(q))
+  );
+
+  const rows = filtered.map(m => {
+    const id = m.id || m.email;
+    const checked = state.selectedMemberIds.has(id) ? 'checked' : '';
+    return `
+      <div class="mini-row">
+        <label>
+          <input type="checkbox" class="mini-member-cb" data-id="${id}" ${checked} />
+          <span class="mini-name">${m.name || m.email}</span>
+          <span class="mini-email">${m.email || ''}</span>
+        </label>
+      </div>
+    `;
+  }).join('');
+
+  box.innerHTML = rows || '<div class="muted">No members</div>';
+
+  box.querySelectorAll('.mini-member-cb').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const id = e.currentTarget.getAttribute('data-id');
+      if (e.currentTarget.checked) state.selectedMemberIds.add(id);
+      else state.selectedMemberIds.delete(id);
+      // keep the left-side chips in sync too (if visible)
+      renderSelectedMembers();
+      enableAssignButtonIfReady();
+    });
+  });
+}
+
 // ---------------- Projects (with Select All + columns) ----------------
 
 function renderProjects() {
@@ -159,7 +197,7 @@ function renderProjects() {
     </table>
   `;
 
-  // wire checkboxes
+  // individual project checkboxes
   container.querySelectorAll('.project-cb').forEach(cb => {
     cb.addEventListener('change', (e) => {
       const id = e.currentTarget.getAttribute('data-id');
@@ -169,6 +207,22 @@ function renderProjects() {
       syncSelectAllCheckbox();
     });
   });
+
+  // NEW: wire the "Select All" toggle
+  const selectAll = document.getElementById('selectAllProjects');
+  if (selectAll) {
+    selectAll.onchange = () => {
+      if (selectAll.checked) {
+        // select all currently FILTERED projects (what's visible in the table)
+        state.selectedProjectIds = new Set(filtered.map(p => p.id));
+      } else {
+        // deselect all currently FILTERED projects
+        filtered.forEach(p => state.selectedProjectIds.delete(p.id));
+      }
+      renderProjects();          // reflect checkboxes
+      enableAssignButtonIfReady();
+    };
+  }
 
   syncSelectAllCheckbox();
 }
@@ -297,6 +351,8 @@ async function assignUsersToProjects() {
     accessLevel,
   };
 
+  console.log('➡️ assignUsersToProjects()', body);
+
   const res = await fetch(`/.netlify/functions/acc-admin`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'authorization': `Bearer ${token}` },
@@ -346,6 +402,13 @@ async function init() {
         renderProjects();
       });
     }
+
+    const miniSearch = document.getElementById('memberMiniSearch');
+    if (miniSearch) {
+      miniSearch.addEventListener('input', () => renderMemberMini());
+    }
+    // initial render of the mini pane
+    renderMemberMini();
 
     document.getElementById('assignBtn')?.addEventListener('click', assignUsersToProjects);
     document.getElementById('btnAddUsersToProjects')?.addEventListener('click', () => notify('Add Users to Projects ready.', 'success'));
