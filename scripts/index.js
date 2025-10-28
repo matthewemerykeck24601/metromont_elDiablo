@@ -228,6 +228,9 @@ async function handleOAuthCallback(authCode) {
 
         forgeAccessToken = tokenData.access_token;
         storeToken(tokenData);
+        
+        // Bridge token to AuthManager for ACC Admin
+        bridgeForgeTokenToAuthManager(tokenData);
 
         // Clean up URL
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -977,6 +980,43 @@ function initializePageInteractions() {
             this.style.transform = 'translateY(0)';
         });
     });
+}
+
+// Bridge Forge token to AuthManager for ACC Admin
+function bridgeForgeTokenToAuthManager(tokenData) {
+    if (window.authManager && tokenData?.access_token) {
+        // Store token for AuthManager consumers (ACC Admin uses this)
+        window.authManager.storeToken(tokenData.access_token, tokenData.expires_in); // writes localStorage['auth_token']
+        console.log('✅ Token bridged to AuthManager for ACC Admin');
+    } else {
+        console.warn('AuthManager not available or missing tokenData');
+    }
+}
+
+// Global getIdentityHeader shim for compatibility
+if (!window.getIdentityHeader) {
+    window.getIdentityHeader = () => {
+        try {
+            // Prefer AuthManager if present
+            if (window.authManager) {
+                return window.authManager.getIdentityHeader();
+            }
+            // Fallback to what DB modules already do
+            const stored = localStorage.getItem('user_profile_data');
+            if (!stored) return null;
+            const profile = JSON.parse(stored);
+            const email = profile?.userInfo?.email;
+            const hubId = profile?.selectedHub?.id || null;
+            if (!email) return null;
+            return JSON.stringify({
+                email,
+                user_metadata: { hubId, full_name: profile?.userInfo?.name || email }
+            });
+        } catch (e) {
+            console.warn('getIdentityHeader shim failed:', e);
+            return null;
+        }
+    };
 }
 
 // Global auth state checker for other pages
