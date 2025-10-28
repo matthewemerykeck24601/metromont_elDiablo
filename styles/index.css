@@ -630,6 +630,30 @@ body {
     cursor: not-allowed;
 }
 
+/* Member selector */
+.member-select { display:flex; flex-direction:column; gap:8px; }
+.member-input-row { position:relative; }
+.member-dropdown { border:1px solid #e5e7eb; border-radius:6px; max-height:260px; overflow:auto; }
+.member-row { padding:6px 8px; border-bottom:1px solid #f3f4f6; }
+.member-row:last-child { border-bottom:none; }
+.member-option { display:flex; align-items:center; gap:8px; }
+.member-name { font-weight:500; }
+.member-email { margin-left:auto; font-size:12px; color:#6b7280; }
+.member-selected .chip-row { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { background:#f3f4f6; border-radius:16px; padding:2px 8px; display:inline-flex; align-items:center; gap:6px; }
+.chip-x { border:none; background:transparent; cursor:pointer; line-height:1; font-size:14px; }
+
+/* Projects table */
+.projects-header { display:flex; align-items:center; justify-content:space-between; margin:6px 0 8px; }
+.select-all { display:flex; align-items:center; gap:6px; }
+.projects-subhead { display:grid; grid-template-columns: 1fr 1fr; gap:16px; opacity:.8; font-weight:600; }
+.table.projects-table { width:100%; border-collapse:separate; border-spacing:0; }
+.table.projects-table th, .table.projects-table td { padding:8px; border-bottom:1px solid #eee; }
+.table.projects-table .col-check { width:40px; }
+
+/* Muted helper */
+.muted { color:#9ca3af; font-style:italic; }
+
 /* Responsive design for ACC Admin */
 @media (max-width: 768px) {
     .acc-admin .pane-grid {

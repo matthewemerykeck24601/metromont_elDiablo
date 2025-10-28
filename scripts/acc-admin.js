@@ -7,9 +7,9 @@ let state = {
   accountId: null,
   selectedMemberIds: new Set(),
   selectedProjectIds: new Set(),
-  members: [],
-  projects: [],
-  roles: [],
+  members: [],       // { id, name, email }
+  projects: [],      // { id, name, number }
+  roles: [],         // { id, name }
 };
 
 function notify(msg, type='info') {
@@ -25,132 +25,169 @@ function notify(msg, type='info') {
 }
 
 function hideAuthOverlay(successMsg) {
-  try {
-    const authProcessing = document.getElementById('authProcessing');
-    const authTitle = document.getElementById('authTitle');
-    const authMessage = document.getElementById('authMessage');
-    if (authTitle) authTitle.textContent = 'Success!';
-    if (authMessage) authMessage.textContent = successMsg || 'Connected to ACC';
-    setTimeout(() => {
-      authProcessing?.classList.remove('active');
-      document.body.classList.remove('auth-loading');
-    }, 500);
-  } catch (e) {
-    console.warn('Failed to hide auth overlay:', e);
-  }
+  const authProcessing = document.getElementById('authProcessing');
+  const authTitle = document.getElementById('authTitle');
+  const authMessage = document.getElementById('authMessage');
+  if (authTitle) authTitle.textContent = 'Success!';
+  if (authMessage) authMessage.textContent = successMsg || 'Connected to ACC';
+  setTimeout(() => {
+    authProcessing?.classList.remove('active');
+    document.body.classList.remove('auth-loading');
+  }, 400);
 }
 
 function parseAccountIdFromProfile(profile) {
-  // Prefer selectedHub.id (e.g., "b.f61b9f7b-...") from User Profile storage
-  const selectedHubId =
-    profile?.selectedHub?.id ||
-    profile?.user_metadata?.hubId ||
-    profile?.userInfo?.hubId ||
-    null;
-
-  if (!selectedHubId) return null;
-
-  // Hubs typically look like "b.<ACCOUNT_GUID>"
-  if (selectedHubId.startsWith('b.')) {
-    return selectedHubId.substring(2);
-  }
-  return selectedHubId;
+  const hubId = profile?.selectedHub?.id || profile?.user_metadata?.hubId || profile?.userInfo?.hubId || null;
+  if (!hubId) return null;
+  return hubId.startsWith('b.') ? hubId.substring(2) : hubId;
 }
 
-async function init() {
-  try {
-    // 1) Read stored Autodesk profile (UserProfile already persisted this in localStorage)
-    const profile = auth.getUserProfile();
-    if (!profile) {
-      notify('No user profile found. Please sign in via the dashboard first.', 'error');
-      throw new Error('Missing user profile');
-    }
-
-    // 2) Parse ACC Account ID from hub
-    const accountId = parseAccountIdFromProfile(profile);
-    if (!accountId) {
-      notify('No ACC account (hub) selected. Pick a hub in the dashboard first.', 'error');
-      throw new Error('Missing accountId/hub');
-    }
-    state.accountId = accountId;
-
-    // 3) Get token (hard fail if not present)
-    const token = await auth.getToken();
-    if (!token) {
-      notify('Not authenticated to ACC. Please re-open ACC Admin after signing in.', 'error');
-      throw new Error('Missing 3LO token');
-    }
-
-    // 4) Load initial data in parallel
-    await Promise.all([loadMembers(), loadProjects(), loadRoles(null)]);
-
-    // 5) Wire UI
-    document.getElementById('memberSearch')?.addEventListener('input', renderMembers);
-    document.getElementById('assignBtn')?.addEventListener('click', assignUsersToProjects);
-    document.getElementById('btnAddUsersToProjects')?.addEventListener('click', () => {
-      notify('Add Users to Projects ready.', 'success');
-    });
-
-    // 6) If we got this far, dismiss the overlay
-    hideAuthOverlay('ACC Admin is ready');
-
-  } catch (err) {
-    console.error('ACC Admin init failed:', err);
-    const authTitle = document.getElementById('authTitle');
-    const authMessage = document.getElementById('authMessage');
-    if (authTitle) authTitle.textContent = 'Authentication Error';
-    if (authMessage) authMessage.textContent = err?.message || 'Failed to initialize ACC Admin';
-  }
+function enableAssignButtonIfReady() {
+  const btn = document.getElementById('assignBtn');
+  const ready = state.selectedMemberIds.size > 0 && state.selectedProjectIds.size > 0 && document.getElementById('roleSelect')?.value;
+  if (btn) btn.disabled = !ready;
 }
 
-function renderMembers() {
-  const q = (document.getElementById('memberSearch')?.value || '').toLowerCase();
-  const list = document.getElementById('memberList');
-  list.innerHTML = '';
+// ---------------- Member Selector ----------------
 
+function renderMemberSelector() {
+  const search = (document.getElementById('memberSelectSearch')?.value || '').toLowerCase();
+  const dropdown = document.getElementById('memberDropdown');
+  const selectedBox = document.getElementById('memberSelected');
+
+  if (!dropdown || !selectedBox) return;
+
+  // Dropdown list (filter by search)
+  dropdown.innerHTML = '';
   state.members
-    .filter(m => !q || m.name?.toLowerCase().includes(q) || m.email?.toLowerCase().includes(q))
+    .filter(m => !search || m.name?.toLowerCase().includes(search) || m.email?.toLowerCase().includes(search))
+    .slice(0, 200) // safety cap
     .forEach(m => {
       const id = m.id || m.email;
       const row = document.createElement('div');
-      row.className = 'row checkbox-row';
+      row.className = 'member-row';
       row.innerHTML = `
-        <label>
-          <input type="checkbox" data-id="${id}" ${state.selectedMemberIds.has(id) ? 'checked' : ''}/>
-          <span>${m.name || m.email} — ${m.email}</span>
+        <label class="member-option">
+          <input type="checkbox" data-id="${id}" ${state.selectedMemberIds.has(id) ? 'checked' : ''} />
+          <span class="member-name">${m.name || m.email}</span>
+          <span class="member-email">${m.email || ''}</span>
         </label>
       `;
       row.querySelector('input').addEventListener('change', (e) => {
         if (e.target.checked) state.selectedMemberIds.add(id);
         else state.selectedMemberIds.delete(id);
+        renderSelectedMembers();
+        enableAssignButtonIfReady();
       });
-      list.appendChild(row);
+      dropdown.appendChild(row);
     });
+
+  renderSelectedMembers();
 }
 
-function renderProjects() {
-  const list = document.getElementById('projectList');
-  list.innerHTML = '';
-  state.projects.forEach(p => {
-    const id = p.id;
-    const row = document.createElement('div');
-    row.className = 'row checkbox-row';
-    row.innerHTML = `
-      <label>
-        <input type="checkbox" data-id="${id}" ${state.selectedProjectIds.has(id) ? 'checked' : ''}/>
-        <span>${p.name || id}</span>
-      </label>
-    `;
-    row.querySelector('input').addEventListener('change', (e) => {
-      if (e.target.checked) state.selectedProjectIds.add(id);
-      else state.selectedProjectIds.delete(id);
+function renderSelectedMembers() {
+  const selectedBox = document.getElementById('memberSelected');
+  if (!selectedBox) return;
+
+  const ids = Array.from(state.selectedMemberIds);
+  if (ids.length === 0) { selectedBox.innerHTML = '<div class="muted">No members selected</div>'; return; }
+
+  // Show badges of selected
+  const chips = ids.map(id => {
+    const m = state.members.find(x => (x.id || x.email) === id);
+    const label = m ? (m.name || m.email) : id;
+    return `<span class="chip" data-id="${id}">${label} <button class="chip-x" title="Remove" data-id="${id}">×</button></span>`;
+  }).join(' ');
+
+  selectedBox.innerHTML = `<div class="chip-row">${chips}</div>`;
+
+  selectedBox.querySelectorAll('.chip-x').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = e.currentTarget.getAttribute('data-id');
+      state.selectedMemberIds.delete(id);
+      // also uncheck in dropdown
+      const cb = document.querySelector(`.member-option input[data-id="${CSS.escape(id)}"]`);
+      if (cb) cb.checked = false;
+      renderSelectedMembers();
+      enableAssignButtonIfReady();
     });
-    list.appendChild(row);
   });
 }
 
+// ---------------- Projects (with Select All + columns) ----------------
+
+function renderProjects() {
+  const container = document.getElementById('projectList');
+  if (!container) return;
+
+  const rows = state.projects.map(p => {
+    const checked = state.selectedProjectIds.has(p.id) ? 'checked' : '';
+    return `
+      <tr>
+        <td class="col-check">
+          <input type="checkbox" class="project-cb" data-id="${p.id}" ${checked} />
+        </td>
+        <td class="col-name">${p.name || p.id}</td>
+        <td class="col-number">${p.number || ''}</td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <table class="table projects-table">
+      <thead>
+        <tr>
+          <th class="col-check"></th>
+          <th class="col-name">Project Name</th>
+          <th class="col-number">Project Number</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  // Wire individual checkboxes
+  container.querySelectorAll('.project-cb').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const id = e.currentTarget.getAttribute('data-id');
+      if (e.currentTarget.checked) state.selectedProjectIds.add(id);
+      else state.selectedProjectIds.delete(id);
+      enableAssignButtonIfReady();
+      // Keep Select All in sync
+      syncSelectAllCheckbox();
+    });
+  });
+
+  // Wire Select All
+  const selectAll = document.getElementById('selectAllProjects');
+  if (selectAll) {
+    selectAll.onchange = () => {
+      if (selectAll.checked) {
+        state.selectedProjectIds = new Set(state.projects.map(p => p.id));
+      } else {
+        state.selectedProjectIds.clear();
+      }
+      renderProjects(); // re-render to reflect all checks
+      enableAssignButtonIfReady();
+    };
+  }
+  syncSelectAllCheckbox();
+}
+
+function syncSelectAllCheckbox() {
+  const selectAll = document.getElementById('selectAllProjects');
+  if (!selectAll) return;
+  const total = state.projects.length;
+  const selected = state.selectedProjectIds.size;
+  selectAll.indeterminate = selected > 0 && selected < total;
+  selectAll.checked = selected > 0 && selected === total;
+}
+
+// ---------------- Roles ----------------
+
 function renderRoles() {
   const sel = document.getElementById('roleSelect');
+  if (!sel) return;
   sel.innerHTML = '';
   state.roles.forEach(r => {
     const opt = document.createElement('option');
@@ -158,7 +195,10 @@ function renderRoles() {
     opt.textContent = r.name || r.id;
     sel.appendChild(opt);
   });
+  sel.onchange = enableAssignButtonIfReady;
 }
+
+// ---------------- Data loads (Netlify function) ----------------
 
 async function loadMembers() {
   const token = await auth.getToken();
@@ -167,15 +207,16 @@ async function loadMembers() {
   const res = await fetch(`/.netlify/functions/acc-admin?mode=listMembers&accountId=${encodeURIComponent(state.accountId)}`, {
     headers: { 'authorization': `Bearer ${token}` }
   });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`listMembers failed: ${res.status} ${txt.slice(0,150)}`);
-  }
-
+  if (!res.ok) throw new Error(`listMembers failed: ${res.status}`);
   const data = await res.json();
-  state.members = data.members || [];
-  renderMembers();
+
+  // Normalize to { id, name, email }
+  state.members = (data.members || []).map(u => ({
+    id: u.id || u.userId || u.uid || u.email,
+    name: u.name || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+    email: u.email || u.emailId || u.mail || ''
+  }));
+  renderMemberSelector();
 }
 
 async function loadProjects() {
@@ -185,14 +226,15 @@ async function loadProjects() {
   const res = await fetch(`/.netlify/functions/acc-admin?mode=listProjects&accountId=${encodeURIComponent(state.accountId)}`, {
     headers: { 'authorization': `Bearer ${token}` }
   });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`listProjects failed: ${res.status} ${txt.slice(0,150)}`);
-  }
-
+  if (!res.ok) throw new Error(`listProjects failed: ${res.status}`);
   const data = await res.json();
-  state.projects = data.projects || [];
+
+  // Normalize to { id, name, number }
+  state.projects = (data.projects || []).map(p => ({
+    id: p.id || p.projectId || p.guid,
+    name: p.name || p.projectName || p.title || '',
+    number: p.number || p.projectNumber || p.code || ''
+  })).filter(p => p.id);
   renderProjects();
 }
 
@@ -205,22 +247,23 @@ async function loadRoles(projectId /* optional */) {
     : `/.netlify/functions/acc-admin?mode=listAccountRoles&accountId=${encodeURIComponent(state.accountId)}`;
 
   const res = await fetch(url, { headers: { 'authorization': `Bearer ${token}` }});
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`listRoles failed: ${res.status} ${txt.slice(0,150)}`);
-  }
-
+  if (!res.ok) throw new Error(`listRoles failed: ${res.status}`);
   const data = await res.json();
-  state.roles = data.roles || [];
+
+  // Normalize to { id, name }
+  state.roles = (data.roles || []).map(r => ({ id: r.id || r.roleId, name: r.name || r.displayName || r.roleName || r.id }));
   renderRoles();
 }
 
+// ---------------- Assign ----------------
+
 async function assignUsersToProjects() {
   const token = await auth.getToken();
+  if (!token) return notify('Not authenticated to ACC', 'error');
+
   const roleId = document.getElementById('roleSelect').value;
   const accessLevel = document.getElementById('accessLevel').value;
 
-  if (!token) return notify('Not authenticated to ACC', 'error');
   if (state.selectedMemberIds.size === 0) return notify('Select at least one member', 'warning');
   if (state.selectedProjectIds.size === 0) return notify('Select at least one project', 'warning');
 
@@ -234,10 +277,7 @@ async function assignUsersToProjects() {
 
   const res = await fetch(`/.netlify/functions/acc-admin`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'authorization': `Bearer ${token}`
-    },
+    headers: { 'content-type': 'application/json', 'authorization': `Bearer ${token}` },
     body: JSON.stringify({ mode: 'assignUsersToProjects', ...body })
   });
 
@@ -245,9 +285,49 @@ async function assignUsersToProjects() {
   try { data = await res.json(); } catch {}
   if (res.ok && data?.ok) {
     notify(`Added ${body.memberIdsOrEmails.length} user(s) to ${body.projectIds.length} project(s)`, 'success');
+    // Clear selections if you want:
+    // state.selectedMemberIds.clear(); state.selectedProjectIds.clear(); renderMemberSelector(); renderProjects(); enableAssignButtonIfReady();
   } else {
     notify(`Failed: ${(data && (data.error || data.message)) || res.statusText}`, 'error');
     console.error('assignUsersToProjects error:', data || res.statusText);
+  }
+}
+
+// ---------------- Init ----------------
+
+async function init() {
+  try {
+    const profile = auth.getUserProfile();
+    if (!profile) throw new Error('Missing user profile');
+    const accountId = parseAccountIdFromProfile(profile);
+    if (!accountId) throw new Error('Missing account (hub) selection');
+    state.accountId = accountId;
+
+    const token = await auth.getToken();
+    if (!token) throw new Error('Missing 3LO token');
+
+    // Load data in parallel
+    await Promise.all([loadMembers(), loadProjects(), loadRoles(null)]);
+
+    // Wire UI
+    const memberSearch = document.getElementById('memberSelectSearch');
+    if (memberSearch) memberSearch.addEventListener('input', () => {
+      // tiny debounce
+      clearTimeout(window._memberSearchT);
+      window._memberSearchT = setTimeout(renderMemberSelector, 100);
+    });
+
+    document.getElementById('assignBtn')?.addEventListener('click', assignUsersToProjects);
+    document.getElementById('btnAddUsersToProjects')?.addEventListener('click', () => notify('Add Users to Projects ready.', 'success'));
+
+    hideAuthOverlay('ACC Admin is ready');
+    enableAssignButtonIfReady();
+  } catch (err) {
+    console.error('ACC Admin init failed:', err);
+    const authTitle = document.getElementById('authTitle');
+    const authMessage = document.getElementById('authMessage');
+    if (authTitle) authTitle.textContent = 'Authentication Error';
+    if (authMessage) authMessage.textContent = err?.message || 'Failed to initialize ACC Admin';
   }
 }
 

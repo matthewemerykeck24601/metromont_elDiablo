@@ -37,16 +37,22 @@
 
   <!-- Two-pane workspace -->
   <main class="pane-grid">
+    <!-- LEFT: Account Members (searchable multi-select dropdown) -->
     <section class="pane" id="paneLeft">
       <h3>Account Members</h3>
-      <div class="search-row">
-        <input id="memberSearch" placeholder="Search members..." class="input-field" />
+      <div class="member-select">
+        <div class="member-input-row">
+          <input id="memberSelectSearch" placeholder="Search account members..." class="input-field" />
+        </div>
+        <div class="member-dropdown" id="memberDropdown"></div>
+        <div class="member-selected" id="memberSelected"></div>
       </div>
-      <div class="list" id="memberList"></div>
     </section>
 
+    <!-- RIGHT: Projects & Role -->
     <section class="pane" id="paneRight">
       <h3>Projects & Role</h3>
+
       <div class="controls">
         <div>
           <label for="roleSelect">Role:</label>
@@ -61,10 +67,21 @@
         </div>
       </div>
 
+      <div class="projects-header">
+        <label class="select-all">
+          <input type="checkbox" id="selectAllProjects" />
+          <span>Select All</span>
+        </label>
+        <div class="projects-subhead">
+          <div class="col-title">Projects</div>
+          <div class="col-title">Search</div>
+        </div>
+      </div>
+
       <div class="list" id="projectList"></div>
 
       <div class="actions">
-        <button class="btn btn-primary" id="assignBtn">Add to Selected Projects</button>
+        <button class="btn btn-primary" id="assignBtn" disabled>Add to Selected Projects</button>
       </div>
     </section>
   </main>
