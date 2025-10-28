@@ -4,7 +4,7 @@ import AuthManager from './auth-manager.js';
 const auth = new AuthManager();
 
 let state = {
-  accountId: null, // set from user profile hub metadata if available
+  accountId: null,
   selectedMemberIds: new Set(),
   selectedProjectIds: new Set(),
   members: [],
@@ -24,23 +24,83 @@ function notify(msg, type='info') {
   }
 }
 
+function hideAuthOverlay(successMsg) {
+  try {
+    const authProcessing = document.getElementById('authProcessing');
+    const authTitle = document.getElementById('authTitle');
+    const authMessage = document.getElementById('authMessage');
+    if (authTitle) authTitle.textContent = 'Success!';
+    if (authMessage) authMessage.textContent = successMsg || 'Connected to ACC';
+    setTimeout(() => {
+      authProcessing?.classList.remove('active');
+      document.body.classList.remove('auth-loading');
+    }, 500);
+  } catch (e) {
+    console.warn('Failed to hide auth overlay:', e);
+  }
+}
+
+function parseAccountIdFromProfile(profile) {
+  // Prefer selectedHub.id (e.g., "b.f61b9f7b-...") from User Profile storage
+  const selectedHubId =
+    profile?.selectedHub?.id ||
+    profile?.user_metadata?.hubId ||
+    profile?.userInfo?.hubId ||
+    null;
+
+  if (!selectedHubId) return null;
+
+  // Hubs typically look like "b.<ACCOUNT_GUID>"
+  if (selectedHubId.startsWith('b.')) {
+    return selectedHubId.substring(2);
+  }
+  return selectedHubId;
+}
+
 async function init() {
-  // Get identity/hub info from your existing localStorage profile
-  const profile = auth.getUserProfile(); // from AuthManager
-  const hubId = profile?.userInfo?.hubId || profile?.user_metadata?.hubId || 'default-hub';
+  try {
+    // 1) Read stored Autodesk profile (UserProfile already persisted this in localStorage)
+    const profile = auth.getUserProfile();
+    if (!profile) {
+      notify('No user profile found. Please sign in via the dashboard first.', 'error');
+      throw new Error('Missing user profile');
+    }
 
-  // If you store the ACC Account/HQ ID in identity (you reference hubId already in admin.js)
-  state.accountId = profile?.userInfo?.accAccountId || profile?.user_metadata?.accAccountId || hubId;
+    // 2) Parse ACC Account ID from hub
+    const accountId = parseAccountIdFromProfile(profile);
+    if (!accountId) {
+      notify('No ACC account (hub) selected. Pick a hub in the dashboard first.', 'error');
+      throw new Error('Missing accountId/hub');
+    }
+    state.accountId = accountId;
 
-  // Load initial lists
-  await Promise.all([loadMembers(), loadProjects(), loadRoles(null)]);
+    // 3) Get token (hard fail if not present)
+    const token = await auth.getToken();
+    if (!token) {
+      notify('Not authenticated to ACC. Please re-open ACC Admin after signing in.', 'error');
+      throw new Error('Missing 3LO token');
+    }
 
-  // Wire UI
-  document.getElementById('memberSearch')?.addEventListener('input', renderMembers);
-  document.getElementById('assignBtn')?.addEventListener('click', assignUsersToProjects);
-  document.getElementById('btnAddUsersToProjects')?.addEventListener('click', () => {
-    notify('Add Users to Projects ready.', 'success');
-  });
+    // 4) Load initial data in parallel
+    await Promise.all([loadMembers(), loadProjects(), loadRoles(null)]);
+
+    // 5) Wire UI
+    document.getElementById('memberSearch')?.addEventListener('input', renderMembers);
+    document.getElementById('assignBtn')?.addEventListener('click', assignUsersToProjects);
+    document.getElementById('btnAddUsersToProjects')?.addEventListener('click', () => {
+      notify('Add Users to Projects ready.', 'success');
+    });
+
+    // 6) If we got this far, dismiss the overlay
+    hideAuthOverlay('ACC Admin is ready');
+
+  } catch (err) {
+    console.error('ACC Admin init failed:', err);
+    const authTitle = document.getElementById('authTitle');
+    const authMessage = document.getElementById('authMessage');
+    if (authTitle) authTitle.textContent = 'Authentication Error';
+    if (authMessage) authMessage.textContent = err?.message || 'Failed to initialize ACC Admin';
+  }
 }
 
 function renderMembers() {
@@ -101,12 +161,18 @@ function renderRoles() {
 }
 
 async function loadMembers() {
-  const token = await auth.getToken(); // from AuthManager
+  const token = await auth.getToken();
+  if (!token) throw new Error('Missing token for listMembers');
+
   const res = await fetch(`/.netlify/functions/acc-admin?mode=listMembers&accountId=${encodeURIComponent(state.accountId)}`, {
-    headers: {
-      'authorization': `Bearer ${token}`, // ACC 3LO token forwarded to function
-    }
+    headers: { 'authorization': `Bearer ${token}` }
   });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`listMembers failed: ${res.status} ${txt.slice(0,150)}`);
+  }
+
   const data = await res.json();
   state.members = data.members || [];
   renderMembers();
@@ -114,20 +180,36 @@ async function loadMembers() {
 
 async function loadProjects() {
   const token = await auth.getToken();
+  if (!token) throw new Error('Missing token for listProjects');
+
   const res = await fetch(`/.netlify/functions/acc-admin?mode=listProjects&accountId=${encodeURIComponent(state.accountId)}`, {
     headers: { 'authorization': `Bearer ${token}` }
   });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`listProjects failed: ${res.status} ${txt.slice(0,150)}`);
+  }
+
   const data = await res.json();
   state.projects = data.projects || [];
   renderProjects();
 }
 
-async function loadRoles(projectId /* optional, list account/project roles */) {
+async function loadRoles(projectId /* optional */) {
   const token = await auth.getToken();
+  if (!token) throw new Error('Missing token for listRoles');
+
   const url = projectId
     ? `/.netlify/functions/acc-admin?mode=listRoles&accountId=${encodeURIComponent(state.accountId)}&projectId=${encodeURIComponent(projectId)}`
     : `/.netlify/functions/acc-admin?mode=listAccountRoles&accountId=${encodeURIComponent(state.accountId)}`;
+
   const res = await fetch(url, { headers: { 'authorization': `Bearer ${token}` }});
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`listRoles failed: ${res.status} ${txt.slice(0,150)}`);
+  }
+
   const data = await res.json();
   state.roles = data.roles || [];
   renderRoles();
@@ -138,6 +220,7 @@ async function assignUsersToProjects() {
   const roleId = document.getElementById('roleSelect').value;
   const accessLevel = document.getElementById('accessLevel').value;
 
+  if (!token) return notify('Not authenticated to ACC', 'error');
   if (state.selectedMemberIds.size === 0) return notify('Select at least one member', 'warning');
   if (state.selectedProjectIds.size === 0) return notify('Select at least one project', 'warning');
 
@@ -146,7 +229,7 @@ async function assignUsersToProjects() {
     memberIdsOrEmails: Array.from(state.selectedMemberIds),
     projectIds: Array.from(state.selectedProjectIds),
     roleId,
-    accessLevel, // "project_user" | "project_admin"
+    accessLevel,
   };
 
   const res = await fetch(`/.netlify/functions/acc-admin`, {
@@ -158,12 +241,13 @@ async function assignUsersToProjects() {
     body: JSON.stringify({ mode: 'assignUsersToProjects', ...body })
   });
 
-  const data = await res.json();
+  let data = null;
+  try { data = await res.json(); } catch {}
   if (res.ok && data?.ok) {
     notify(`Added ${body.memberIdsOrEmails.length} user(s) to ${body.projectIds.length} project(s)`, 'success');
   } else {
-    notify(`Failed: ${data?.error || res.statusText}`, 'error');
-    console.error(data);
+    notify(`Failed: ${(data && (data.error || data.message)) || res.statusText}`, 'error');
+    console.error('assignUsersToProjects error:', data || res.statusText);
   }
 }
 
