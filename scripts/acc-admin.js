@@ -257,10 +257,25 @@ async function loadMembers() {
   const token = await auth.getToken();
   if (!token) throw new Error('Missing token for listMembers');
 
-  const res = await fetch(`/.netlify/functions/acc-admin?mode=listMembers&accountId=${encodeURIComponent(state.accountId)}`, {
-    headers: { 'authorization': `Bearer ${token}` }
-  });
-  if (!res.ok) throw new Error(`listMembers failed: ${res.status}`);
+  const url = `/.netlify/functions/acc-admin?mode=listMembers&accountId=${encodeURIComponent(state.accountId)}`;
+  console.log('🔎 loadMembers:', url);
+
+  let res;
+  try {
+    res = await fetch(url, { headers: { 'authorization': `Bearer ${token}` } });
+  } catch (networkErr) {
+    console.error('❌ loadMembers network error:', networkErr);
+    notify('Network error loading members', 'error');
+    throw networkErr;
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    console.error('❌ loadMembers failed:', res.status, text?.slice(0, 300));
+    notify(`Failed to load members (${res.status})`, 'error');
+    throw new Error(`listMembers failed: ${res.status}`);
+  }
+
   const data = await res.json();
 
   // Normalize to { id, name, email }
@@ -269,7 +284,14 @@ async function loadMembers() {
     name: u.name || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
     email: u.email || u.emailId || u.mail || ''
   }));
-  renderMemberSelector();
+
+  console.log(`👥 Members loaded: ${state.members.length}`);
+
+  // Render the TOP mini pane (the one we're keeping)
+  renderMemberMini();
+
+  // If you want to keep the left-pane code around for now, you can still sync it:
+  // renderMemberSelector();
 }
 
 async function loadProjects() {
@@ -388,13 +410,6 @@ async function init() {
     await Promise.all([loadMembers(), loadProjects(), loadRoles(null)]);
 
     // Wire UI
-    const memberSearch = document.getElementById('memberSelectSearch');
-    if (memberSearch) memberSearch.addEventListener('input', () => {
-      // tiny debounce
-      clearTimeout(window._memberSearchT);
-      window._memberSearchT = setTimeout(renderMemberSelector, 100);
-    });
-
     const projSearch = document.getElementById('projectSearch');
     if (projSearch) {
       projSearch.addEventListener('input', () => {
