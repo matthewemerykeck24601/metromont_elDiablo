@@ -1,5 +1,6 @@
 // netlify/functions/acc-admin.js
 import { response, parseUser, requireAdmin } from './_db-helpers.js';
+import { getTwoLeggedToken } from '../../server/aps-auth.js';
 
 /**
  * APS Admin (ACC/BIM 360 HQ) endpoints used here.
@@ -54,88 +55,91 @@ export async function handler(event) {
   }
 }
 
-async function listMembers(authHeader, accountId) {
-  // --- HQ v1/v2 attempt ---
-  const members = [];
-  let tried = [];
+async function listMembers(_userAuthHeader, accountId) {
+  const adminToken = await getTwoLeggedToken('account:read');
+  const tried = [];
 
-  // Try v2 users (admin API)
+  // v1 users/search (often most reliable)
   try {
-    const urlV2 = `${HQv2(accountId)}/users?limit=200&offset=0`;
-    const r2 = await fetch(urlV2, { headers: { authorization: authHeader } });
-    tried.push(urlV2);
-    if (r2.ok) {
-      const json = await r2.json();
-      if (Array.isArray(json) && json.length) {
-        return response(200, { members: json, tried });
-      }
+    const url = `${HQv1(accountId)}/users/search`;
+    tried.push(url);
+    const r = await fetch(url, { headers: { authorization: `Bearer ${adminToken}` } });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) return response(200, { members: arr, tried, mode: '2LO' });
     }
-  } catch (e) { /* ignored */ }
+  } catch {}
 
-  // Try v1 users (admin API)
+  // v1 users
   try {
-    const urlV1 = `${HQv1(accountId)}/users`;
-    const r1 = await fetch(urlV1, { headers: { authorization: authHeader } });
-    tried.push(urlV1);
-    if (r1.ok) {
-      const json = await r1.json();
-      if (Array.isArray(json) && json.length) {
-        return response(200, { members: json, tried });
-      }
+    const url = `${HQv1(accountId)}/users`;
+    tried.push(url);
+    const r = await fetch(url, { headers: { authorization: `Bearer ${adminToken}` } });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) return response(200, { members: arr, tried, mode: '2LO' });
     }
-  } catch (e) { /* ignored */ }
+  } catch {}
 
-  // --- Fallback: search (3LO-friendly) ---
+  // v2 users
   try {
-    const searchUrl = `${HQv1(accountId)}/users/search`;
-    const rs = await fetch(searchUrl, { headers: { authorization: authHeader } });
-    tried.push(searchUrl);
-    if (rs.ok) {
-      const json = await rs.json();
-      if (Array.isArray(json) && json.length) {
-        return response(200, { members: json, tried });
-      }
+    const url = `${HQv2(accountId)}/users?limit=200&offset=0`;
+    tried.push(url);
+    const r = await fetch(url, { headers: { authorization: `Bearer ${adminToken}` } });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) return response(200, { members: arr, tried, mode: '2LO' });
     }
-  } catch (e) { /* ignored */ }
+  } catch {}
 
-  console.warn('⚠️ No members returned from HQ endpoints', tried);
-  return response(200, { members: [], tried });
+  return response(200, { members: [], tried, mode: '2LO' });
 }
 
-async function listProjects(authHeader, accountId) {
-  // Try v2 projects first
-  const urlV2 = `${HQv2(accountId)}/projects?limit=200&offset=0`;
-  const r2 = await fetch(urlV2, { headers: { authorization: authHeader } });
-  if (r2.ok) {
-    const items = await r2.json();
-    if (Array.isArray(items) && items.length) {
-      return response(200, { projects: items });
+async function listProjects(_userAuthHeader, accountId) {
+  const adminToken = await getTwoLeggedToken('account:read');
+
+  // v1 first
+  {
+    const url = `${HQv1(accountId)}/projects`;
+    const r = await fetch(url, { headers: { authorization: `Bearer ${adminToken}` } });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) return response(200, { projects: arr, mode: '2LO' });
     }
   }
-
-  // Fallback: v1 projects
-  const urlV1 = `${HQv1(accountId)}/projects`;
-  const r1 = await fetch(urlV1, { headers: { authorization: authHeader } });
-  const v1Projects = r1.ok ? await r1.json() : [];
-  return response(200, { projects: Array.isArray(v1Projects) ? v1Projects : [] });
+  // v2 fallback
+  {
+    const url = `${HQv2(accountId)}/projects?limit=200&offset=0`;
+    const r = await fetch(url, { headers: { authorization: `Bearer ${adminToken}` } });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) return response(200, { projects: arr, mode: '2LO' });
+    }
+  }
+  return response(200, { projects: [], mode: '2LO' });
 }
 
-async function listAccountRoles(authHeader, accountId) {
-  // Try v2 roles
-  const urlV2 = `${HQv2(accountId)}/roles?limit=200&offset=0`;
-  const r2 = await fetch(urlV2, { headers: { authorization: authHeader } });
-  if (r2.ok) {
-    const items = await r2.json();
-    if (Array.isArray(items) && items.length) {
-      return response(200, { roles: items });
+async function listAccountRoles(_userAuthHeader, accountId) {
+  const adminToken = await getTwoLeggedToken('account:read');
+
+  // v1 then v2
+  {
+    const url = `${HQv1(accountId)}/roles`;
+    const r = await fetch(url, { headers: { authorization: `Bearer ${adminToken}` } });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) return response(200, { roles: arr, mode: '2LO' });
     }
   }
-
-  // Fallback: v1 roles
-  const urlV1 = `${HQv1(accountId)}/roles`;
-  const r1 = await fetch(urlV1, { headers: { authorization: authHeader } });
-  const v1Roles = r1.ok ? await r1.json() : [];
-  return response(200, { roles: Array.isArray(v1Roles) ? v1Roles : [] });
+  {
+    const url = `${HQv2(accountId)}/roles?limit=200&offset=0`;
+    const r = await fetch(url, { headers: { authorization: `Bearer ${adminToken}` } });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) return response(200, { roles: arr, mode: '2LO' });
+    }
+  }
+  return response(200, { roles: [], mode: '2LO' });
 }
 
 async function listProjectRoles(authHeader, accountId, projectId) {
@@ -146,31 +150,33 @@ async function listProjectRoles(authHeader, accountId, projectId) {
   return response(200, { roles });
 }
 
-async function assignUsersToProjects(authHeader, { accountId, memberIdsOrEmails, projectIds, roleId, accessLevel }) {
+async function assignUsersToProjects(_userAuthHeader, { accountId, memberIdsOrEmails, projectIds, roleId, accessLevel }) {
   if (!accountId || projectIds.length === 0 || memberIdsOrEmails.length === 0) {
     return response(400, { error: 'accountId, memberIdsOrEmails, projectIds are required' });
   }
 
-  // Typical HQ add-user-to-project body
-  // Accept both IDs and emails; the API generally supports user identifiers.
-  const payloadForProject = (projectId) => ({
+  const adminToken = await getTwoLeggedToken('account:read account:write');
+
+  // Many tenants expect email identifiers; switch to { id: u } if needed
+  const useEmail = true;
+  const payload = {
     users: memberIdsOrEmails.map(u => ({
-      id: u, // or 'email': u  ← if your tenant expects emails, switch here
+      ...(useEmail ? { email: u } : { id: u }),
       roleIds: roleId ? [roleId] : [],
-      accessLevel: accessLevel || 'project_user' // "project_user" | "project_admin"
+      accessLevel: accessLevel || 'project_user'
     }))
-  });
+  };
 
   const results = [];
   for (const projectId of projectIds) {
-    const url = `${HQv2(accountId)}/projects/${projectId}/users`; // verify; older tenants use /hq/v1
+    const url = `${HQv1(accountId)}/projects/${projectId}/users`;
     const r = await fetch(url, {
       method: 'POST',
       headers: {
-        authorization: authHeader,
+        authorization: `Bearer ${adminToken}`,
         'content-type': 'application/json'
       },
-      body: JSON.stringify(payloadForProject(projectId))
+      body: JSON.stringify(payload)
     });
 
     let data = null;
@@ -179,5 +185,5 @@ async function assignUsersToProjects(authHeader, { accountId, memberIdsOrEmails,
   }
 
   const anyFailed = results.some(x => !x.ok);
-  return response(anyFailed ? 207 : 200, { ok: !anyFailed, results });
+  return response(anyFailed ? 207 : 200, { ok: !anyFailed, results, mode: '2LO' });
 }
