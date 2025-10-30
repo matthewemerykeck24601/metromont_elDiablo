@@ -248,7 +248,12 @@ function renderRoles() {
     opt.textContent = r.name || r.id;
     sel.appendChild(opt);
   });
+  // Auto-select first role if available
+  if (sel.options.length > 0 && !sel.value) {
+    sel.selectedIndex = 0;
+  }
   sel.onchange = enableAssignButtonIfReady;
+  enableAssignButtonIfReady();
 }
 
 // ---------------- Data loads (Netlify function) ----------------
@@ -350,7 +355,37 @@ async function loadRoles(projectId /* optional */) {
 
   // Normalize to { id, name }
   state.roles = (data.roles || []).map(r => ({ id: r.id || r.roleId, name: r.name || r.displayName || r.roleName || r.id }));
+  console.log(`🎭 Roles fetched (${projectId ? 'project' : 'account'}):`, state.roles.length);
   renderRoles();
+}
+
+async function loadRolesWithFallback() {
+  // 1) Try account roles
+  try {
+    await loadRoles(null);
+    console.log('🎭 Roles loaded (account):', state.roles.length);
+    if (state.roles.length > 0) {
+      return;
+    }
+  } catch (e) {
+    console.warn('⚠️ Account roles load failed:', e?.message || e);
+  }
+
+  // 2) Fallback to first project roles
+  const firstProjectId = state.projects?.[0]?.id;
+  if (firstProjectId) {
+    try {
+      await loadRoles(firstProjectId);
+      console.log(`🎭 Roles loaded (project ${firstProjectId}):`, state.roles.length);
+    } catch (e) {
+      console.error('❌ Project roles load failed:', e?.message || e);
+    }
+  } else {
+    console.warn('⚠️ No projects available to load project-level roles');
+  }
+
+  renderRoles();
+  enableAssignButtonIfReady();
 }
 
 // ---------------- Assign ----------------
@@ -406,8 +441,14 @@ async function init() {
     const token = await auth.getToken();
     if (!token) throw new Error('Missing 3LO token');
 
-    // Load data in parallel
-    await Promise.all([loadMembers(), loadProjects(), loadRoles(null)]);
+  // Load projects first (so we can fallback roles to a project)
+  await loadProjects();
+
+  // Load roles with fallback (account → project)
+  await loadRolesWithFallback();
+
+  // Load members last
+  await loadMembers();
 
     // Wire UI
     const projSearch = document.getElementById('projectSearch');
