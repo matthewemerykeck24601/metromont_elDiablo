@@ -87,7 +87,7 @@ async function listMembers(authHeader, accountId) {
 
   // --- Fallback: search (3LO-friendly) ---
   try {
-    const searchUrl = `${APS_BASE}/hq/v1/users/search`;
+    const searchUrl = `${HQv1(accountId)}/users/search`;
     const rs = await fetch(searchUrl, { headers: { authorization: authHeader } });
     tried.push(searchUrl);
     if (rs.ok) {
