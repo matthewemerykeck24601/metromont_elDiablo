@@ -45,7 +45,14 @@ function parseAccountIdFromProfile(profile) {
 
 function enableAssignButtonIfReady() {
   const btn = document.getElementById('assignBtn');
-  const ready = state.selectedMemberIds.size > 0 && state.selectedProjectIds.size > 0 && document.getElementById('roleSelect')?.value;
+  const roleSel = document.getElementById('roleSelect');
+  const haveRoles = (state.roles?.length || 0) > 0;
+
+  const ready =
+    state.selectedMemberIds.size > 0 &&
+    state.selectedProjectIds.size > 0 &&
+    (!haveRoles || (roleSel && roleSel.value));
+
   if (btn) btn.disabled = !ready;
 }
 
@@ -240,18 +247,33 @@ function syncSelectAllCheckbox() {
 
 function renderRoles() {
   const sel = document.getElementById('roleSelect');
+  const roleContainer = sel?.closest('div');
   if (!sel) return;
+
   sel.innerHTML = '';
-  state.roles.forEach(r => {
-    const opt = document.createElement('option');
-    opt.value = r.id;
-    opt.textContent = r.name || r.id;
-    sel.appendChild(opt);
-  });
-  // Auto-select first role if available
-  if (sel.options.length > 0 && !sel.value) {
-    sel.selectedIndex = 0;
+  if ((state.roles?.length || 0) === 0) {
+    if (roleContainer) roleContainer.style.display = 'none';
+  } else {
+    if (roleContainer) roleContainer.style.display = '';
+    state.roles.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = r.name || r.id;
+      sel.appendChild(opt);
+    });
+    // Auto-select first role if available
+    if (sel.options.length > 0 && !sel.value) {
+      sel.selectedIndex = 0;
+    }
   }
+
+  const roleNote = document.getElementById('roleNote');
+  if ((state.roles?.length || 0) === 0) {
+    if (roleNote) roleNote.style.display = '';
+  } else {
+    if (roleNote) roleNote.style.display = 'none';
+  }
+
   sel.onchange = enableAssignButtonIfReady;
   enableAssignButtonIfReady();
 }

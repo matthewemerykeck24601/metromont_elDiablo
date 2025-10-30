@@ -189,6 +189,7 @@ async function assignUsersToProjects(_userAuthHeader, { accountId, memberIdsOrEm
   };
 
   const results = [];
+  console.log('assignUsersToProjects payload', { accountId, projectCount: projectIds.length, memberCount: memberIdsOrEmails.length, roleId, accessLevel, hasRoleIds: !!roleId });
   for (const projectId of projectIds) {
     const url = `${HQv1(accountId)}/projects/${projectId}/users`;
     const r = await fetch(url, {
