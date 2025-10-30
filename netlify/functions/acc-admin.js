@@ -178,11 +178,10 @@ async function assignUsersToProjects(_userAuthHeader, { accountId, memberIdsOrEm
 
   const adminToken = await getTwoLeggedToken('account:read account:write');
 
-  // Many tenants expect email identifiers; switch to { id: u } if needed
-  const useEmail = true;
+  // Prefer email identifiers; adjust if your tenant needs IDs
   const payload = {
     users: memberIdsOrEmails.map(u => ({
-      ...(useEmail ? { email: u } : { id: u }),
+      email: u,
       roleIds: roleId ? [roleId] : [],
       accessLevel: accessLevel || 'project_user'
     }))
@@ -192,18 +191,29 @@ async function assignUsersToProjects(_userAuthHeader, { accountId, memberIdsOrEm
   console.log('assignUsersToProjects payload', { accountId, projectCount: projectIds.length, memberCount: memberIdsOrEmails.length, roleId, accessLevel, hasRoleIds: !!roleId });
   for (const projectId of projectIds) {
     const url = `${HQv1(accountId)}/projects/${projectId}/users`;
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${adminToken}`,
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    let data = null;
-    try { data = await r.json(); } catch { /* some endpoints return empty */ }
-    results.push({ projectId, status: r.status, ok: r.ok, data });
+    let r, data = null, ok = false, skipped = false;
+    try {
+      r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      try { data = await r.json(); } catch {}
+      if (r.ok) {
+        ok = true;
+      } else {
+        const msg = (data && (data.message || data.developerMessage || data.error)) || '';
+        if (r.status === 409 || /already/i.test(msg)) {
+          ok = true; skipped = true;
+        }
+      }
+    } catch (e) {
+      data = { message: e.message || 'Network error' };
+    }
+    results.push({ projectId, status: r?.status || 0, ok, skipped, data });
   }
 
   const anyFailed = results.some(x => !x.ok);

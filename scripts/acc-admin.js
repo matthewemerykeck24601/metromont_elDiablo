@@ -417,18 +417,24 @@ async function assignUsersToProjects() {
   const token = await auth.getToken();
   if (!token) return notify('Not authenticated to ACC', 'error');
 
-  const roleId = document.getElementById('roleSelect').value;
+  const roleId = document.getElementById('roleSelect')?.value || '';
   const accessLevel = document.getElementById('accessLevel').value;
 
   if (state.selectedMemberIds.size === 0) return notify('Select at least one member', 'warning');
   if (state.selectedProjectIds.size === 0) return notify('Select at least one project', 'warning');
 
+  // Map selected ids -> emails (preferred by HQ "add users")
+  const memberEmails = Array.from(state.selectedMemberIds).map(id => {
+    const m = state.members.find(x => (x.id || x.email) === id);
+    return m?.email || id;
+  });
+
   const body = {
     accountId: state.accountId,
-    memberIdsOrEmails: Array.from(state.selectedMemberIds),
+    memberIdsOrEmails: memberEmails,
     projectIds: Array.from(state.selectedProjectIds),
-    roleId,
-    accessLevel,
+    roleId,          // optional; may be empty
+    accessLevel,     // project_user | project_admin
   };
 
   console.log('➡️ assignUsersToProjects()', body);
@@ -443,11 +449,19 @@ async function assignUsersToProjects() {
   try { data = await res.json(); } catch {}
   if (res.ok && data?.ok) {
     notify(`Added ${body.memberIdsOrEmails.length} user(s) to ${body.projectIds.length} project(s)`, 'success');
-    // Clear selections if you want:
-    // state.selectedMemberIds.clear(); state.selectedProjectIds.clear(); renderMemberSelector(); renderProjects(); enableAssignButtonIfReady();
   } else {
-    notify(`Failed: ${(data && (data.error || data.message)) || res.statusText}`, 'error');
     console.error('assignUsersToProjects error:', data || res.statusText);
+    if (data?.results?.length) {
+      const success = data.results.filter(r => r.ok).length;
+      const failures = data.results.length - success;
+      notify(`Completed: ${success} OK, ${failures} failed. Check console for details.`, 'error');
+      console.table(data.results.map(r => ({
+        projectId: r.projectId, status: r.status, ok: r.ok, skipped: r.skipped,
+        message: (r.data && (r.data.message || r.data.developerMessage || r.data.error)) || ''
+      })));
+    } else {
+      notify(`Failed: ${(data && (data.error || data.message)) || res.statusText}`, 'error');
+    }
   }
 }
 
