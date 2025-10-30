@@ -55,31 +55,51 @@ export async function handler(event) {
 }
 
 async function listMembers(authHeader, accountId) {
-  // Try v2 with pagination
+  // --- HQ v1/v2 attempt ---
   const members = [];
-  let offset = 0;
-  const limit = 200;
+  let tried = [];
 
-  while (true) {
-    const url = `${HQv2(accountId)}/users?limit=${limit}&offset=${offset}`;
-    const r = await fetch(url, { headers: { authorization: authHeader } });
-    if (!r.ok) break; // v2 not supported? fall through to v1
-    const batch = await r.json();
-    if (!Array.isArray(batch) || batch.length === 0) break;
-    members.push(...batch);
-    if (batch.length < limit) break;
-    offset += limit;
-  }
+  // Try v2 users (admin API)
+  try {
+    const urlV2 = `${HQv2(accountId)}/users?limit=200&offset=0`;
+    const r2 = await fetch(urlV2, { headers: { authorization: authHeader } });
+    tried.push(urlV2);
+    if (r2.ok) {
+      const json = await r2.json();
+      if (Array.isArray(json) && json.length) {
+        return response(200, { members: json, tried });
+      }
+    }
+  } catch (e) { /* ignored */ }
 
-  if (members.length > 0) {
-    return response(200, { members });
-  }
+  // Try v1 users (admin API)
+  try {
+    const urlV1 = `${HQv1(accountId)}/users`;
+    const r1 = await fetch(urlV1, { headers: { authorization: authHeader } });
+    tried.push(urlV1);
+    if (r1.ok) {
+      const json = await r1.json();
+      if (Array.isArray(json) && json.length) {
+        return response(200, { members: json, tried });
+      }
+    }
+  } catch (e) { /* ignored */ }
 
-  // Fallback: HQ v1 users
-  const urlV1 = `${HQv1(accountId)}/users`;
-  const r1 = await fetch(urlV1, { headers: { authorization: authHeader } });
-  const v1Members = r1.ok ? await r1.json() : [];
-  return response(200, { members: Array.isArray(v1Members) ? v1Members : [] });
+  // --- Fallback: search (3LO-friendly) ---
+  try {
+    const searchUrl = `${APS_BASE}/hq/v1/users/search`;
+    const rs = await fetch(searchUrl, { headers: { authorization: authHeader } });
+    tried.push(searchUrl);
+    if (rs.ok) {
+      const json = await rs.json();
+      if (Array.isArray(json) && json.length) {
+        return response(200, { members: json, tried });
+      }
+    }
+  } catch (e) { /* ignored */ }
+
+  console.warn('⚠️ No members returned from HQ endpoints', tried);
+  return response(200, { members: [], tried });
 }
 
 async function listProjects(authHeader, accountId) {
