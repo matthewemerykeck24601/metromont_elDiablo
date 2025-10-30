@@ -55,27 +55,67 @@ export async function handler(event) {
 }
 
 async function listMembers(authHeader, accountId) {
-  // Members (HQ users)
-  const url = `${HQv2(accountId)}/users`; // verify v2 in your tenant; fallback could be /hq/v1/.../users
-  const r = await fetch(url, { headers: { authorization: authHeader } });
-  const members = r.ok ? await r.json() : [];
-  return response(200, { members });
+  // Try v2 with pagination
+  const members = [];
+  let offset = 0;
+  const limit = 200;
+
+  while (true) {
+    const url = `${HQv2(accountId)}/users?limit=${limit}&offset=${offset}`;
+    const r = await fetch(url, { headers: { authorization: authHeader } });
+    if (!r.ok) break; // v2 not supported? fall through to v1
+    const batch = await r.json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    members.push(...batch);
+    if (batch.length < limit) break;
+    offset += limit;
+  }
+
+  if (members.length > 0) {
+    return response(200, { members });
+  }
+
+  // Fallback: HQ v1 users
+  const urlV1 = `${HQv1(accountId)}/users`;
+  const r1 = await fetch(urlV1, { headers: { authorization: authHeader } });
+  const v1Members = r1.ok ? await r1.json() : [];
+  return response(200, { members: Array.isArray(v1Members) ? v1Members : [] });
 }
 
 async function listProjects(authHeader, accountId) {
-  // Projects in account
-  const url = `${HQv2(accountId)}/projects`; // verify path in your tenant
-  const r = await fetch(url, { headers: { authorization: authHeader } });
-  const projects = r.ok ? await r.json() : [];
-  return response(200, { projects });
+  // Try v2 projects first
+  const urlV2 = `${HQv2(accountId)}/projects?limit=200&offset=0`;
+  const r2 = await fetch(urlV2, { headers: { authorization: authHeader } });
+  if (r2.ok) {
+    const items = await r2.json();
+    if (Array.isArray(items) && items.length) {
+      return response(200, { projects: items });
+    }
+  }
+
+  // Fallback: v1 projects
+  const urlV1 = `${HQv1(accountId)}/projects`;
+  const r1 = await fetch(urlV1, { headers: { authorization: authHeader } });
+  const v1Projects = r1.ok ? await r1.json() : [];
+  return response(200, { projects: Array.isArray(v1Projects) ? v1Projects : [] });
 }
 
 async function listAccountRoles(authHeader, accountId) {
-  // Account-level roles catalog
-  const url = `${HQv2(accountId)}/roles`; // sometimes v1 in older tenants
-  const r = await fetch(url, { headers: { authorization: authHeader } });
-  const roles = r.ok ? await r.json() : [];
-  return response(200, { roles });
+  // Try v2 roles
+  const urlV2 = `${HQv2(accountId)}/roles?limit=200&offset=0`;
+  const r2 = await fetch(urlV2, { headers: { authorization: authHeader } });
+  if (r2.ok) {
+    const items = await r2.json();
+    if (Array.isArray(items) && items.length) {
+      return response(200, { roles: items });
+    }
+  }
+
+  // Fallback: v1 roles
+  const urlV1 = `${HQv1(accountId)}/roles`;
+  const r1 = await fetch(urlV1, { headers: { authorization: authHeader } });
+  const v1Roles = r1.ok ? await r1.json() : [];
+  return response(200, { roles: Array.isArray(v1Roles) ? v1Roles : [] });
 }
 
 async function listProjectRoles(authHeader, accountId, projectId) {
