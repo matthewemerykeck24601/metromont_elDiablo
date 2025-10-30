@@ -142,12 +142,33 @@ async function listAccountRoles(_userAuthHeader, accountId) {
   return response(200, { roles: [], mode: '2LO' });
 }
 
-async function listProjectRoles(authHeader, accountId, projectId) {
-  // Roles configured for a specific project
-  const url = `${HQv2(accountId)}/projects/${projectId}/roles`;
-  const r = await fetch(url, { headers: { authorization: authHeader } });
-  const roles = r.ok ? await r.json() : [];
-  return response(200, { roles });
+async function listProjectRoles(_userAuthHeader, accountId, projectId) {
+  const adminToken = await getTwoLeggedToken('account:read');
+  const tried = [];
+
+  // Try v2 first
+  try {
+    const url = `${HQv2(accountId)}/projects/${projectId}/roles`;
+    tried.push(url);
+    const r = await fetch(url, { headers: { authorization: `Bearer ${adminToken}` } });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) return response(200, { roles: arr, mode: '2LO', tried });
+    }
+  } catch {}
+
+  // Try v1 fallback
+  try {
+    const url = `${HQv1(accountId)}/projects/${projectId}/roles`;
+    tried.push(url);
+    const r = await fetch(url, { headers: { authorization: `Bearer ${adminToken}` } });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) return response(200, { roles: arr, mode: '2LO', tried });
+    }
+  } catch {}
+
+  return response(200, { roles: [], mode: '2LO', tried });
 }
 
 async function assignUsersToProjects(_userAuthHeader, { accountId, memberIdsOrEmails, projectIds, roleId, accessLevel }) {

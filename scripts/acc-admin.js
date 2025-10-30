@@ -352,6 +352,7 @@ async function loadRoles(projectId /* optional */) {
   const res = await fetch(url, { headers: { 'authorization': `Bearer ${token}` }});
   if (!res.ok) throw new Error(`listRoles failed: ${res.status}`);
   const data = await res.json();
+  if (data?.tried) console.log('🧭 roles via', data.mode, data.tried[data.tried.length - 1]);
 
   // Normalize to { id, name }
   state.roles = (data.roles || []).map(r => ({ id: r.id || r.roleId, name: r.name || r.displayName || r.roleName || r.id }));
