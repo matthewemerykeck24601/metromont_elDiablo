@@ -178,14 +178,13 @@ async function assignUsersToProjects(_userAuthHeader, payloadIn) {
 
   const adminToken = await getTwoLeggedToken('account:read account:write');
 
-  // Map UI access to classic values some tenants expect
+  // Map UI access to legacy values many tenants expect for services
+  // UI: project_user | project_admin  → services: user | admin
   const accessMapped = (accessLevel === 'project_admin') ? 'admin' : 'user';
-  const role_ids = roleId ? [roleId] : [];
+  const project_role_id = roleId || null; // optional; your tenant currently has none
 
-  const triedByProject = {};
   const results = [];
 
-  // Helpers
   const postJSON = async (url, body) => {
     const r = await fetch(url, {
       method: 'POST',
@@ -201,53 +200,75 @@ async function assignUsersToProjects(_userAuthHeader, payloadIn) {
     return r.status === 409 || /already/i.test(msg) || /exists/i.test(msg);
   };
 
-  // Build variants up-front
-  const emails = members.map(m => m.email).filter(Boolean);
-  const ids    = members.map(m => m.id).filter(Boolean);
-
+  // Per-project execution; inside each project we add each member individually
   for (const projectId of projectIds) {
     const url = `${HQv1(accountId)}/projects/${projectId}/users`;
-    const tried = [];
-    let ok = false, skipped = false, last = { status: 0, data: null };
+    let projectOk = true;
+    const details = [];
 
-    // Variant A: batch by emails (most common)
-    if (emails.length) {
-      const bodyA = { emails, access_level: accessMapped, ...(role_ids.length ? { role_ids } : {}) };
-      tried.push({ variant: 'A_emails_batch', body: bodyA });
-      const { r, data } = await postJSON(url, bodyA);
-      last = { status: r.status, data };
-      if (r.ok || isAlready(r, data)) { ok = true; skipped = !r.ok; results.push({ projectId, status: r.status, ok, skipped, data }); triedByProject[projectId] = tried; continue; }
-    }
-
-    // Variant B: batch "users" collection (your current shape)
-    {
-      const users = members.map(m => ({
-        ...(m.id ? { id: m.id } : (m.email ? { email: m.email } : {})),
-        ...(role_ids.length ? { roleIds: role_ids } : {}),
-        accessLevel: accessMapped
-      }));
-      const bodyB = { users };
-      tried.push({ variant: 'B_users_batch', body: bodyB });
-      const { r, data } = await postJSON(url, bodyB);
-      last = { status: r.status, data };
-      if (r.ok || isAlready(r, data)) { ok = true; skipped = !r.ok; results.push({ projectId, status: r.status, ok, skipped, data }); triedByProject[projectId] = tried; continue; }
-    }
-
-    // Variant C: per-user legacy (id first, then email)
     for (const m of members) {
-      const one = m.id ? { user_id: m.id } : (m.email ? { email: m.email } : null);
-      if (!one) continue;
-      const bodyC = { ...one, access_level: accessMapped, ...(role_ids.length ? { role_ids } : {}) };
-      tried.push({ variant: 'C_one_by_one', body: bodyC });
-      const { r, data } = await postJSON(url, bodyC);
-      last = { status: r.status, data };
-      if (!(r.ok || isAlready(r, data))) { ok = false; skipped = false; break; }
-      ok = true; // keep ok if all single posts are ok/already
+      // Prefer email; fall back to id if present and accepted by your tenant
+      const email = m.email || null;
+      const id = m.id || null;
+
+      // Variant 1: EMAIL + SERVICES (most common and usually required)
+      const basePayload = {
+        services: { document_management: { access_level: accessMapped } }
+      };
+      const payloadEmail = {
+        ...basePayload,
+        ...(email ? { email } : {}),
+        ...(project_role_id ? { project_role_id } : {})
+      };
+
+      let last = { ok: false, status: 0, data: null };
+
+      // Try email path first (recommended)
+      if (email) {
+        const { r, data } = await postJSON(url, payloadEmail);
+        last = { ok: r.ok, status: r.status, data };
+        if (r.ok || isAlready(r, data)) {
+          details.push({ member: email, status: r.status, ok: true, skipped: !r.ok, variant: 'email+services', data });
+          continue; // next member
+        }
+      }
+
+      // Variant 2: ID + SERVICES (some tenants accept user_id instead of email)
+      if (id) {
+        const payloadId = {
+          ...basePayload,
+          user_id: id,
+          ...(project_role_id ? { project_role_id } : {})
+        };
+        const { r, data } = await postJSON(url, payloadId);
+        last = { ok: r.ok, status: r.status, data };
+        if (r.ok || isAlready(r, data)) {
+          details.push({ member: id, status: r.status, ok: true, skipped: !r.ok, variant: 'id+services', data });
+          continue;
+        }
+      }
+
+      // If neither path succeeded
+      projectOk = false;
+      details.push({
+        member: email || id || '(unknown)',
+        status: last.status,
+        ok: false,
+        skipped: false,
+        variant: 'failed',
+        message: (last.data && (last.data.message || last.data.developerMessage || last.data.error)) || 'Unknown error'
+      });
     }
-    results.push({ projectId, status: last.status, ok, skipped, data: last.data });
-    triedByProject[projectId] = tried;
+
+    // Summarize project result as OK only if all member adds were ok/already
+    results.push({
+      projectId,
+      ok: projectOk,
+      status: projectOk ? 200 : 400,
+      data: { details }
+    });
   }
 
   const anyFailed = results.some(x => !x.ok);
-  return response(anyFailed ? 207 : 200, { ok: !anyFailed, results, mode: '2LO', triedByProject });
+  return response(anyFailed ? 207 : 200, { ok: !anyFailed, mode: '2LO', results });
 }
