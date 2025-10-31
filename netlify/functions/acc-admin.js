@@ -42,8 +42,7 @@ export async function handler(event) {
 
     if (event.httpMethod === 'POST') {
       if (mode === 'assignUsersToProjects') {
-        const { accountId, memberIdsOrEmails = [], projectIds = [], roleId, accessLevel } = body;
-        return assignUsersToProjects(clientAuth, { accountId, memberIdsOrEmails, projectIds, roleId, accessLevel });
+        return assignUsersToProjects(clientAuth, body);
       }
       return response(400, { error: 'Unknown mode' });
     }
@@ -171,51 +170,84 @@ async function listProjectRoles(_userAuthHeader, accountId, projectId) {
   return response(200, { roles: [], mode: '2LO', tried });
 }
 
-async function assignUsersToProjects(_userAuthHeader, { accountId, memberIdsOrEmails, projectIds, roleId, accessLevel }) {
-  if (!accountId || projectIds.length === 0 || memberIdsOrEmails.length === 0) {
-    return response(400, { error: 'accountId, memberIdsOrEmails, projectIds are required' });
+async function assignUsersToProjects(_userAuthHeader, payloadIn) {
+  const { accountId, members = [], projectIds = [], roleId, accessLevel } = payloadIn || {};
+  if (!accountId || !projectIds.length || !members.length) {
+    return response(400, { error: 'accountId, members[], projectIds[] are required' });
   }
 
   const adminToken = await getTwoLeggedToken('account:read account:write');
 
-  // Prefer email identifiers; adjust if your tenant needs IDs
-  const payload = {
-    users: memberIdsOrEmails.map(u => ({
-      email: u,
-      roleIds: roleId ? [roleId] : [],
-      accessLevel: accessLevel || 'project_user'
-    }))
+  // Map UI access to classic values some tenants expect
+  const accessMapped = (accessLevel === 'project_admin') ? 'admin' : 'user';
+  const role_ids = roleId ? [roleId] : [];
+
+  const triedByProject = {};
+  const results = [];
+
+  // Helpers
+  const postJSON = async (url, body) => {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    let data = null; try { data = await r.json(); } catch {}
+    return { r, data };
   };
 
-  const results = [];
-  console.log('assignUsersToProjects payload', { accountId, projectCount: projectIds.length, memberCount: memberIdsOrEmails.length, roleId, accessLevel, hasRoleIds: !!roleId });
+  const isAlready = (r, data) => {
+    const msg = (data && (data.message || data.developerMessage || data.error || '')) + '';
+    return r.status === 409 || /already/i.test(msg) || /exists/i.test(msg);
+  };
+
+  // Build variants up-front
+  const emails = members.map(m => m.email).filter(Boolean);
+  const ids    = members.map(m => m.id).filter(Boolean);
+
   for (const projectId of projectIds) {
     const url = `${HQv1(accountId)}/projects/${projectId}/users`;
-    let r, data = null, ok = false, skipped = false;
-    try {
-      r = await fetch(url, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${adminToken}`,
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-      try { data = await r.json(); } catch {}
-      if (r.ok) {
-        ok = true;
-      } else {
-        const msg = (data && (data.message || data.developerMessage || data.error)) || '';
-        if (r.status === 409 || /already/i.test(msg)) {
-          ok = true; skipped = true;
-        }
-      }
-    } catch (e) {
-      data = { message: e.message || 'Network error' };
+    const tried = [];
+    let ok = false, skipped = false, last = { status: 0, data: null };
+
+    // Variant A: batch by emails (most common)
+    if (emails.length) {
+      const bodyA = { emails, access_level: accessMapped, ...(role_ids.length ? { role_ids } : {}) };
+      tried.push({ variant: 'A_emails_batch', body: bodyA });
+      const { r, data } = await postJSON(url, bodyA);
+      last = { status: r.status, data };
+      if (r.ok || isAlready(r, data)) { ok = true; skipped = !r.ok; results.push({ projectId, status: r.status, ok, skipped, data }); triedByProject[projectId] = tried; continue; }
     }
-    results.push({ projectId, status: r?.status || 0, ok, skipped, data });
+
+    // Variant B: batch "users" collection (your current shape)
+    {
+      const users = members.map(m => ({
+        ...(m.id ? { id: m.id } : (m.email ? { email: m.email } : {})),
+        ...(role_ids.length ? { roleIds: role_ids } : {}),
+        accessLevel: accessMapped
+      }));
+      const bodyB = { users };
+      tried.push({ variant: 'B_users_batch', body: bodyB });
+      const { r, data } = await postJSON(url, bodyB);
+      last = { status: r.status, data };
+      if (r.ok || isAlready(r, data)) { ok = true; skipped = !r.ok; results.push({ projectId, status: r.status, ok, skipped, data }); triedByProject[projectId] = tried; continue; }
+    }
+
+    // Variant C: per-user legacy (id first, then email)
+    for (const m of members) {
+      const one = m.id ? { user_id: m.id } : (m.email ? { email: m.email } : null);
+      if (!one) continue;
+      const bodyC = { ...one, access_level: accessMapped, ...(role_ids.length ? { role_ids } : {}) };
+      tried.push({ variant: 'C_one_by_one', body: bodyC });
+      const { r, data } = await postJSON(url, bodyC);
+      last = { status: r.status, data };
+      if (!(r.ok || isAlready(r, data))) { ok = false; skipped = false; break; }
+      ok = true; // keep ok if all single posts are ok/already
+    }
+    results.push({ projectId, status: last.status, ok, skipped, data: last.data });
+    triedByProject[projectId] = tried;
   }
 
   const anyFailed = results.some(x => !x.ok);
-  return response(anyFailed ? 207 : 200, { ok: !anyFailed, results, mode: '2LO' });
+  return response(anyFailed ? 207 : 200, { ok: !anyFailed, results, mode: '2LO', triedByProject });
 }

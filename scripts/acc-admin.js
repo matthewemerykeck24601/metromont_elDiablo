@@ -423,18 +423,18 @@ async function assignUsersToProjects() {
   if (state.selectedMemberIds.size === 0) return notify('Select at least one member', 'warning');
   if (state.selectedProjectIds.size === 0) return notify('Select at least one project', 'warning');
 
-  // Map selected ids -> emails (preferred by HQ "add users")
-  const memberEmails = Array.from(state.selectedMemberIds).map(id => {
-    const m = state.members.find(x => (x.id || x.email) === id);
-    return m?.email || id;
+  // Build a rich member payload: [{ id, email }]
+  const members = Array.from(state.selectedMemberIds).map(idOrEmail => {
+    const m = state.members.find(x => (x.id || x.email) === idOrEmail);
+    return { id: m?.id || null, email: m?.email || idOrEmail };
   });
 
   const body = {
     accountId: state.accountId,
-    memberIdsOrEmails: memberEmails,
+    members,                                // <— send both id and email
     projectIds: Array.from(state.selectedProjectIds),
-    roleId,          // optional; may be empty
-    accessLevel,     // project_user | project_admin
+    roleId: document.getElementById('roleSelect')?.value || '',
+    accessLevel: document.getElementById('accessLevel').value, // project_user | project_admin
   };
 
   console.log('➡️ assignUsersToProjects()', body);
@@ -448,7 +448,7 @@ async function assignUsersToProjects() {
   let data = null;
   try { data = await res.json(); } catch {}
   if (res.ok && data?.ok) {
-    notify(`Added ${body.memberIdsOrEmails.length} user(s) to ${body.projectIds.length} project(s)`, 'success');
+    notify(`Added ${body.members.length} user(s) to ${body.projectIds.length} project(s)`, 'success');
   } else {
     console.error('assignUsersToProjects error:', data || res.statusText);
     if (data?.results?.length) {
