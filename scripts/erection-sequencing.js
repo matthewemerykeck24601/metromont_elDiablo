@@ -457,6 +457,13 @@ function initializeViewer() {
         // Load Document Browser extension for view selector
         viewer.loadExtension('Autodesk.DocumentBrowser');
         
+        // Load Clusters tool extension
+        viewer.loadExtension('Autodesk.Clusters').then(() => {
+            console.log('✅ Clusters tool loaded successfully');
+        }).catch((error) => {
+            console.warn('⚠️ Failed to load Clusters extension:', error);
+        });
+        
         // Show bottom panel and setup splitters once viewer is ready
         showBottomPanelAndSplitter();
         setupSplitterResize();
